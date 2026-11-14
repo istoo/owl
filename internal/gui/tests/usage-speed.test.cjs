@@ -203,10 +203,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         };
         // the list itself: at a wide window the agents are cards in it
         await centred("#agents", "the agents' list");
+        // Settings: its rows keep a reading width inside the page's centred
+        // reading area, with the tabs it now has down the page's left beside
+        // them (11-14). The row is therefore one tab column right of where a
+        // single centred column stood, not the view's own middle: what it
+        // keeps is its width and the reading area's room either side.
         await p.locator("#prefs").click();
         await p.locator("#view-settings .row.pref").first().waitFor();
         await p.waitForTimeout(200);
-        await centred("#view-settings .row.pref", "a setting's row");
+        const settings = await p.evaluate(() => {
+          const v = document.querySelector("#view-settings").getBoundingClientRect();
+          const t = document.querySelector("#setTabs").getBoundingClientRect();
+          const r = document.querySelector("#view-settings .row.pref").getBoundingClientRect();
+          return { w: r.width, l: r.left - v.left, right: v.right - r.right, beside: r.left >= t.right - 0.5 };
+        });
+        assert(settings.w <= 1200, "a setting's row at most 1200 wide: " + JSON.stringify(settings));
+        // the view's reading area starts 196px in at this window (app.css)
+        assert(settings.l >= 200 && settings.right >= 200, "the row in the reading area, room either side: " + JSON.stringify(settings));
+        assert(settings.beside, "the part beside its tabs: " + JSON.stringify(settings));
         assert.deepEqual(errors, []);
         await ctx.close();
       });
