@@ -5,6 +5,10 @@
 // account: its name, the bar and the share at its end, the bar as high
 // along its length and across most of the card, the share inside the card,
 // the name not cut. Chromium and WebKit, English and Chinese.
+// The panel's cards come up as its settings and allowances are read, and a
+// loaded machine draws them late; the bars are measured once they are there
+// and their boxes the same two looks running, not on the frame they first
+// appear.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -45,20 +49,29 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     t.after(() => browser.close());
     const page = await (await browser.newContext({ viewport: { width: 440, height: 640 }, reducedMotion: "reduce" })).newPage();
-    page.setDefaultTimeout(5000);
+    // the usage tab is out once the allowances are in, and a loaded machine
+    // reads and draws the panel later than a page (0a13470de)
+    page.setDefaultTimeout(20000);
     page.setDefaultNavigationTimeout(60000);
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/*", serve(lang));
     await page.goto("http://owl.test/?mode=panel");
     await page.locator('#ptabs [data-ptab="usage"]').click();
-    const dials = page.locator("#panelQuota .pq-dial");
-    await dials.first().waitFor();
-    const got = await dials.evaluateAll((ds) => ds.map((d) => {
+    await page.waitForFunction(() => document.querySelectorAll("#panelQuota .pq-dial").length === 2);
+    // one call in the page: the card is drawn again as a read lands, and a
+    // handle found in the page before that is out of it by the read
+    const look = () => page.evaluate(() => [...document.querySelectorAll("#panelQuota .pq-dial")].map((d) => {
       const b = d.getBoundingClientRect(), card = d.closest(".pq-card").getBoundingClientRect(), share = d.querySelector("b").getBoundingClientRect();
       const name = d.parentElement.querySelector(".pq-rn");
       return { w: b.width, h: b.height, wide: b.width > card.width / 3, share: share.left >= b.right - 0.5 && share.right <= card.right, named: name.scrollWidth <= name.clientWidth };
     }));
+    let got = await look(), last = "";
+    for (let i = 0; i < 120 && JSON.stringify(got) !== last; i++) {
+      last = JSON.stringify(got);
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      got = await look();
+    }
     assert.equal(got.length, 2);
     for (const g of got) assert(g.h === 6 && g.wide && g.share && g.named, JSON.stringify(got));
     assert.deepEqual(errors, []);
