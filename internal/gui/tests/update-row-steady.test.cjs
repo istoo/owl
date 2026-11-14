@@ -6,9 +6,10 @@
 // - opened with a state read a minute ago ("Up to date") while a check has
 //   since downloaded a newer version, that old state isn't drawn first and
 //   swapped for "0.1.401 is downloaded";
-// - the header's Update pill showing opens from nothing, so the Settings
-//   search in the title bar beside the sidebar slides over with it rather
-//   than jumping 80px left in one frame.
+// - the header's Update pill opens from nothing rather than coming in at
+//   its full width, and the Settings search (the page's own row beside the
+//   rail since 11-14, not the title bar's) neither jumps nor moves as it
+//   opens.
 // English and Chinese; no backend, the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -138,7 +139,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.context().close();
       });
 
-      await t.test(lang + ": the Update pill opens from nothing, the search beside the sidebar sliding with it", async () => {
+      await t.test(lang + ": the Update pill opens from nothing, the Settings search holding still", async () => {
         const ctl = {};
         const { page, errors } = await open(browser, lang, ctl, 1200, "http://owl.test/?view=settings&tab=about");
         await settingsDrawn(page);
@@ -147,6 +148,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const frames = () => page.evaluate(() => new Promise((go) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(go)))));
         await frames();
         const at = () => page.evaluate(() => $("#setQ").getBoundingClientRect().left);
+        const wide = () => page.evaluate(() => $("#update").getBoundingClientRect().width);
         const before = await at();
         // the pill's opening is held at its first frame, as it is shown
         ctl.update = ready;
@@ -163,10 +165,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await frames();
         const first = await at();
         assert.ok(Math.abs(first - before) <= 1, `the search moved ${before - first}px in the pill's first frame`);
+        const w0 = await wide();
+        assert.ok(w0 <= 1, `the pill came in ${w0}px wide in its first frame, not from nothing`);
         await page.evaluate(() => { for (const a of window.__opening) a.finish(); });
         await frames();
         const after = await at();
-        assert.ok(before - after > 30, `the pill took its room once open: the search at ${before}, then ${after}`);
+        assert.ok(Math.abs(after - before) <= 1, `the search moved ${after - before}px as the pill opened: ${before}, then ${after}`);
+        const w1 = await wide();
+        assert.ok(w1 > 30, `the pill took its room once open: ${w0}px at its first frame, ${w1}px after`);
         assert.deepEqual(errors, []);
         await page.context().close();
       });
