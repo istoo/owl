@@ -132,7 +132,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the window, on the Overview
       const calls = { state: 0, overview: 0, requests: 0 }, cur = { v: 0 };
       const p = await open("http://owl.test/?view=usage", { width: 1180, height: 760 }, calls, cur);
-      if (await p.locator("#usageTab .opt.on").evaluate((b) => b !== b.parentElement.firstElementChild)) await p.locator(":is(#usageTab .opt, .nav-s):visible").first().click();
+      // the page's tabs are drawn when the plugin page is up, after the load.
+      // Read .opt.on on the next line, WebKit zh once read it as a plugin
+      // redraw replaced it and threw on the detached node (null). Wait for
+      // it, then read the strip, whose box app.js never replaces, not the
+      // option inside it.
+      await p.locator("#usageTab .opt.on").waitFor();
+      if (await p.locator("#usageTab").evaluate((tab) => tab.querySelector(".opt.on") !== tab.firstElementChild)) await p.locator(":is(#usageTab .opt, .nav-s):visible").first().click();
       const BAR = "#chart .bars .bar";
       await p.locator(BAR).first().waitFor();
       assert.equal(await p.locator(BAR).count(), DAYS);
