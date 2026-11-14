@@ -10,7 +10,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { navTo } = require("./reader.cjs");
+const { navTo, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const HOME = "/Users/me";
@@ -94,11 +94,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const cards = () => v.locator(".lib-group .lib-grouphead .who .name").allTextContents();
         await row("pdf").waitFor();
         assert.deepEqual(await cards(), ["acme/skills", w.local]);
+        // a control of the list is wheeled into clear sight before its click,
+        // as a reader wheels it. At 1100x760 the pick bar stuck 12px above
+        // the view's foot floats over the pdf row, 46px lower since the
+        // head's own row (11-14: 40px and a 14px gap, where the fixed head
+        // left 8px): the bar's top is at 662, the pickbox at 669..683, and
+        // Playwright's own scroll stops the row there and waits out its
+        // click on the bar. One 20px wheel puts the pickbox at 649..663, its
+        // centre on itself, and clicking it makes the group; a reader scrolls
+        // the same 20px. That is a sticky foot's usual behaviour: it covers
+        // the last row in sight at the list's top and a notch of the wheel
+        // reaches it; at the list's end the bar is after the rows, never over
+        // them, so no row is out of reach.
+        const hit = async (l) => { await reach(page, l); await l.click(); };
 
         // pick two, one from each source, and group them as Office
         await v.locator(".lib-select").click();
-        await row("pdf").locator(".lib-pickbox").click();
-        await row("review").locator(".lib-pickbox").click();
+        await hit(row("pdf").locator(".lib-pickbox"));
+        await hit(row("review").locator(".lib-pickbox"));
         await v.locator(".lib-pickgroup").filter({ hasText: w.group }).click();
         await v.locator(".lib-pickbar .lib-pickn").filter({ hasText: w.ask }).waitFor();
         const name = v.locator(".lib-groupname");
@@ -119,7 +132,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await v.locator(".lib-pickbox").count(), 0, "still picking after the group was made");
 
         // renamed in place: its fold isn't touched by the click
-        await office.locator(".lib-grouprename").filter({ hasText: w.rename }).click();
+        await hit(office.locator(".lib-grouprename").filter({ hasText: w.rename }));
         const box = office.locator(".lib-grouprename-in");
         assert.equal(await box.inputValue(), "Office");
         await box.fill("Docs");
@@ -130,7 +143,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await docs.locator(".lib-skill").first().waitFor();
 
         // Ungroup lets it go, and its skills are back in their sources'
-        await docs.locator(".lib-ungroup").filter({ hasText: w.ungroup }).click();
+        await hit(docs.locator(".lib-ungroup").filter({ hasText: w.ungroup }));
         await page.locator("#status").filter({ hasText: w.gone }).waitFor();
         assert.deepEqual(posts.shift(), { ungroup: { name: "Docs", names: [] } });
         await page.waitForFunction(() => !document.querySelector('#view-library .lib-group[data-group^="my:"]'));
