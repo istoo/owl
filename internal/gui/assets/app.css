@@ -505,11 +505,11 @@ body.side-nav :is(#nav button[data-view], .side-gw):active:not(.on) { background
    control (sessions.css): as pills its eight agents no longer fit beside
    the search even at 1800px, and it fell back to its menu
    (sessions-toolbar.test.cjs) */
-body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents) { gap: 6px; padding: 0; background: none; }
-body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents) > .thumb { display: none; }
-body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents) .opt { height: 26px; padding: 0 12px; border-radius: 999px; background: var(--pill); }
-body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents) .opt:hover:not(.on) { background: color-mix(in srgb, var(--fg) 10%, transparent); }
-body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents) .opt.on { background: color-mix(in srgb, var(--fg) 16%, transparent); }
+body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents, .lib-tabs) { gap: 6px; padding: 0; background: none; }
+body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents, .lib-tabs) > .thumb { display: none; }
+body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents, .lib-tabs) .opt { height: 26px; padding: 0 12px; border-radius: 999px; background: var(--pill); }
+body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents, .lib-tabs) .opt:hover:not(.on) { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+body:is(.side-nav, .panel) .view .segs:not(.sortby, .sm-agents, .lib-tabs) .opt.on { background: color-mix(in srgb, var(--fg) 16%, transparent); }
 body.side-nav .warm-tabs { gap: 6px; margin-left: 0; }
 body.side-nav .warm-tabs button { height: 26px; padding: 0 12px; border-radius: 999px; background: var(--pill); }
 body.side-nav .warm-tabs button.on { background: color-mix(in srgb, var(--fg) 16%, transparent); }
@@ -522,34 +522,80 @@ body.side-nav .stats .kpi > :is(span, .kpi-pick) { order: -1; margin: 0 0 4px; f
 /* the pop-up's own 1px padding taken back, so its words sit as a plain label's */
 body.side-nav .stats .kpi > .kpi-pick { margin: -1px 0 3px -4px; }
 body.side-nav .stats .kpi b { font-size: 22px; font-weight: 650; }
-/* beside the sidebar a page whose head holds only its tools has them in the
-   title bar, to the right of where the reader is (app.js sets the room);
-   the head's own row goes, the empty band it left with it. The bar between
-   the tools still drags the window. A page moving in only fades: a moving
-   ancestor would carry the pinned tools off the bar while it moves */
+/* beside the rail a page's head is the page's own, never the title bar's:
+   its tabs a row of underlined words at the top of the page, its tools at
+   the row's right end, the row held at the top as the page scrolls. Pinned
+   into the 46px title bar, Settings' eight tabs ran to two rows over the
+   window's edge, and Library's and Plugins' over its title, as soon as the
+   window narrowed */
 body.side-nav .view { animation-name: fade-in; }
-body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head, #view-settings .set-head) {
-  position: fixed; z-index: 11; top: 0; left: var(--tools-l, 50%); right: var(--tools-r, 64px);
-  height: var(--top-h, 46px); min-height: 0; margin: 0; padding: 0;
-  display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 10px;
-  pointer-events: none; --wails-draggable: drag;
+body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head) {
+  position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: nowrap; align-items: stretch; gap: 12px;
+  height: 40px; min-height: 0; margin: 0 0 14px; padding: 0; background: var(--bg);
+  box-shadow: inset 0 -1px 0 var(--line-2);
 }
-body.side-nav.mac :is(#view-library .lib-head, #view-plugins .pm-head, #view-settings .set-head) { padding-top: calc(2px / var(--zoom, 1)); }
-body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head, #view-settings .set-head) > * { pointer-events: auto; --wails-draggable: no-drag; min-width: 0; }
 body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head)::before { display: none; }
+body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head) > :not(.lib-tabs, .grow) { align-self: center; flex: none; }
+body.side-nav #view-plugins .pm-head > .pm-find { flex: 0 1 240px; width: auto; min-width: 120px; order: 0; }
 body.side-nav :is(#view-library .lib-headacts) { flex-wrap: nowrap; }
-body.side-nav :is(#view-library .lib-head, #view-plugins .pm-head) > .lib-tabs { align-self: center; }
-/* a narrow window (#2625): the buttons keep their size and the fields
-   their least, so what doesn't fit shows as too wide (app.js tools), never
-   run left over the title. First the buttons give their words up for
-   their icons, the name kept as the button's and its tooltip; only then
-   is the title cut: its first parts go, then its last is cut at its end */
-body.side-nav :is(#view-library .lib-headacts, #view-plugins .pm-mirror) { flex: none; }
-body.side-nav #view-plugins .pm-find { min-width: 120px; }
+/* the tabs: words, the one picked in the page's ink over a line of it; a
+   row too long for the window scrolls in itself, it never wraps */
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs {
+  flex: 0 1 auto; flex-wrap: nowrap; align-self: stretch; height: auto; min-width: 0; gap: 22px; padding: 0; margin: 0; background: none; border-radius: 0;
+  box-shadow: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs::-webkit-scrollbar { display: none; }
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs > .thumb { display: none; }
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs .opt {
+  flex: none; display: flex; align-items: center; height: 100%; padding: 0; border-radius: 0; background: none; font-size: 13px; font-weight: 500;
+  color: var(--muted); box-shadow: inset 0 -2px 0 transparent; transition: color .12s, box-shadow .12s;
+}
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs .opt:hover:not(.on) { background: none; color: var(--fg-2); }
+body.side-nav :is(.lib-head, .pm-head) > .lib-tabs .opt.on { background: none; color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
+/* a narrow window (#2625): the buttons give their words up for their
+   icons first, the name kept as the button's and its tooltip */
 body.side-nav.tools-tight :is(#view-library .lib-headacts button, #view-plugins .pm-mirror) > span:not(.lib-mini, .lib-switch) { display: none; }
 body.side-nav .crumb { max-width: var(--crumb-max, none); }
 body.side-nav .crumb > [hidden] { display: none; }
-body.side-nav :is(#view-library, #view-plugins, #view-settings) { padding-top: 8px; }
+body.side-nav :is(#view-library, #view-plugins, #view-settings) { padding-top: 0; }
+/* Settings beside the rail: its parts a list down the page's left, the
+   search over them, the part picked beside it at a reading width (a
+   control a row's whole width from its label was a long way to look). A
+   window too narrow for both has the parts as a row of words over the
+   page, as Library's tabs are, the search at its end */
+body.side-nav #view-settings > .set-head {
+  position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: nowrap; align-items: stretch; gap: 12px;
+  height: 40px; min-height: 0; margin: 0 0 14px; padding: 0; background: var(--bg); box-shadow: inset 0 -1px 0 var(--line-2);
+}
+body.side-nav #view-settings > .set-head::before { display: none; }
+body.side-nav #view-settings .set-tabs {
+  flex: 1 1 auto; align-self: stretch; min-width: 0; flex-wrap: nowrap; gap: 22px; margin: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+body.side-nav #view-settings .set-tabs::-webkit-scrollbar { display: none; }
+body.side-nav #view-settings .set-tabs button {
+  flex: none; display: flex; align-items: center; height: 100%; padding: 0; border-radius: 0; background: none; font-size: 13px; font-weight: 500;
+  color: var(--muted); box-shadow: inset 0 -2px 0 transparent;
+}
+body.side-nav #view-settings .set-tabs button:hover:not(.on) { background: none; color: var(--fg-2); }
+body.side-nav #view-settings .set-tabs button.on { background: none; color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
+body.side-nav #view-settings .set-q { flex: 0 1 220px; min-width: 120px; align-self: center; }
+@media (min-width: 900px) {
+  body.side-nav #view-settings:not([hidden]) {
+    display: grid; grid-template-columns: 180px minmax(0, 720px); column-gap: 32px; align-content: start; justify-content: start;
+  }
+  body.side-nav #view-settings > * { grid-column: 2; min-width: 0; }
+  body.side-nav #view-settings > .set-head {
+    grid-column: 1; grid-row: 1 / span 40; align-self: start; flex-direction: column; gap: 10px;
+    height: auto; margin: 0; padding: 2px 0 12px; box-shadow: none;
+  }
+  body.side-nav #view-settings .set-q { order: -1; flex: none; width: 100%; align-self: stretch; }
+  body.side-nav #view-settings .set-tabs { flex-direction: column; align-items: stretch; gap: 1px; overflow: visible; }
+  body.side-nav #view-settings .set-tabs button {
+    display: flex; align-items: center; height: 30px; padding: 0 10px; border-radius: 7px; text-align: left; box-shadow: none;
+  }
+  body.side-nav #view-settings .set-tabs button:hover:not(.on) { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  body.side-nav #view-settings .set-tabs button.on { background: color-mix(in srgb, var(--fg) 9%, transparent); box-shadow: none; }
+}
 /* the gateway, in the status bar: where it listens; a click opens its page */
 .side-gw { display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; padding: 0 8px; margin-left: -2px; border-radius: 6px; font-size: 11.5px; color: var(--muted); text-align: left; white-space: nowrap; }
 .side-gw:hover { background: var(--pill); color: var(--fg-2); }

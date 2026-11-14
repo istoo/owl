@@ -6,7 +6,7 @@
 // don't show through, and a tab there still opens its part. At the page's
 // top nothing moved. The Library's and the Plugins' tabs already stayed
 // (.lib-head); the Library's is checked the same way. With the sidebar the
-// tabs are in the title bar as before. Chromium and WebKit, a wide and a
+// tabs are held at the page's top under the title bar too. Chromium and WebKit, a wide and a
 // narrow window, every language; no backend, the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -193,21 +193,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.context().close();
     });
 
-    // with the sidebar the head is in the title bar, as before: fixed there,
-    // no strip of its own, at the window's top at the foot of About too
+    // with the sidebar the head is the page's own, under the title bar
+    // (owl's owner, 11-14: pinned in the title bar its tabs wrapped onto
+    // a second line): held at the page's top, at the foot of About too,
+    // the search box shown with it
     for (const lang of LANGS) await t.test(`sidebar, ${lang}`, async () => {
       const page = await open(lang, 1100, "side");
       assert.ok(await page.evaluate(() => document.body.classList.contains("side-nav")), "the sidebar is shown");
       await page.locator("#prefs").click();
       await page.locator("#about .row").first().waitFor();
       const s = await strip(page, "#view-settings .set-head");
-      assert.equal(s.position, "fixed");
-      assert.equal(s.content, "none", "no strip of its own in the title bar");
-      const y0 = await page.locator("#view-settings .set-head").evaluate((h) => h.getBoundingClientRect().top);
-      assert.equal(y0, 0, "in the title bar");
+      assert.equal(s.position, "sticky");
+      assert.equal(s.content, "none", "no strip of its own over the page");
+      const bar = await page.locator(".top").evaluate((e) => e.getBoundingClientRect().bottom);
+      const top = () => page.locator("#view-settings .set-head").evaluate((h) => Math.round(h.getBoundingClientRect().top));
+      const y0 = await top();
+      assert.ok(y0 >= bar - 0.5, `under the title bar: ${y0} < ${bar}`);
       await toFoot(page, "#view-settings");
-      assert.equal(await page.locator("#view-settings .set-head").evaluate((h) => h.getBoundingClientRect().top), 0, "still in the title bar");
-      assert.ok(await page.locator("#setQ").isVisible(), "the search box in the title bar");
+      assert.equal(await top(), y0, "still at the page's top");
+      assert.ok(await page.locator("#setQ").isVisible(), "the search box with the tabs");
       assert.deepEqual(page.errors, []);
       await page.context().close();
     });

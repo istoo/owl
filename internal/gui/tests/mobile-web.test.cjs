@@ -2,7 +2,8 @@
 // Phone navigation and content stay usable in both languages (#391). The
 // desktop screenshots match BASE_REF within a small rendering tolerance
 // (origin/main by default): the wide window only once BASE_REF has the rail
-// (the pages beside it are drawn anew), and but for the Agents page while
+// (the pages beside it are drawn anew) and their heads have a row of their
+// own, and but for the Agents page while
 // BASE_REF hasn't its 「接入」 rows yet. Until BASE_REF has the visibility manager, its new footer
 // alone is excluded; agent-bulk-visibility and agent-grip cover that footer's
 // layout and controls. Its height is rounded only for the pixel comparison,
@@ -341,6 +342,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           // redraws every page beside it on purpose: until BASE_REF has it,
           // only the header's layout, under SIDE_AT, is compared
           if (width >= 1024 && !baselineFile("index.html").includes('id="sideStatus"')) return tt.skip(`${base} has no rail yet`);
+          // beside the rail, Library's, Plugins' and Settings' heads moved out
+          // of the title bar into a row of their own (and Settings' parts down
+          // its left) on purpose: title-bar-tools covers them until BASE_REF
+          // has that row
+          if (width >= 1024 && !baselineFile("app.css").includes("body.side-nav #view-settings > .set-head {")) return tt.skip(`${base} has the heads in the title bar yet`);
           const current = await open(browser, lang, width, { touch: false, headless: !baselineHas("pagehead.js"), unsorted: !baselineHas("pmorder.js") });
           const original = await open(browser, lang, width, { touch: false, original: true });
           try {

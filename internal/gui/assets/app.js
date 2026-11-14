@@ -18655,7 +18655,9 @@ function tabKeys(tabs, sel) {
     const shown = [...tabs.querySelectorAll(sel + ":not([hidden])")];
     const i = shown.indexOf(document.activeElement);
     if (i < 0) return;
-    const j = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: shown.length - 1 }[e.key];
+    // a strip laid down the page (Settings beside the rail) steps with ↑ and ↓
+    const [back, on] = tabs.getAttribute("aria-orientation") === "vertical" ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"];
+    const j = { [back]: i - 1, [on]: i + 1, Home: 0, End: shown.length - 1 }[e.key];
     if (j === undefined) return;
     e.preventDefault();
     e.stopPropagation();
@@ -22979,8 +22981,8 @@ if (mode === "window") {
   // a page's head drawn again (a count, another language, a tab picked)
   // lays its tools in the title bar again
   const mo = new MutationObserver(() => { if (document.body.classList.contains("side-nav")) tools(); });
-  // beside the rail a page's tabs stay in the title bar while the page
-  // scrolls under them: another tab picked there opens at its top, as it
+  // beside the rail a page's tabs stay at its top while the page scrolls
+  // under them: another tab picked there opens at its top, as it
   // did from the sidebar's list (#1844), the tabs sharing the page's one
   // scroll. Read before the strip's own click marks the tab picked
   for (const v of ["usage", "library", "plugins", "settings"]) {
@@ -22991,9 +22993,9 @@ if (mode === "window") {
     }, true);
   }
   for (const v of ["usage", "library", "plugins", "settings"]) mo.observe($("#view-" + v), { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
-  // a page whose head is only its tools (Library, Plugins, Settings) has them
-  // in the title bar beside the sidebar (app.css): between where the reader
-  // is and the window's own buttons, so no row of its own stands empty
+  // a page whose head is only its tools (Library, Plugins, Settings) holds
+  // them in a row of its own at the top of the page beside the rail (app.css),
+  // never in the title bar, where its tabs wrapped onto a second line
   // measured on the next frame, not inside the observer's callback, which
   // would ask for a second layout of the same frame
   let toolsAt = 0;
@@ -23005,6 +23007,12 @@ if (mode === "window") {
       const st = document.documentElement.style, body = document.body;
       const set = (k, v) => { if (st.getPropertyValue(k) !== v) st.setProperty(k, v); };
       set("--top-h", top.offsetHeight + "px");
+      // Settings' tabs run down the page's left beside the rail when it is wide
+      const strip = $("#setTabs");
+      if (strip) {
+        const down = getComputedStyle(strip).flexDirection === "column" ? "vertical" : "horizontal";
+        if (strip.getAttribute("aria-orientation") !== down) strip.setAttribute("aria-orientation", down);
+      }
       set("--tools-r", Math.ceil(innerWidth - a.left + 8) + "px");
       // the room the title and the tools share (#2625): the title whole and
       // the tools with their words; else the tools as icons; else the title
@@ -23030,14 +23038,13 @@ if (mode === "window") {
         }
         return { over: left < h.left - 0.5, need: h.right - left };
       };
+      // the page's head has a row of its own under the title bar: its tools
+      // show as icons only when their words don't fit that row, and the
+      // title is cut only where it would run under the window's buttons
       body.classList.remove("tools-tight");
-      set("--crumb-max", "none");
-      set("--tools-l", Math.ceil(c.left + whole + 16) + "px");
-      if (!head || !over().over) return;
-      body.classList.add("tools-tight");
-      const o = over();
-      if (!o.over) return;
-      const max = Math.max(0, Math.floor(a.left - 8 - 16 - o.need - c.left));
+      if (head && over().over) body.classList.add("tools-tight");
+      const max = Math.max(0, Math.floor(a.left - 16 - c.left));
+      if (whole <= max) { set("--crumb-max", "none"); return; }
       // where the reader is keeps its last word: "Work / Library /" goes,
       // a part and its slash at a time, before "MCP servers" is cut
       let w = whole;
@@ -23046,7 +23053,6 @@ if (mode === "window") {
         w -= wide[i] + wide[i + 1];
       }
       set("--crumb-max", max + "px");
-      set("--tools-l", Math.ceil(c.left + max + 16) + "px");
     });
   };
   const ro = new ResizeObserver(tools);

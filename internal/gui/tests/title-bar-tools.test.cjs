@@ -1,12 +1,15 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // #2625 (linusxiong): beside the sidebar, a page whose head is only its
-// tools (Library, Plugins, Settings) has them in the title bar, after
-// where the reader is ("Work / Library / MCP servers"). In a narrow
-// window the tools ran on to the left, over the title: 「MCP 服务器」's
-// last character sat on 「发现」. Now nothing in the title bar lies over
-// anything else, the tools keep inside it, and the title shows whole
-// wherever the tools can make room for it by showing only their icons;
-// a tool shown as its icon keeps its name for the reader and a tooltip.
+// tools (Library, Plugins, Settings) had them in the title bar, after where
+// the reader is, and in a narrow window they ran over the title. Pinned
+// there they then wrapped: the tabs took two lines and pushed into the
+// title bar (owl's owner, 11-14: Settings', Plugins' and the Library's
+// heads "都有bug", "窗口的宽度变窄的时候会出现错位"). Now the head is a row
+// of its own under the title bar: the tabs on one line, the tools beside
+// them on the same line, none over a tab or another tool or past the
+// page's edge, and the title whole in the bar. A tool shown as its icon
+// keeps its name for the reader and a tooltip. Settings from 900px wide
+// lays its tabs down the page's left, and says so to a screen reader.
 // Every Library tab, Plugins' and Settings', the window from its least
 // width (560px) up, the sidebar picked, in all five languages, Chromium
 // and WebKit. No backend: the API is faked.
@@ -51,8 +54,9 @@ function serve(lang) {
   };
 }
 
-// what the title bar shows, once it has settled: the title's parts as
-// far as they show, each tool, and the window's own buttons
+// what the title bar and the page's head show, once they have settled: the
+// title's parts as far as they show, the head's tabs and tools, and the
+// window's own buttons
 function bar(head) {
   const box = (r) => ({ left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom) });
   const crumb = document.querySelector("#crumb"), c = crumb.getBoundingClientRect();
@@ -61,7 +65,10 @@ function bar(head) {
     return { text: e.textContent, shown: r.width > 0, right: Math.min(r.right, c.right), cut: r.right > c.right + 0.5 || e.scrollWidth > e.clientWidth + 0.5 };
   });
   const h = document.querySelector(head);
-  const tools = [...h.querySelectorAll("button, label, input")].filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden" && !e.closest("[hidden]") && !e.closest(".lib-tabs, .set-tabs"))
+  const shown = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden" && !e.closest("[hidden]");
+  const strip = h.querySelector(".lib-tabs, .set-tabs");
+  const tabs = strip ? [...strip.querySelectorAll(":scope > button")].filter(shown).map((e) => box(e.getBoundingClientRect())) : [];
+  const tools = [...h.querySelectorAll("button, label, input")].filter((e) => shown(e) && !e.closest(".lib-tabs, .set-tabs"))
     .filter((e) => !e.parentElement.closest("button, label"))
     .map((e) => {
       const label = [...e.querySelectorAll("span")].find((s) => s.textContent.trim() && !s.closest(".lib-mini"));
@@ -71,7 +78,11 @@ function bar(head) {
       };
     });
   const acts = document.querySelector(".top .actions").getBoundingClientRect();
-  return { parts, crumb: box(c), tools, acts: box(acts), side: document.querySelector("#side").getBoundingClientRect().right, view: innerWidth };
+  return {
+    parts, crumb: box(c), tools, tabs, strip: strip ? box(strip.getBoundingClientRect()) : null, orient: strip?.getAttribute("aria-orientation") || null,
+    head: box(h.getBoundingClientRect()), top: Math.round(document.querySelector(".top").getBoundingClientRect().bottom),
+    acts: box(acts), side: document.querySelector("#side").getBoundingClientRect().right, view: innerWidth,
+  };
 }
 
 const pages = [
@@ -82,7 +93,7 @@ const pages = [
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["zh", "zh-TW", "ja", "de", "en"]) {
-    test(`${engine} ${lang}: the title bar's tools never lie over where the reader is`, async (t) => {
+    test(`${engine} ${lang}: a page's head is a row of its own, its tabs on one line`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
       for (const width of [560, 650, 760, 900, 1024, 1280]) {
@@ -123,30 +134,35 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             b = now;
           }
           const at = `${width}px ${p.name}: ${JSON.stringify(b)}`;
+          // the head is the page's, under the title bar, and keeps inside it
+          assert(b.head.top >= b.top, `the page's head lies in the title bar at ${at}`);
+          assert(b.head.left >= b.side && b.head.right <= b.view, `the page's head runs out of the page at ${at}`);
           // Plugins' Built-in has no search and no mirrors to pick
-          assert(b.tools.length > 0 || p.name === "plugins builtin", `no tools in the bar at ${at}`);
-          const title = b.parts[b.parts.length - 1];
-          const shown = Math.max(...b.parts.map((x) => x.right));
+          assert(b.tools.length > 0 || p.name === "plugins builtin", `no tools in the head at ${at}`);
+          const down = p.name === "settings" && width >= 900;
+          if (b.tabs.length) {
+            // one line of tabs, or (Settings, wide) one column of them
+            if (down) assert(b.tabs.every((x) => x.left === b.tabs[0].left), `Settings' tabs are not one column at ${at}`);
+            else assert(b.tabs.every((x) => x.top === b.tabs[0].top), `the tabs wrap at ${at}`);
+          }
+          if (p.name === "settings") assert.equal(b.orient, down ? "vertical" : "horizontal", `Settings' tabs say the wrong way at ${at}`);
           for (const tool of b.tools) {
-            assert(tool.left >= shown + 8, `a tool lies over the title at ${at}`);
-            assert(tool.left >= b.side && tool.right <= b.acts.left, `a tool runs out of the bar at ${at}`);
+            assert(tool.left >= b.head.left - 0.5 && tool.right <= b.head.right + 0.5, `a tool runs out of the head at ${at}`);
+            if (!down) {
+              assert(tool.top >= b.head.top - 0.5 && tool.bottom <= b.head.bottom + 0.5, `a tool is off the head's line at ${at}`);
+              if (b.strip) assert(tool.left >= b.strip.right, `a tool lies over the tabs at ${at}`);
+            }
             assert(!tool.clipped, `a tool's label is cut at ${at}`);
             if (tool.label === false) assert(tool.aria && tool.title, `a tool shown as its icon has no name or tooltip at ${at}`);
           }
           for (let i = 1; i < b.tools.length; i++) {
-            const [x, y] = [b.tools[i - 1], b.tools[i]].sort((m, n) => m.left - n.left);
-            assert(x.right <= y.left, `two tools lie over each other at ${at}`);
+            const [x, y] = [b.tools[i - 1], b.tools[i]].sort((m, n) => m.left - n.left || m.top - n.top);
+            assert(x.right <= y.left || x.bottom <= y.top, `two tools lie over each other at ${at}`);
           }
+          // the title has the bar to itself: whole, and clear of the
+          // window's buttons
           assert(b.crumb.right <= b.acts.left, `the title runs under the window's buttons at ${at}`);
-          // the page the reader is on shows, if its start only; the parts
-          // before it go first
-          assert(title.shown && title.right - (b.crumb.left) > 0, `the page's name is gone at ${at}`);
-          const kept = b.parts.findIndex((x) => x.shown);
-          assert(b.parts.slice(kept).every((x) => x.shown), `the title lost a part in its middle at ${at}`);
-          if (title.cut) assert(b.parts.slice(0, -1).every((x) => !x.shown), `the page's name is cut while parts before it show at ${at}`);
-          // where the tools have their icons alone, nothing more of them
-          // can give way: the title shows whole wherever it fits beside them
-          if (width >= 650) assert(!title.cut, `the title is cut at ${at}`);
+          assert(b.parts.every((x) => x.shown && !x.cut), `the title is cut at ${at}`);
         }
         assert.deepEqual(errors, []);
         await context.close();
