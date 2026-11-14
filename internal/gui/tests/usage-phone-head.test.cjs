@@ -175,8 +175,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const h = await page.evaluate(HEAD);
     assert.ok(h.period, "the strip shows");
     assert.equal(h.menu, null, "no menu in its place");
-    // a desktop's pill (app.css, the rail's pages: 26px), not a phone's
-    // tab taken at 44
-    assert.ok(h.opts.every((o) => o.h <= 26), "the tabs' size is a desktop's");
+    // the page's tabs are the underlined words every page's are beside the
+    // rail (app.css: a 40px head), not a phone's tab taken at 44; the days
+    // keep a desktop window's pill strip (26px)
+    assert.ok(h.opts.every((o) => o.h <= 40 && o.h < 44), `the tabs' size is a desktop's: ${JSON.stringify(h.opts)}`);
+    assert.ok(h.period.h <= 26, `the days keep the desktop pill strip: ${h.period.h}`);
   });
 }

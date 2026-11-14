@@ -23103,7 +23103,10 @@ setInterval(async () => {
 // periods with Custom named and the refresh need, the sum was the one
 // thing left to give way, and read ≈$0. for ≈$0.001. Tight, Custom is its
 // icon and the sum may go to a line of its own, whole, in every language.
-// Decided on the next frame, as the class changes the head's height.
+// A tab that would be cut instead is the same: beside the rail the tabs
+// are words, and one hidden behind the strip's own sideways scroll is
+// worse than the tighter head. Decided on the next frame, as the class
+// changes the head's height.
 {
   const head = $("#usageCost").parentElement;
   let frame = 0;
@@ -23111,11 +23114,12 @@ setInterval(async () => {
     frame = 0;
     if (!head.offsetWidth) return;
     head.classList.remove("tight");
-    const cost = $("#usageCost"), sum = cost.querySelector("b"), unpriced = cost.querySelector("span.unpriced");
+    const cost = $("#usageCost"), sum = cost.querySelector("b"), unpriced = cost.querySelector("span.unpriced"), tabs = $("#usageTab");
     // and wherever how many it couldn't price would be cut, the sum or not
     // beside it (#1856): that count stays whole as the sum does
     head.classList.toggle("tight", !!sum && sum.getBoundingClientRect().right > cost.getBoundingClientRect().right + 0.5 ||
-      !!unpriced && (unpriced.scrollWidth > unpriced.clientWidth + 1 || !unpriced.clientWidth));
+      !!unpriced && (unpriced.scrollWidth > unpriced.clientWidth + 1 || !unpriced.clientWidth) ||
+      !!tabs && tabs.offsetWidth > 0 && tabs.scrollWidth > tabs.clientWidth + 1);
   };
   const later = () => { if (!frame) frame = requestAnimationFrame(fit); };
   // the sum's own box too: it can shrink with the head's width the same,

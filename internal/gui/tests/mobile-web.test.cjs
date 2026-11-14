@@ -352,6 +352,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           try {
             for (const view of views) {
               if (view === "agents" && !baselineFile("app.js").includes("function connectPanel")) continue;
+              // Beside the rail Usage's tabs are the page's underlined words
+              // now (usage-tabs-side.test.cjs), not the pills BASE_REF has:
+              // until BASE_REF has the head, Usage is left out of the wide
+              // window's comparison, as the rail's own pages already are.
+              // The header's layout under SIDE_AT keeps its own comparison.
+              if (width >= 1024 && view === "usage" && !baselineFile("app.css").includes("body.side-nav .usage-head > #usageTab .opt.on")) continue;
               await go(current, view); await go(original, view);
               await current.mouse.move(0, 0); await original.mouse.move(0, 0);
               // Removing hover can repaint the tab's shadow in a later frame.
