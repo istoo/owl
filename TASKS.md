@@ -468,7 +468,13 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       运行时策略评估后不采纳：512MiB 软上限与不设无差异（构造上 2×live > GC 目标 1.5×live，从不触发）；96MiB 稳态 -16% 但 GC CPU 11%→19%，
       64MiB 低于 live 时请求数 -30%。网关已有 30 秒空闲 FreeOSMemory（idle_memory.go）。降内存靠 live 与 Go 外占用。
 - [x] B 图形 155MB：Dock 翻动每帧新建 NSImage 被 NSDockTile 永久保留（34MB，每次点击 +29MB）→ 复用一张图，首次 +6.6MB、之后每次 +0.3MB；窗口后备 116MB 为可回收合成缓存（观测到 dirty→reclaimable），不动；托盘无泄漏。待真机目视 Dock 动画。
-- [ ] C 分配速率（agent alloc-rate）：redact.MaskJSON 1.84GB/h、gateway.withFields 1.01GB/h，每请求副本数与字节。
+- [x] C 分配速率（7ac1238bb、51f8865f8）：redact 的 walk 把转义值解到一块池化缓冲、memo 键不再切字符串；
+      gateway.withFields 只经 fastjson 读顶层、按值追加，不再整包解码。分配上限测试在旧代码上红；别名问题单独审查
+      （涂改池缓冲、并发 8×20 轮 -race、改写入参正文均不变），未发现。脱敏、掩码、脱敏 -race、网关完整测试通过。
 - [x] D 脱敏缓存写盘（0503957cb）：单次编码 170018 次分配/4.87MB → 1 次/1.99MB，2.27ms → 0.46ms；写盘最多每 30 秒一次（原约 9 秒）。旧代码上分配测试红。
-- [ ] E 存活大头预算：maskrec 正文 29MB（上限 32MB）、pii 模型 36MB（空闲卸载）、ccUUIDSet 15、tune 14.5、captureRequestBody 12 —— 各自有界，按 A 的账再定是否收紧。
+- [x] E 存活大头（按 0.2.22 的账本核对，结论：不收紧）：新进程 live 144MB，最大三项是 pii 模型 43MB
+      （guard 权重在 owl 堆里，空闲 10 分钟由 idleAfter 释放）、ccUUIDMemo 12.2MB（只留在本轮扫描用到的文件上，
+      每次扫描末尾淘汰未用者）、会话与用量账本结构约 25MB（随轮询重建，有界）。maskrec 正文 0 持有、
+      捕获正文 0.2MB，实测没有常驻。附带发现：启动后 2 分钟首次校验自动备份，整读 14×28MB=395MB（一次性 IO，
+      解析完即释放，不常驻；若日后要削，做法是把哈希校验推迟到恢复时）。
 - [ ] 验收：每单元证据核对 → 合并 → 发版 → 本机同一工作量下 footprint 前后对比。
