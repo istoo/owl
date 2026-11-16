@@ -112,11 +112,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const draw = page.locator("#imagesList .row").nth(1);
           const button = draw.locator("button.rt-cond");
           assert.equal((await button.textContent()).trim(), "GPT Image · Codex");
-          const line = draw.locator(".image-gen-vendor");
           // the line explains the list: it rests out of sight, shown whole in the
-          // row's hover card (settings-hints.test.cjs)
-          assert.equal(await line.evaluate((e) => e.isConnected && getComputedStyle(e).getPropertyValue("--hint").trim()), "1", "the explanation shows at rest");
-          assert.match((await line.textContent()).trim(), want[lang].vendor);
+          // row's hover card (settings-hints.test.cjs). Found and read in one
+          // call: the list is drawn again while Settings settles (a loaded
+          // machine's second read of the settings), and a locator's evaluate
+          // resolves its element in one call and reads it in the next, so a
+          // redraw in between read the copy left out of the page (#2658).
+          const rest = await page.evaluate(() => {
+            const line = document.querySelectorAll("#imagesList .row")[1]?.querySelector(".image-gen-vendor");
+            return line && { hint: getComputedStyle(line).getPropertyValue("--hint").trim(), text: line.textContent.trim() };
+          });
+          assert.ok(rest, "the explanation is in the row");
+          assert.equal(rest.hint, "1", "the explanation shows at rest");
+          assert.match(rest.text, want[lang].vendor);
           assert.equal(await draw.locator(".image-gen-missing").count(), 0);
           const fit = await page.evaluate(() => {
             return { scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
