@@ -1,3 +1,17 @@
+# Running the suite on a shared machine
+
+Run more than a handful of files through `scripts/gui-suite.sh` (from the
+repository root; `NODE_PATH` must reach playwright). It is the one way a
+full or half run starts: one suite per machine (a lock in `$TMPDIR`; a second
+run waits, or with `GUI_SUITE_NOWAIT=1` exits 75), only once the 1-minute
+load is under the core count (`GUI_SUITE_MAX_LOAD`), at low priority (nice 10,
+and macOS's utility QoS), at `--test-concurrency` 4 (`GUI_SUITE_CONCURRENCY`),
+with the log kept whole in a file of its own and its `ℹ` lines and reds
+printed at the end. `GUI_SUITE_HALF=1` or `2` runs the first or second half of
+the sorted list. A bare `node --test --test-concurrency=6 *.test.cjs` at normal
+priority, beside another project's tests, made the owner's machine stall
+(11-16).
+
 # Dropdown browser regression
 
 `modal-backdrop.test.cjs` checks the modal's computed backdrop filter using
