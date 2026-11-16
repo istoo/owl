@@ -11,10 +11,16 @@
 #   - one suite per machine: a lock in $TMPDIR, held by a live pid; another
 #     run waits for it (or, with GUI_SUITE_NOWAIT=1, gives up at once)
 #   - started only once the machine has room: the 1-minute load under the
-#     core count (GUI_SUITE_MAX_LOAD to change it), checked every 30s
+#     core count and under 20 (GUI_SUITE_MAX_LOAD) for three looks in a
+#     row, 30s apart (GUI_SUITE_CALM)
 #   - run at low priority (nice 10, and on macOS the utility QoS clamp), so
 #     the user's own apps come first and the window never stalls
-#   - --test-concurrency defaults to 4 (GUI_SUITE_CONCURRENCY)
+#   - --test-concurrency defaults to min(2, cores/4) (GUI_SUITE_CONCURRENCY)
+#   - Node 26's runner passes --heap-prof-interval to each file's process
+#     as a default; no --heap-prof is on and no profile is written
+# debt: the load is looked at before the run only; a run that starts in
+# room and is then crowded goes on (pausing node --test mid-run would leave
+# browsers half-way through a file)
 #   - the log is kept whole in a file of its own (LESSONS: a suite's log is
 #     kept whole until its reds are named), its summary printed at the end
 #
@@ -39,8 +45,11 @@ if [ $# -gt 0 ]; then files=("$@"); else
 fi
 
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
-max_load=${GUI_SUITE_MAX_LOAD:-$cores}
-conc=${GUI_SUITE_CONCURRENCY:-4}
+# room is the core count, never over 20; concurrency min(2, cores/4): each
+# file is a browser of its own, and a machine others share wants room
+# (ai-34, the Neox session on this machine, 11-16: load 74 on 18 cores)
+max_load=${GUI_SUITE_MAX_LOAD:-$(( cores < 20 ? cores : 20 ))}
+q=$(( cores / 4 )); conc=${GUI_SUITE_CONCURRENCY:-$(( q < 1 ? 1 : (q > 2 ? 2 : q) ))}
 lock="${TMPDIR:-/tmp}/owl-gui-suite.lock"
 log=${GUI_SUITE_LOG:-"${TMPDIR:-/tmp}/owl-gui-suite-$(date +%Y%m%d-%H%M%S)-$$.log"}
 
@@ -59,10 +68,15 @@ done
 echo $$ > "$lock/pid"
 trap 'rm -rf "$lock"' EXIT INT TERM
 
-# room first: what the user is doing comes before the suite
-while awk -v l="$(load1)" -v m="$max_load" 'BEGIN { exit !(l >= m) }'; do
-  echo "gui-suite: load $(load1) on $cores cores is at or over $max_load; waiting" >&2
-  sleep 30
+# room first: what the user is doing comes before the suite. Three looks
+# in a row under the bar, 30s apart: one look at a dip started a run at
+# 16.6 that the load then took to 72 (11-16)
+calm=0
+while [ "$calm" -lt "${GUI_SUITE_CALM:-3}" ]; do
+  if awk -v l="$(load1)" -v m="$max_load" 'BEGIN { exit !(l < m) }'; then calm=$((calm + 1)); else
+    calm=0; echo "gui-suite: load $(load1) on $cores cores is at or over $max_load; waiting" >&2
+  fi
+  [ "$calm" -lt "${GUI_SUITE_CALM:-3}" ] && sleep 30
 done
 
 low=(nice -n 10)

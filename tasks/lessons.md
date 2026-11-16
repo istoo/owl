@@ -124,3 +124,4 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 规则：GUI 全量或半量（超过几个文件）一律用 `scripts/gui-suite.sh` 跑，不再直接 `node --test --test-concurrency=6`。脚本保证一台机器同时一套（锁）、1 分钟负载低于核数才开跑、nice 10 + macOS utility QoS、并发 4、日志独立完整。子 agent 的简报里写明这条。
 - 原因：一套全量是 1199 个文件、每个文件自起 Chromium/WebKit，并发 6 时占 3–5 核、4–5GB，一跑 1–2 小时；我以普通优先级、不看负载地开跑，叠在另一个项目 vitest 已把负载顶到 40（18 核）之上，还出现过两个会话/agent 同时各跑一套。LESSONS「One full suite runs on a machine at a time」早说过「需要一个所有套件都经过的锁」，但仓库里一直没有。
 - 怎么验证：负载门槛设 0.5 时脚本只等待不开跑；第一套运行时第二套 `GUI_SUITE_NOWAIT=1` 退出 75；运行中 node 与 playwright 浏览器进程 nice=15；结束（含被信号杀掉）锁释放。
+- 补充（同日，同机 Neox 会话 ai-34 协调）：并发默认改为 min(2, 核数/4)，负载门槛 min(核数, 20) 且要连续 3 次（间隔 30 秒）低于门槛才开跑——只看一眼时，在负载瞬间降到 16.6 的时刻开跑，随后被叠到 72。`--heap-prof-interval` 是 Node 26 测试运行器转发的默认参数，没有开启堆分析、也不写分析文件，不是开销来源。结束后 `pgrep -f ms-playwright` 应为 0。
