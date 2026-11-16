@@ -39,32 +39,40 @@ type Call struct {
 	Compact int64
 }
 
+// FromCall makes tune's call of one agent call read from its file, false
+// for one that failed or carried no prompt.
+func FromCall(c sessions.Call) (Call, bool) {
+	p := c.Input + c.CacheRead + c.CacheWrite
+	if c.Error != "" || p <= 0 {
+		return Call{}, false
+	}
+	m, long := c.Requested, false
+	if m == "" {
+		m = c.Model
+	}
+	if strings.HasSuffix(strings.ToLower(m), "[1m]") {
+		m, long = m[:len(m)-4], true
+	}
+	stream := c.File
+	if stream == "" {
+		stream = c.Agent + "/" + c.Session
+	}
+	return Call{
+		Time: c.Time, Stream: stream, Model: strings.ToLower(m), Long: long,
+		Sub:    strings.Contains(filepath.ToSlash(c.File), "/subagents/"),
+		Prompt: p, Out: c.Output, Wrote: c.CacheWrite, Wrote1: c.CacheWrite1h,
+		Compact: c.Compact,
+	}, true
+}
+
 // FromCalls makes tune's calls of an agent's calls read from its files,
 // leaving out those that failed or carried no prompt.
 func FromCalls(cs []sessions.Call) []Call {
 	out := make([]Call, 0, len(cs))
 	for _, c := range cs {
-		p := c.Input + c.CacheRead + c.CacheWrite
-		if c.Error != "" || p <= 0 {
-			continue
+		if tc, ok := FromCall(c); ok {
+			out = append(out, tc)
 		}
-		m, long := c.Requested, false
-		if m == "" {
-			m = c.Model
-		}
-		if strings.HasSuffix(strings.ToLower(m), "[1m]") {
-			m, long = m[:len(m)-4], true
-		}
-		stream := c.File
-		if stream == "" {
-			stream = c.Agent + "/" + c.Session
-		}
-		out = append(out, Call{
-			Time: c.Time, Stream: stream, Model: strings.ToLower(m), Long: long,
-			Sub:    strings.Contains(filepath.ToSlash(c.File), "/subagents/"),
-			Prompt: p, Out: c.Output, Wrote: c.CacheWrite, Wrote1: c.CacheWrite1h,
-			Compact: c.Compact,
-		})
 	}
 	return out
 }

@@ -8,6 +8,7 @@ package gui
 import (
 	"encoding/json"
 	"hash/fnv"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -319,21 +320,167 @@ func tuneRoutes(mux *http.ServeMux) {
 // were ~500 MB at once, a second of CPU each time): a small server went
 // down with the tab open (Yayoi_no_yume on X). Now a file is read again
 // only when it changed, one at a time, and what is kept of a call is
-// tune's ~100 bytes.
+// tuneCall's 32 bytes and its message's hash, some 40.
+//
+// debt: a refresh still expands every kept call into tune.Call (112 bytes,
+// a few MB at 300k) to advise over. That is a transient spike, not
+// residency; replaying the compact form would remove it.
 var tuneKept = struct {
 	sync.Mutex
 	files map[string]tuneFile
 }{files: map[string]tuneFile{}}
 
+// tuneZeroAt is tuneCall.at for a call whose Time is the zero time: unix
+// nanoseconds can't hold it, and a real call's time never comes near.
+const tuneZeroAt = math.MinInt64
+
+// tuneCall is a tune.Call kept compactly. What every call of a file shares,
+// its Stream and whether it is a subagent's, is kept once in tuneFile; its
+// Model is an index into that file's few names. The numbers are int32: a
+// call's prompt and the cache it wrote are at most the model's whole window
+// (Claude's [1m] 1,000,000 tokens, Codex's 272,000), its output what one
+// reply carries, and a compaction hours, while int32 holds 2.1 billion. A
+// file has a handful of models, far under uint16's 65,536. A call outside
+// these ranges is kept whole in tuneFile.wide instead of being truncated.
+// A compaction's ms is held only for the calls that had one, in comp.
+type tuneCall struct {
+	// at is the instant in unix nanoseconds (tuneZeroAt for the zero Time);
+	// it comes back in UTC, which every reader's Before, Sub and Compare
+	// take as the same instant
+	at     int64
+	prompt int32
+	out    int32
+	wrote  int32
+	wrote1 int32
+	msg    uint32 // index in tuneFile.msgs of the call's own message
+	model  uint16 // index in tuneFile.models
+	long   bool
+}
+
 type tuneFile struct {
-	size  int64
-	mod   time.Time
-	agent string
-	calls []tune.Call
-	// msgs: each of its calls' message, hashed, the failed ones too; at
-	// is where calls[i]'s own is
+	size   int64
+	mod    time.Time
+	agent  string
+	calls  []tuneCall
+	models []string
+	// stream and sub are what the compact calls share; a call that said
+	// otherwise is in wide
+	stream string
+	sub    bool
+	// msgs: each of its calls' message, hashed, the failed ones too
 	msgs []uint64
-	at   []int
+	// comp is the ms a compaction kept the agent waiting, for the calls
+	// that had one; keyed like wide
+	comp map[uint32]int32
+	// wide keeps the calls the compact form can't hold: a number past
+	// int32, a time unix nanoseconds can't hold, or a stream or sub that
+	// differs from the file's. Its key is the call's index in calls.
+	wide map[uint32]tune.Call
+}
+
+// compactTuneCall is c as a tuneCall, and its compaction's ms; broke when a
+// value doesn't fit, and then the caller keeps c whole.
+func compactTuneCall(c tune.Call) (k tuneCall, comp int32, broke bool) {
+	if c.Time.IsZero() {
+		k.at = tuneZeroAt
+	} else if ns := c.Time.UnixNano(); time.Unix(0, ns).UTC().Equal(c.Time) {
+		k.at = ns
+	} else {
+		return k, 0, true
+	}
+	if int64(c.Prompt) != int64(int32(c.Prompt)) || int64(c.Out) != int64(int32(c.Out)) ||
+		int64(c.Wrote) != int64(int32(c.Wrote)) || int64(c.Wrote1) != int64(int32(c.Wrote1)) ||
+		c.Compact != int64(int32(c.Compact)) {
+		return k, 0, true
+	}
+	k.prompt, k.out, k.wrote, k.wrote1 = int32(c.Prompt), int32(c.Out), int32(c.Wrote), int32(c.Wrote1)
+	k.long = c.Long
+	return k, int32(c.Compact), false
+}
+
+// call is calls[i] made tune's again.
+func (f *tuneFile) call(i int) tune.Call {
+	if c, ok := f.wide[uint32(i)]; ok {
+		return c
+	}
+	k := f.calls[i]
+	c := tune.Call{
+		Stream: f.stream, Sub: f.sub, Long: k.long,
+		Prompt: int(k.prompt), Out: int(k.out), Wrote: int(k.wrote), Wrote1: int(k.wrote1),
+		Compact: int64(f.comp[uint32(i)]),
+	}
+	if k.at != tuneZeroAt {
+		c.Time = time.Unix(0, k.at).UTC()
+	}
+	if int(k.model) < len(f.models) {
+		c.Model = f.models[k.model]
+	}
+	return c
+}
+
+// tuneFileOf makes a file's kept calls of what its source read. A call the
+// compact form can't hold, the first that names another stream, goes in
+// wide, so what call gives back is what FromCall made of it.
+func tuneFileOf(agent string, cs []sessions.Call) tuneFile {
+	f := tuneFile{agent: agent}
+	f.msgs = make([]uint64, len(cs))
+	calls := make([]tuneCall, 0, len(cs))
+	models := map[string]uint16{}
+	haveStream := false
+	for i, c := range cs {
+		f.msgs[i] = msgHash(c.Msg)
+		tc, ok := tune.FromCall(c)
+		if !ok {
+			continue
+		}
+		if !haveStream {
+			f.stream, f.sub, haveStream = tc.Stream, tc.Sub, true
+		}
+		k, comp, broke := compactTuneCall(tc)
+		if tc.Stream != f.stream || tc.Sub != f.sub {
+			broke = true
+		}
+		var idx uint16
+		if !broke {
+			var seen bool
+			if idx, seen = models[tc.Model]; !seen {
+				if len(f.models) > math.MaxUint16 {
+					broke = true
+				} else {
+					idx = uint16(len(f.models))
+					models[tc.Model] = idx
+					// the file's own names outlive the read: don't hold a
+					// line's buffer through one
+					f.models = append(f.models, strings.Clone(tc.Model))
+				}
+			}
+		}
+		k.msg = uint32(i)
+		if broke {
+			if f.wide == nil {
+				f.wide = map[uint32]tune.Call{}
+			}
+			f.wide[uint32(len(calls))] = tc
+		} else {
+			k.model = idx
+			if comp != 0 {
+				if f.comp == nil {
+					f.comp = map[uint32]int32{}
+				}
+				f.comp[uint32(len(calls))] = comp
+			}
+		}
+		calls = append(calls, k)
+	}
+	if cap(calls) != len(calls) {
+		// calls that failed or carried no prompt leave the reservation
+		// high; keep the exact length the ways ask over
+		exact := make([]tuneCall, len(calls))
+		copy(exact, calls)
+		calls = exact
+	}
+	f.calls = calls
+	return f
 }
 
 // tuneAnswer is the advice last given. Working it out goes over every
@@ -404,16 +551,8 @@ func tuneCallsSince(since time.Time) map[string][]tune.Call {
 		if tuneRead != nil {
 			tuneRead(s.Path)
 		}
-		f := tuneFile{size: s.Size, mod: s.Modified, agent: s.Agent}
-		cs := sessions.ReadCallSource(s)
-		f.msgs = make([]uint64, len(cs))
-		for i, c := range cs {
-			f.msgs[i] = msgHash(c.Msg)
-			if tc := tune.FromCalls(cs[i : i+1]); len(tc) == 1 {
-				f.calls = append(f.calls, tc[0])
-				f.at = append(f.at, i)
-			}
-		}
+		f := tuneFileOf(s.Agent, sessions.ReadCallSource(s))
+		f.size, f.mod = s.Size, s.Modified
 		tuneKept.files[s.Path] = f
 	}
 	for p := range tuneKept.files {
@@ -425,8 +564,12 @@ func tuneCallsSince(since time.Time) map[string][]tune.Call {
 	seen := map[uint64]bool{}
 	for _, s := range srcs {
 		f := tuneKept.files[s.Path]
-		for i, c := range f.calls {
-			if m := f.msgs[f.at[i]]; m != 0 && seen[m] || c.Time.Before(since) {
+		for i := range f.calls {
+			if m := f.msgs[f.calls[i].msg]; m != 0 && seen[m] {
+				continue
+			}
+			c := f.call(i)
+			if c.Time.Before(since) {
 				continue
 			}
 			by[f.agent] = append(by[f.agent], c)
