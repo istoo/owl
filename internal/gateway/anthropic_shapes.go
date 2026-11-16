@@ -209,13 +209,17 @@ func withoutTurnEffort(body []byte) []byte {
 	var v struct {
 		Messages []json.RawMessage `json:"messages"`
 	}
-	if json.Unmarshal(body, &v) != nil {
+	// the messages as the body's own bytes: json.Unmarshal copies each of
+	// them, and the array was copied again as the field was written, twice
+	// a request's conversation on every turn of a provider that refused
+	// per-turn effort
+	if decodeJSONView(body, &v) != nil {
 		return body
 	}
 	out := make([]json.RawMessage, 0, len(v.Messages))
 	for _, raw := range v.Messages {
 		var m map[string]json.RawMessage
-		if json.Unmarshal(raw, &m) != nil {
+		if decodeJSONView(raw, &m) != nil {
 			out = append(out, raw)
 			continue
 		}

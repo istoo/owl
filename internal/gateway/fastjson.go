@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode"
@@ -1449,6 +1450,162 @@ func marshalRaw(v any, escapeHTML bool) (_ []byte, ok bool) {
 	}
 	return nil, false
 }
+
+// appendCanonicalJSON appends what encoding/json's encoder writes of raw,
+// a valid JSON value decoded into any and written with SetEscapeHTML
+// false: compact, an object's keys sorted, every string re-escaped as
+// encoding/json escapes it. It is what a request's body came back as when
+// withFields decoded the whole of it (#3383); here the value is read as
+// its own bytes, and one already written that way is copied whole.
+func appendCanonicalJSON(dst, raw []byte) []byte {
+	raw = trimJSON(raw)
+	switch raw[0] {
+	case '{':
+		type member struct {
+			key string
+			val []byte
+		}
+		ms := make([]member, 0, 8)
+		eachMember(raw, func(key, val []byte) bool {
+			k, ok := unquoteJSON(key)
+			if !ok {
+				k = string(key) // valid JSON: not reached
+			}
+			// a key twice: the last one, as decoding into a map kept it
+			for i := range ms {
+				if ms[i].key == k {
+					ms[i].val = val
+					return true
+				}
+			}
+			ms = append(ms, member{k, val})
+			return true
+		})
+		slices.SortFunc(ms, func(a, b member) int { return strings.Compare(a.key, b.key) })
+		dst = append(dst, '{')
+		for i, m := range ms {
+			if i > 0 {
+				dst = append(dst, ',')
+			}
+			dst, _ = appendJSONKey(dst, m.key, false)
+			dst = append(dst, ':')
+			dst = appendCanonicalJSON(dst, m.val)
+		}
+		return append(dst, '}')
+	case '[':
+		dst = append(dst, '[')
+		i := 0
+		eachElement(raw, func(el []byte) bool {
+			if i > 0 {
+				dst = append(dst, ',')
+			}
+			dst = appendCanonicalJSON(dst, el)
+			i++
+			return true
+		})
+		return append(dst, ']')
+	case '"':
+		return appendCanonicalString(dst, raw)
+	default:
+		return append(dst, raw...)
+	}
+}
+
+// appendCanonicalString appends the string literal raw as encoding/json
+// writes its value with SetEscapeHTML false: whole where it is already
+// written that way, else decoded and written again.
+func appendCanonicalString(dst, raw []byte) []byte {
+	if jsonStringIsCanonical(raw) {
+		return append(dst, raw...)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return append(dst, "null"...) // valid JSON: not reached
+	}
+	dst, _ = appendJSONKey(dst, s, false)
+	return dst
+}
+
+// jsonStringIsCanonical says q, a valid JSON string literal, is already
+// what encoding/json's encoder writes of its value with SetEscapeHTML
+// false: no escape the encoder writes another way (a backslash-u escape
+// for a printable character, a backslash before / or b), no lone or
+// invalid UTF-8 byte (it writes the replacement character), and U+2028
+// and U+2029 raw (it escapes them as backslash-u 2028 and 2029).
+func jsonStringIsCanonical(q []byte) bool {
+	end := len(q) - 1
+	for i := 1; i < end; {
+		c := q[i]
+		switch {
+		case c == '\\':
+			if i+1 >= end {
+				return false
+			}
+			switch q[i+1] {
+			case '"', '\\', 'n', 'r', 't':
+				i += 2
+			case 'u':
+				if i+6 > end {
+					return false
+				}
+				r := jsonHex4(q[i+2 : i+6])
+				switch {
+				case r < 0:
+					return false
+				case r == '\n' || r == '\r' || r == '\t':
+					return false // the encoder writes \n, \r, \t
+				case r == 0x2028 || r == 0x2029:
+					// the encoder writes its hex in lower case, and
+					// 2028's and 2029's digits have no case
+				case r < 0x20:
+					if q[i+2] != '0' || q[i+3] != '0' || !lowerJSONHex(q[i+4]) || !lowerJSONHex(q[i+5]) {
+						return false
+					}
+				default:
+					return false // the encoder writes the character itself
+				}
+				i += 6
+			default:
+				return false // \/, \b, \f and anything else
+			}
+		case c < 0x20:
+			return false
+		case c < utf8.RuneSelf:
+			i++
+		default:
+			r, size := utf8.DecodeRune(q[i:end])
+			if r == utf8.RuneError && size == 1 || r == 0x2028 || r == 0x2029 {
+				return false
+			}
+			i += size
+		}
+	}
+	return true
+}
+
+// jsonHex4 is the value of the four hex digits at s, or -1.
+func jsonHex4(s []byte) int {
+	if len(s) < 4 {
+		return -1
+	}
+	n := 0
+	for _, c := range s[:4] {
+		switch {
+		case c >= '0' && c <= '9':
+			c -= '0'
+		case c >= 'a' && c <= 'f':
+			c = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			c = c - 'A' + 10
+		default:
+			return -1
+		}
+		n = n*16 + int(c)
+	}
+	return n
+}
+
+func lowerJSONHex(c byte) bool { return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' }
 
 // appendJSONKey is key quoted as encoding/json quotes a string: as it is
 // when it is printable ASCII with nothing in it to escape, and otherwise

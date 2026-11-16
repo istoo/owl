@@ -9271,11 +9271,68 @@ func withoutReasoningOff(body []byte) ([]byte, bool) {
 }
 
 // withFields sets top-level fields, keeping every other field as it was.
+// It writes what json.Encoder wrote of the whole body before it (compact,
+// its keys sorted, every value re-encoded), but reads only the top level:
+// the body wasn't decoded into maps and slices, and every string in it
+// decoded and encoded again, on each of a request's rewrites (#3383).
 func withFields(body []byte, fields map[string]any) []byte {
+	changed := make(map[string][]byte, len(fields))
+	for k, v := range fields {
+		b, err := marshalPlain(v)
+		if err != nil {
+			return withFieldsSlow(body, fields)
+		}
+		changed[k] = b
+	}
+	var raw map[string]json.RawMessage
+	if err := decodeJSONView(body, &raw); err != nil || raw == nil {
+		return withFieldsSlow(body, fields)
+	}
+	return withFieldsRaw(body, raw, changed)
+}
+
+// withFieldsRaw is withFields with the body's top level read and the new
+// values written, as withFieldsSlow writes them.
+func withFieldsRaw(body []byte, raw map[string]json.RawMessage, changed map[string][]byte) []byte {
+	keys := make([]string, 0, len(raw)+len(changed))
+	for k := range raw {
+		if _, ok := changed[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	for k := range changed {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	n := len(body) + 64
+	for _, b := range changed {
+		n += len(b)
+	}
+	dst := make([]byte, 0, n)
+	dst = append(dst, '{')
+	for i, k := range keys {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		dst, _ = appendJSONKey(dst, k, false)
+		dst = append(dst, ':')
+		if b, ok := changed[k]; ok {
+			dst = append(dst, b...)
+			continue
+		}
+		dst = appendCanonicalJSON(dst, raw[k])
+	}
+	return append(dst, '}')
+}
+
+// withFieldsSlow is what withFields did before it read only the top
+// level: the whole body decoded into a map and encoded again. It answers
+// for a body the fast path can't take, and for one of the same bytes.
+func withFieldsSlow(body []byte, fields map[string]any) []byte {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	var m map[string]any
-	if err := dec.Decode(&m); err != nil {
+	if err := dec.Decode(&m); err != nil || m == nil {
 		return body
 	}
 	for k, v := range fields {
