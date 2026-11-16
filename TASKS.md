@@ -36,7 +36,7 @@
       CI 红另记 [#17](https://github.com/istoo/owl/issues/17)（`TestKeepOffWaitsForTheSetting`，macOS，本地 5/5 通过）。
 - [x] 社区只保留 GitHub（2026-11-10）：站点社区卡片、文档页头与页脚、应用 About 行都去掉 Discord；
       README 重写为 owl 版本（命令、端点与事实沿用，文档链接改指真实存在的 `site/public/docs/*.html`）。
-- [ ] **下一版发布前**：撤掉网关的 `/v1/myna/*` 改写与插件环境的 `MYNA_*` 镜像（用户 11-10 定：按计划撤），
+- [x] **已撤**（v0.2.0 的 `0fb872672 rename: myna is gone from the code`；main 上 `grep -rn "v1/myna\|MYNA_" internal/` 零命中）：撤掉网关的 `/v1/myna/*` 改写与插件环境的 `MYNA_*` 镜像（用户 11-10 定：按计划撤），
       并在发布说明里写明；社区插件仓库经查零处引用，撤掉不影响它们。Mac 上从旧版升级的 `myna.app` 目录不重命名（签名/LaunchServices 风险）。
 - [x] routing-sky-under（CI 3 条）：两处——第三只请求的点在飞行途中被读到（900ms 固定等待），改为等所有点位置连续 5 帧不变；
       另一处是几何：点半径 4.5、560px 中日文下点边距卡片 3.98px，边沿相交 0.52px，比 0.5 容差多 0.02，判定改为 1px（两像素贴边即相接）。
