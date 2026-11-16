@@ -32,6 +32,7 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"golang.org/x/net/publicsuffix"
 )
@@ -784,8 +785,22 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 // found, and a preview names each value by it.
 func tag(kind, v string) string {
 	h := hmac.New(sha256.New, key())
-	h.Write([]byte(kind + "\x00" + v))
-	return "{{" + kind + "_" + strings.ToLower(b32.EncodeToString(h.Sum(nil))[:8]) + "}}"
+	h.Write([]byte(kind))
+	h.Write([]byte{0})
+	h.Write(bytesOf(v))
+	// the first 8 characters of the digest's base32: its first 5 bytes
+	// are those characters whole, so the 52-character encoding of the 32
+	// was made and cut, and written again in lower case, for each value
+	var sum [sha256.Size]byte
+	h.Sum(sum[:0])
+	var enc [8]byte
+	b32.Encode(enc[:], sum[:5])
+	for i := range enc {
+		if enc[i] >= 'A' && enc[i] <= 'Z' {
+			enc[i] += 'a' - 'A'
+		}
+	}
+	return "{{" + kind + "_" + string(enc[:]) + "}}"
 }
 
 func placeholder(kind, v string) string {
@@ -914,8 +929,29 @@ func Hint(kind, v string) (head string, n int) {
 		}
 		k = max(k, 1)
 	}
-	r := []rune(v)
-	return string(r[:k]), n
+	// a copy of the first k runes, as []rune and string wrote them (an
+	// invalid byte as U+FFFD): a head must not keep the body it sits in,
+	// and a value handed by the walk is only valid while it runs. A text
+	// of valid UTF-8 is one copy, without []rune's.
+	end, bad := 0, false
+	for range k {
+		r, size := utf8.DecodeRuneInString(v[end:])
+		if r == utf8.RuneError && size == 1 {
+			bad = true
+		}
+		end += size
+	}
+	if !bad {
+		return strings.Clone(v[:end]), n
+	}
+	buf := make([]byte, 0, k*utf8.UTFMax)
+	end = 0
+	for range k {
+		r, size := utf8.DecodeRuneInString(v[end:])
+		end += size
+		buf = utf8.AppendRune(buf, r)
+	}
+	return unsafe.String(unsafe.SliceData(buf), len(buf)), n
 }
 
 // anyCases are the patterns that find a user's word in any case, by word.
@@ -1117,6 +1153,7 @@ func ruleSpans(s string, o Options) []span {
 			all = append(customRules(o.Rules), rules...)
 		}
 		lower := ""
+		var lowerBuf *[]byte
 		// split are matches a rule took apart into values of their own
 		// (rkato@box17 as a user and a host): what another rule found from
 		// the same place in them, an email, goes
@@ -1130,7 +1167,7 @@ func ruleSpans(s string, o Options) []span {
 			}
 			if len(r.fold) > 0 {
 				if lower == "" {
-					lower = lowerASCII(s)
+					lower, lowerBuf = lowerASCIIBuf(s)
 				}
 				if !containsAny(lower, r.fold) {
 					continue
@@ -1177,6 +1214,9 @@ func ruleSpans(s string, o Options) []span {
 			found = slices.DeleteFunc(found, func(f span) bool {
 				return f.kind == "EMAIL" && f.start == sp.start && f.end <= sp.end
 			})
+		}
+		if lowerBuf != nil {
+			lowerBufPool.Put(lowerBuf)
 		}
 		return found
 	})
@@ -1544,7 +1584,39 @@ func lowerASCII(s string) string {
 			b[i] = c + 'a' - 'A'
 		}
 	}
-	return string(b)
+	// b is this call's own, and the string is read while the finders run:
+	// a copy of it into a string was the other half of a text's two
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+// lowerBufPool holds the buffers the rules' walk writes a text's lower
+// case into: the finders read it only while they run, and a text with a
+// capital was a copy of itself, twice, on every pass.
+var lowerBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 512); return &b }}
+
+// lowerASCIIBuf is lowerASCII into a pooled buffer, and that buffer when
+// one was taken (nil for a text with no capital), which the caller gives
+// back before it returns.
+func lowerASCIIBuf(s string) (string, *[]byte) {
+	i := 0
+	for i < len(s) && !('A' <= s[i] && s[i] <= 'Z') {
+		i++
+	}
+	if i == len(s) {
+		return s, nil
+	}
+	p := lowerBufPool.Get().(*[]byte)
+	b := append((*p)[:0], s...)
+	for ; i < len(b); i++ {
+		if c := b[i]; 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	*p = b
+	if cap(b) > scratchKeep {
+		return unsafe.String(unsafe.SliceData(b), len(b)), nil
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b)), p
 }
 
 // takes says s[a:b] is a value r masks: nothing it may not touch beside

@@ -2,10 +2,9 @@ package redact
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"hash"
 	"slices"
-	"strings"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
@@ -43,22 +42,34 @@ func memoRules(s string, o Options, find func() []span) []span {
 	}
 	h := digestPool.Get().(hash.Hash)
 	h.Reset()
-	fmt.Fprintf(h, "%s\x00%t\x00%t\x00", dateClock().Format("2006-01-02"), o.Secrets, o.Personal)
+	sc := memoScratchPool.Get().(*memoScratch)
+	key := sc.buf[:0]
+	key = append(key, dateClock().Format("2006-01-02")...)
+	key = append(key, 0, bit(o.Secrets), 0, bit(o.Personal), 0)
 	kinds := make([]string, 0, len(o.Kinds))
-	for k, on := range o.Kinds {
-		kinds = append(kinds, fmt.Sprintf("%q=%t", k, on))
+	for k := range o.Kinds {
+		kinds = append(kinds, k)
 	}
 	slices.Sort(kinds)
-	fmt.Fprintf(h, "%s\x00", strings.Join(kinds, ","))
+	for _, k := range kinds {
+		key = memoField(key, k)
+		key = append(key, bit(o.Kinds[k]), 0)
+	}
+	key = append(key, 0)
 	if o.Secrets {
 		for _, r := range o.Rules {
-			fmt.Fprintf(h, "%q:%q:%q;", r.Kind, r.Prefix, r.Regex)
+			key = memoField(key, r.Kind)
+			key = memoField(key, r.Prefix)
+			key = memoField(key, r.Regex)
 		}
 	}
-	h.Write([]byte{0})
+	key = append(key, 0)
+	h.Write(key)
 	h.Write(bytesOf(s))
 	var k [32]byte
-	h.Sum(k[:0])
+	copy(k[:], memoSum(h, sc))
+	sc.buf = key[:0]
+	memoScratchPool.Put(sc)
 	digestPool.Put(h)
 	ruleMemo.Lock()
 	sp, ok := ruleMemo.cur[k]
@@ -76,6 +87,40 @@ func memoRules(s string, o Options, find func() []span) []span {
 	ruleAdd(k, slices.Clip(slices.Clone(sp)))
 	ruleMemo.Unlock()
 	return sp
+}
+
+// bit is b as a memo key's byte.
+func bit(b bool) byte {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// memoScratch is what a memo key is written into, and where the digest
+// is put: a buffer and a sum of the heap already, so neither the key nor
+// the sum is a slice that escapes when it is passed to hash.Write or
+// hash.Sum, and the pool holds a pointer rather than a slice boxed in an
+// interface. Each was an allocation a text of every turn.
+type memoScratch struct {
+	buf []byte
+	sum [sha256.Size]byte
+}
+
+var memoScratchPool = sync.Pool{New: func() any { return &memoScratch{} }}
+
+// memoSum is h's digest into sc, which the caller copies to its map key.
+func memoSum(h hash.Hash, sc *memoScratch) []byte {
+	return h.Sum(sc.sum[:0])
+}
+
+// memoField adds s to a memo key, its length first so that no two fields
+// can read as one.
+func memoField(key []byte, s string) []byte {
+	key = strconv.AppendInt(key, int64(len(s)), 10)
+	key = append(key, ':')
+	key = append(key, s...)
+	return append(key, 0)
 }
 
 // ruleAdd is called with ruleMemo held. Two generations, as sentMemo

@@ -1,9 +1,9 @@
 package redact
 
 import (
-	"fmt"
 	"hash"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -340,19 +340,33 @@ func sentSpans(what byte, s string, o Options, find func() []span) []span {
 	}
 	h := digestPool.Get().(hash.Hash)
 	h.Reset()
-	fmt.Fprintf(h, "%d\x00%q\x00%t\x00%t\x00", what, o.Route, o.Secrets, o.Personal)
+	sc := memoScratchPool.Get().(*memoScratch)
+	key := sc.buf[:0]
+	key = strconv.AppendInt(key, int64(what), 10)
+	key = append(key, 0)
+	key = memoField(key, o.Route)
+	key = append(key, bit(o.Secrets), 0, bit(o.Personal), 0)
 	if what == sentModel {
-		fmt.Fprintf(h, "%t\x00%t\x00%g\x00", o.Model != nil, o.NamesByModel, o.MinScore)
+		key = append(key, bit(o.Model != nil), 0, bit(o.NamesByModel), 0)
+		key = strconv.AppendFloat(key, o.MinScore, 'g', -1, 64)
+		key = append(key, 0)
 	}
 	kinds := make([]string, 0, len(o.Kinds))
-	for k, on := range o.Kinds {
-		kinds = append(kinds, fmt.Sprintf("%s=%t", k, on))
+	for k := range o.Kinds {
+		kinds = append(kinds, k)
 	}
 	slices.Sort(kinds)
-	fmt.Fprintf(h, "%s\x00", strings.Join(kinds, ","))
+	for _, k := range kinds {
+		key = memoField(key, k)
+		key = append(key, bit(o.Kinds[k]), 0)
+	}
+	key = append(key, 0)
+	h.Write(key)
 	h.Write(bytesOf(s))
 	var k [32]byte
-	h.Sum(k[:0])
+	copy(k[:], memoSum(h, sc))
+	sc.buf = key[:0]
+	memoScratchPool.Put(sc)
 	digestPool.Put(h)
 	sentMemo.Lock()
 	sp, ok := sentMemo.cur[k]

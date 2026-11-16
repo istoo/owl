@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -415,8 +416,50 @@ func walkRoots(b []byte, roots []string, fn func(path []byte, key, s string) str
 	return walkAll(b, roots, fn, nil, nil)
 }
 
+// walkShared is walk for a callback that reads a value only while it runs
+// and keeps none of it: an escaped value is unescaped into one buffer the
+// walk reuses, instead of a buffer of its own for each value. A request's
+// text is mostly escaped (a newline in it is \n), so a walk of every
+// string in it made a copy of its whole text; MaskJSON walks a request up
+// to four times. The value handed to fn is then valid only until fn
+// returns, as it already was past the call (walk).
+func walkShared(b []byte, fn func(path []byte, key, s string) string) (out []byte, ok bool) {
+	return walkAllShared(b, nil, fn)
+}
+
+// walkRootsShared is walkRoots with walkShared's buffer.
+func walkRootsShared(b []byte, roots []string, fn func(path []byte, key, s string) string) (out []byte, ok bool) {
+	return walkAllShared(b, roots, fn)
+}
+
+func walkAllShared(b []byte, roots []string, fn func(path []byte, key, s string) string) (out []byte, ok bool) {
+	w := walker{in: b, fn: fn, roots: roots, path: make([]byte, 0, 64), shared: true}
+	return w.run()
+}
+
+// scratchPool holds the buffers walkShared unescapes into. A walk takes
+// one, grows it to the longest value it meets and returns it, unless it
+// grew past scratchKeep: a system prompt of a megabyte is no buffer to
+// hold on to for the next request.
+const scratchKeep = 1 << 20
+
+var scratchPool = sync.Pool{New: func() any { return make([]byte, 0, 4<<10) }}
+
 func walkAll(b []byte, roots []string, fn func(path []byte, key, s string) string, obj func(path []byte, key string, open bool), member func(path []byte, key string)) (out []byte, ok bool) {
 	w := walker{in: b, fn: fn, obj: obj, member: member, roots: roots, path: make([]byte, 0, 64)}
+	return w.run()
+}
+
+func (w *walker) run() (out []byte, ok bool) {
+	if w.shared {
+		w.scratch = scratchPool.Get().([]byte)[:0]
+		defer func() {
+			if cap(w.scratch) <= scratchKeep {
+				scratchPool.Put(w.scratch[:0])
+			}
+		}()
+	}
+	b := w.in
 	i, good := w.value(w.ws(0), "")
 	if !good || w.ws(i) != len(b) {
 		return b, false
@@ -449,6 +492,10 @@ type walker struct {
 	// handed to fn: a reader that wants a few of a request's fields isn't
 	// read its whole text for them (scan).
 	only map[string]bool
+	// shared unescapes each value into scratch, one buffer for the walk,
+	// for a callback that reads a value only while it runs (walkShared).
+	shared  bool
+	scratch []byte
 }
 
 func (w *walker) ws(i int) int {
@@ -584,6 +631,24 @@ func (w *walker) stringAt(i, end int, escaped bool) (string, bool) {
 	return unquoteJSONString(w.in[i:end])
 }
 
+// valueAt is stringAt for a value handed to fn. With shared, the copy is
+// written into the walk's one buffer, so it is valid until the next value
+// is visited (fn must not keep it; walk).
+func (w *walker) valueAt(i, end int, escaped bool) (string, bool) {
+	if !escaped {
+		return unsafe.String(&w.in[i+1], end-i-2), true
+	}
+	if !w.shared {
+		return unquoteJSONString(w.in[i:end])
+	}
+	b, ok := unquoteJSONStringInto(w.scratch[:0], w.in[i:end])
+	if !ok {
+		return "", false
+	}
+	w.scratch = b
+	return unsafe.String(unsafe.SliceData(b), len(b)), true
+}
+
 func (w *walker) value(i int, key string) (int, bool) {
 	if i >= len(w.in) {
 		return i, false
@@ -672,7 +737,7 @@ func (w *walker) value(i int, key string) (int, bool) {
 		if w.only != nil && !w.only[key] {
 			return end, true
 		}
-		s, ok := w.stringAt(i, end, esc)
+		s, ok := w.valueAt(i, end, esc)
 		if !ok {
 			return i, false
 		}
@@ -713,21 +778,35 @@ func bytesOf(s string) []byte {
 // encoding/json decodes it (unquoteBytes): invalid UTF-8 and lone
 // surrogates become U+FFFD.
 func unquoteJSONString(q []byte) (string, bool) {
-	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
+	b, ok := unquoteJSONStringInto(make([]byte, 0, len(q)-2+2*utf8.UTFMax), q)
+	if !ok {
 		return "", false
 	}
+	if cap(b)-len(b) > len(b)/4 {
+		// \u escapes came to much less than they were: a copy of its own
+		// size, so a string kept long holds no room it doesn't use
+		return string(b), true
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b)), true
+}
+
+// unquoteJSONStringInto is unquoteJSONString into b, which a caller may
+// reuse for the next value.
+func unquoteJSONStringInto(b, q []byte) ([]byte, bool) {
+	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
+		return b, false
+	}
 	s := q[1 : len(q)-1]
-	b := make([]byte, 0, len(s)+2*utf8.UTFMax)
 	for r := 0; r < len(s); {
 		switch c := s[r]; {
 		case c == '\\':
 			r++
 			if r >= len(s) {
-				return "", false
+				return b, false
 			}
 			switch s[r] {
 			default:
-				return "", false
+				return b, false
 			case '"', '\\', '/', '\'':
 				b = append(b, s[r])
 				r++
@@ -750,7 +829,7 @@ func unquoteJSONString(q []byte) (string, bool) {
 				r--
 				rr := hex4(s[r:])
 				if rr < 0 {
-					return "", false
+					return b, false
 				}
 				r += 6
 				if utf16.IsSurrogate(rr) {
@@ -764,7 +843,7 @@ func unquoteJSONString(q []byte) (string, bool) {
 				b = utf8.AppendRune(b, rr)
 			}
 		case c == '"', c < ' ':
-			return "", false
+			return b, false
 		case c < utf8.RuneSelf:
 			b = append(b, c)
 			r++
@@ -774,12 +853,7 @@ func unquoteJSONString(q []byte) (string, bool) {
 			b = utf8.AppendRune(b, rr)
 		}
 	}
-	if cap(b)-len(b) > len(b)/4 {
-		// \u escapes came to much less than they were: a copy of its own
-		// size, so a string kept long holds no room it doesn't use
-		return string(b), true
-	}
-	return unsafe.String(unsafe.SliceData(b), len(b)), true
+	return b, true
 }
 
 // hex4 is encoding/json's getu4: the rune of the \uXXXX at s, or -1.
@@ -922,9 +996,10 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 	if o.Model != nil {
 		// the model is asked once, for all of the request's texts
 		var texts []string
-		if _, ok := walk(body, func(path []byte, key, s string) string {
+		if _, ok := walkShared(body, func(path []byte, key, s string) string {
 			if masked(path, key, s) && !under(path, defs) {
-				// kept past the walk, and it is the body's own bytes
+				// kept past the walk, in o.found, and the walk's buffer
+				// is reused for the next value: a copy of its own
 				texts = append(texts, strings.Clone(s))
 			}
 			return s
@@ -936,12 +1011,14 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 	var seen []string // value, placeholder, value, placeholder…
 	put := func(kind, v string) string {
 		p := o.put()(kind, v)
-		seen = append(seen, v, p)
+		// kept for the signed pass below, and the walk's buffer is reused
+		// for the next value: a copy of its own
+		seen = append(seen, strings.Clone(v), p)
 		return p
 	}
 	// the definitions after the rest, so a value the model found in what
 	// is said is masked in them too, as known
-	out, ok := walk(body, func(path []byte, key, s string) string {
+	out, ok := walkShared(body, func(path []byte, key, s string) string {
 		if isDataURL(s) || signed != nil && under(path, signed) {
 			return s
 		}
@@ -958,7 +1035,7 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 		return t
 	})
 	if ok && len(defs) > 0 {
-		out, ok = walkRoots(out, defs, func(path []byte, key, s string) string {
+		out, ok = walkRootsShared(out, defs, func(path []byte, key, s string) string {
 			if !masked(path, key, s) || !under(path, defs) {
 				return s
 			}
@@ -978,7 +1055,7 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 	if len(seen) > 0 {
 		remask = replacerOf(seen)
 	}
-	out, _ = walk(out, func(path []byte, key, s string) string {
+	out, _ = walkShared(out, func(path []byte, key, s string) string {
 		if keepIn(path, key, s, args, defs) || !under(path, signed) {
 			return s
 		}
