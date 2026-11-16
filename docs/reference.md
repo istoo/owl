@@ -2346,8 +2346,10 @@ can't read it), and `outside Go` is that number less `Sys` — the webview,
 cgo and everything else outside Go. `classes` is `runtime/metrics`'
 split of Go's memory (heap objects, unused, free and returned, stacks,
 metadata, other), and `GC` is the last collection's live heap and goal
-beside `GOMEMLIMIT` and `GOGC`. The route answers only a program on this
-computer calling it as `localhost` or a loopback address: another machine,
+beside `GOMEMLIMIT` and `GOGC`. The soak test that compares memory across
+changes, and how to run it, is in [memory.md](memory.md). The route
+answers only a program on this computer calling it as `localhost` or a
+loopback address: another machine,
 a proxy's or tunnel's client, any request with a browser's marks (an
 Origin, listed or not, `null`, `Sec-Fetch-*`, a `Mozilla/` user agent) and
 any other `Host` are refused 403, with a gateway key too. With
