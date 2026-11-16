@@ -13,6 +13,15 @@
 // Every Library tab, Plugins' and Settings', the window from its least
 // width (560px) up, the sidebar picked, in all five languages, Chromium
 // and WebKit. No backend: the API is faked.
+//
+// 11-16 (screenshot): beside the rail in a 700px window, Chinese Settings'
+// last part read "关:" — the search box shared the tabs' line and took its
+// room. The search has a line of its own over the parts now, the head's
+// width, and every part is whole: one that the strip can't fit scrolls
+// under a fade on the side it hides, and the part reached (a click, an
+// arrow key) is brought whole into view. The 700px window is its own test,
+// and a 560px German strip, which must scroll, checks the fade and the
+// part brought into view.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -68,6 +77,16 @@ function bar(head) {
   const shown = (e) => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden" && !e.closest("[hidden]");
   const strip = h.querySelector(".lib-tabs, .set-tabs");
   const tabs = strip ? [...strip.querySelectorAll(":scope > button")].filter(shown).map((e) => box(e.getBoundingClientRect())) : [];
+  // the strip's and its parts' exact edges, for what must be whole in it
+  const tabEdges = strip ? [...strip.querySelectorAll(":scope > button")].filter(shown).map((e) => {
+    const r = e.getBoundingClientRect();
+    return { text: e.textContent.trim(), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  }) : [];
+  const sr = strip ? strip.getBoundingClientRect() : null;
+  const hr = h.getBoundingClientRect();
+  const q = h.querySelector(".set-q"), qr = q ? q.getBoundingClientRect() : null;
+  const sc = strip ? getComputedStyle(strip) : null;
+  const mask = !!(sc && ((sc.maskImage && sc.maskImage !== "none") || (sc.webkitMaskImage && sc.webkitMaskImage !== "none")));
   const tools = [...h.querySelectorAll("button, label, input")].filter((e) => shown(e) && !e.closest(".lib-tabs, .set-tabs"))
     .filter((e) => !e.parentElement.closest("button, label"))
     .map((e) => {
@@ -79,8 +98,12 @@ function bar(head) {
     });
   const acts = document.querySelector(".top .actions").getBoundingClientRect();
   return {
-    parts, crumb: box(c), tools, tabs, strip: strip ? box(strip.getBoundingClientRect()) : null, orient: strip?.getAttribute("aria-orientation") || null,
-    head: box(h.getBoundingClientRect()), top: Math.round(document.querySelector(".top").getBoundingClientRect().bottom),
+    parts, crumb: box(c), tools, tabs, strip: strip ? box(sr) : null, orient: strip?.getAttribute("aria-orientation") || null,
+    tabEdges, stripEdge: sr ? { left: sr.left, right: sr.right, top: sr.top, bottom: sr.bottom, width: sr.width } : null,
+    q: qr ? { left: qr.left, right: qr.right, top: qr.top, bottom: qr.bottom, height: qr.height } : null,
+    headEdge: { left: hr.left, right: hr.right, top: hr.top, bottom: hr.bottom }, mask,
+    scrollable: !!strip && strip.scrollWidth > strip.clientWidth + 1,
+    head: box(hr), top: Math.round(document.querySelector(".top").getBoundingClientRect().bottom),
     acts: box(acts), side: document.querySelector("#side").getBoundingClientRect().right, view: innerWidth,
   };
 }
@@ -146,11 +169,36 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             else assert(b.tabs.every((x) => x.top === b.tabs[0].top), `the tabs wrap at ${at}`);
           }
           if (p.name === "settings") assert.equal(b.orient, down ? "vertical" : "horizontal", `Settings' tabs say the wrong way at ${at}`);
+          if (p.name === "settings" && !down) {
+            // 11-16: beside the rail a search on the tabs' line took the last
+            // part's room ("关于" read "关:"). It is a line of its own now,
+            // over the parts and the head's whole width
+            assert(b.q, `no search box in the head at ${at}`);
+            assert(b.q.bottom <= b.stripEdge.top + 0.5, `the search sits on the tabs' line at ${at}`);
+            assert(b.q.left <= b.headEdge.left + 0.5 && b.q.right >= b.headEdge.right - 0.5, `the search is not the head's width at ${at}`);
+            // every part is whole in the strip, or the strip scrolls and
+            // fades the side that hides it: never a part cut with no hint
+            for (const tab of b.tabEdges) {
+              const whole = tab.left >= b.stripEdge.left - 0.5 && tab.right <= b.stripEdge.right + 0.5;
+              assert(whole || (b.scrollable && b.mask), `a part is cut off with no hint at ${at}: ${JSON.stringify(tab)}`);
+            }
+            // Chinese's parts are whole at 650 and 760 without a scroll
+            if (/^zh/.test(lang) && (width === 650 || width === 760)) {
+              assert(!b.scrollable, `Chinese's parts need a scroll at ${at}`);
+              for (const tab of b.tabEdges) {
+                assert(tab.left >= b.stripEdge.left - 0.5 && tab.right <= b.stripEdge.right + 0.5, `a Chinese part is cut at ${at}: ${JSON.stringify(tab)}`);
+              }
+            }
+          }
           for (const tool of b.tools) {
             assert(tool.left >= b.head.left - 0.5 && tool.right <= b.head.right + 0.5, `a tool runs out of the head at ${at}`);
             if (!down) {
               assert(tool.top >= b.head.top - 0.5 && tool.bottom <= b.head.bottom + 0.5, `a tool is off the head's line at ${at}`);
-              if (b.strip) assert(tool.left >= b.strip.right, `a tool lies over the tabs at ${at}`);
+              if (b.strip) {
+                const across = !(tool.right <= b.stripEdge.left || tool.left >= b.stripEdge.right);
+                const over = !(tool.bottom <= b.stripEdge.top + 0.5 || tool.top >= b.stripEdge.bottom - 0.5);
+                assert(!(across && over), `a tool lies over the tabs at ${at}`);
+              }
             }
             assert(!tool.clipped, `a tool's label is cut at ${at}`);
             if (tool.label === false) assert(tool.aria && tool.title, `a tool shown as its icon has no name or tooltip at ${at}`);
@@ -167,6 +215,82 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(errors, []);
         await context.close();
       }
+    });
+
+    // 11-16 (screenshot): a 700px window, the sidebar as its rail, Chinese:
+    // the search took the last part's room and "关于" read "关:". Every part
+    // is whole now, with no scroll needed
+    test(`${engine} zh: Settings beside the rail at 700px keeps every part whole`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const context = await browser.newContext({ viewport: { width: 700, height: 640 }, reducedMotion: "reduce" });
+      const page = await context.newPage();
+      page.setDefaultTimeout(5000);
+      page.setDefaultNavigationTimeout(60000);
+      const errors = [];
+      page.on("pageerror", (e) => {
+        if (engine === "webkit" && /Fetch API cannot load .* due to access control checks/.test(e.stack)) return;
+        errors.push(e.stack);
+      });
+      await page.route("**/*", serve("zh"));
+      await page.addInitScript(() => { localStorage.setItem("owl.navLayout", "side"); });
+      await page.goto("http://owl.test/?view=settings");
+      await page.locator("#view-settings .set-head").waitFor();
+      await page.locator("#crumb b").waitFor();
+      let b = null;
+      for (let i = 0; i < 40; i++) {
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const now = await page.evaluate(bar, "#view-settings .set-head");
+        if (b && JSON.stringify(now) === JSON.stringify(b)) break;
+        b = now;
+      }
+      const at = `700px: ${JSON.stringify(b)}`;
+      assert(await page.evaluate(() => document.body.classList.contains("side-nav")), `the rail is not shown at ${at}`);
+      const about = b.tabEdges.find((x) => x.text === "关于");
+      assert(about, `the last part has no tab at ${at}`);
+      assert(!b.scrollable, `the parts need a scroll at ${at}`);
+      for (const tab of b.tabEdges) {
+        assert(tab.left >= b.stripEdge.left - 0.5 && tab.right <= b.stripEdge.right + 0.5, `a part is cut at ${at}: ${JSON.stringify(tab)}`);
+      }
+      assert(about.left >= b.stripEdge.left - 0.5 && about.right <= b.stripEdge.right + 0.5, `the last part is cut at ${at}: ${JSON.stringify(about)}`);
+      assert(b.q.bottom <= b.stripEdge.top + 0.5, `the search sits on the tabs' line at ${at}`);
+      assert(b.q.left <= b.headEdge.left + 0.5 && b.q.right >= b.headEdge.right - 0.5, `the search is not the head's width at ${at}`);
+      assert.deepEqual(errors, []);
+      await context.close();
+    });
+
+    // a strip too narrow even for its own line scrolls; the part reached by
+    // the keys is brought whole into view, and the side it hides is faded
+    test(`${engine}: a scrolling Settings strip brings the picked part whole into view`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const context = await browser.newContext({ viewport: { width: 560, height: 640 }, reducedMotion: "reduce" });
+      const page = await context.newPage();
+      page.setDefaultTimeout(5000);
+      page.setDefaultNavigationTimeout(60000);
+      await page.route("**/*", serve("de"));
+      await page.addInitScript(() => { localStorage.setItem("owl.navLayout", "side"); });
+      await page.goto("http://owl.test/?view=settings");
+      await page.locator("#view-settings .set-head").waitFor();
+      await page.locator("#setTab-general").focus();
+      await page.keyboard.press("End");
+      await page.waitForFunction(() => document.querySelector("#setTab-about").getAttribute("aria-selected") === "true");
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const v = await page.evaluate(() => {
+        const strip = document.querySelector("#setTabs"), r = strip.getBoundingClientRect(), t = document.querySelector("#setTab-about").getBoundingClientRect();
+        const cs = getComputedStyle(strip);
+        return {
+          left: t.left, right: t.right, sl: r.left, sr: r.right, scrollLeft: strip.scrollLeft,
+          sw: strip.scrollWidth, cw: strip.clientWidth,
+          mask: (cs.maskImage && cs.maskImage !== "none") || (cs.webkitMaskImage && cs.webkitMaskImage !== "none"),
+        };
+      });
+      const at = `560px de: ${JSON.stringify(v)}`;
+      assert(v.sw > v.cw + 1, `the strip does not scroll at ${at}`);
+      assert(v.scrollLeft > 0, `the strip did not move to the part reached at ${at}`);
+      assert(v.left >= v.sl - 0.5 && v.right <= v.sr + 0.5, `the part reached is not whole at ${at}`);
+      assert(v.mask, `the side the strip hides is not faded at ${at}`);
+      await context.close();
     });
   }
 }

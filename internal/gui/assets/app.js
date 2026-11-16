@@ -18698,6 +18698,18 @@ const partShows = (page) => {
     return !featureHides(r);
   });
 };
+// Beside the rail the tabs are one strip across the page, scrolled when
+// they are wider than it. A side that hides a part is faded, so a part is
+// never cut off without a hint that the strip runs on (11-16: "关于" read
+// "关:"), and the part picked is brought whole into view, by a click or an
+// arrow key (tabKeys clicks the part it reaches).
+function setTabsFade() {
+  const tabs = $("#setTabs");
+  if (!tabs) return;
+  const cut = sideNav() && tabs.scrollWidth > tabs.clientWidth + 1;
+  tabs.classList.toggle("fade-l", cut && tabs.scrollLeft > 0.5);
+  tabs.classList.toggle("fade-r", cut && tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - 0.5);
+}
 function setSetTab(tab, remember) {
   if (remember) {
     setTab = tab;
@@ -18715,6 +18727,10 @@ function setSetTab(tab, remember) {
     $("#setPage-" + id).hidden = !on;
   }
   setShown = tab;
+  // one strip of tabs beside the rail: the picked one whole in the strip
+  const tabs = $("#setTabs");
+  if (sideNav() && tabs.scrollWidth > tabs.clientWidth + 1) $("#setTab-" + tab).scrollIntoView({ inline: "nearest", block: "nearest" });
+  setTabsFade();
   // each agent's row is read only where it is shown
   if (view === "settings" && tab === "privacy" && !setQuery) loadSessionReads();
   $("#setTabs").setAttribute("aria-label", t("Settings"));
@@ -18729,6 +18745,15 @@ function setSetTab(tab, remember) {
     if (b) setSetTab(b.dataset.set, true);
   };
   tabKeys(tabs, "button[data-set]");
+  // the strip's fade follows its own scroll, the window's width and a
+  // part's words (a language picked changes the buttons' widths)
+  tabs.addEventListener("scroll", setTabsFade, { passive: true });
+  addEventListener("resize", setTabsFade);
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(setTabsFade);
+    ro.observe(tabs);
+    for (const b of tabs.querySelectorAll("button[data-set]")) ro.observe(b);
+  }
   // held tabs (#2396): a hairline once scrolled under
   const sv = $("#view-settings"), head = sv.querySelector(":scope > .set-head");
   sv.addEventListener("scroll", () => head.classList.toggle("stuck", sv.scrollTop > 0), { passive: true });

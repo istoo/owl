@@ -585,22 +585,36 @@ body.side-nav :is(#view-library, #view-plugins, #view-settings) { padding-top: 0
    control a row's whole width from its label was a long way to look). A
    window too narrow for both has the parts as a row of words over the
    page, as Library's tabs are, the search at its end */
+/* a narrow window (#2625): the search gets a line of its own over the
+   parts, the whole head's width, so it no longer takes the last tab's room
+   (11-16: beside the rail, "关于" read "关:"); the parts keep the line under
+   it, their underline on the head's hairline */
 body.side-nav #view-settings > .set-head {
-  position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: nowrap; align-items: stretch; gap: 12px;
-  height: 40px; min-height: 0; margin: 0 0 14px; padding: 0; background: var(--bg); box-shadow: inset 0 -1px 0 var(--line-2);
+  position: sticky; top: 0; z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  height: auto; min-height: 0; margin: 0 0 14px; padding: 0; background: var(--bg); box-shadow: inset 0 -1px 0 var(--line-2);
 }
 body.side-nav #view-settings > .set-head::before { display: none; }
 body.side-nav #view-settings .set-tabs {
-  flex: 1 1 auto; align-self: stretch; min-width: 0; flex-wrap: nowrap; gap: 22px; margin: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  flex: none; align-self: stretch; width: 100%; min-width: 0; height: 34px; flex-wrap: nowrap; gap: 22px; margin: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; scroll-padding-inline: 24px;
 }
 body.side-nav #view-settings .set-tabs::-webkit-scrollbar { display: none; }
+/* a part cut off by the strip's edge says so with a fade on that side
+   (the class is the script's): a part is never half drawn without a hint
+   that the strip runs on. Only the horizontal strip (< 900px) scrolls */
+@media (max-width: 899px) {
+  body.side-nav #view-settings .set-tabs.fade-l { mask-image: linear-gradient(to right, transparent 0, #000 24px); -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px); }
+  body.side-nav #view-settings .set-tabs.fade-r { mask-image: linear-gradient(to left, transparent 0, #000 24px); -webkit-mask-image: linear-gradient(to left, transparent 0, #000 24px); }
+  body.side-nav #view-settings .set-tabs.fade-l.fade-r {
+    mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+}
 body.side-nav #view-settings .set-tabs button {
   flex: none; display: flex; align-items: center; height: 100%; padding: 0; border-radius: 0; background: none; font-size: 13px; font-weight: 500;
   color: var(--muted); box-shadow: inset 0 -2px 0 transparent;
 }
 body.side-nav #view-settings .set-tabs button:hover:not(.on) { background: none; color: var(--fg-2); }
 body.side-nav #view-settings .set-tabs button.on { background: none; color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
-body.side-nav #view-settings .set-q { flex: 0 1 220px; min-width: 120px; align-self: center; }
+body.side-nav #view-settings .set-q { order: -1; flex: none; align-self: stretch; width: 100%; min-width: 0; }
 @media (min-width: 900px) {
   body.side-nav #view-settings:not([hidden]) {
     display: grid; grid-template-columns: 180px minmax(0, 720px); column-gap: 32px; align-content: start; justify-content: start;
@@ -611,7 +625,7 @@ body.side-nav #view-settings .set-q { flex: 0 1 220px; min-width: 120px; align-s
     height: auto; margin: 0; padding: 2px 0 12px; box-shadow: none;
   }
   body.side-nav #view-settings .set-q { order: -1; flex: none; width: 100%; align-self: stretch; }
-  body.side-nav #view-settings .set-tabs { flex-direction: column; align-items: stretch; gap: 1px; overflow: visible; }
+  body.side-nav #view-settings .set-tabs { flex-direction: column; align-items: stretch; gap: 1px; height: auto; overflow: visible; scroll-padding: 0; }
   body.side-nav #view-settings .set-tabs button {
     display: flex; align-items: center; height: 30px; padding: 0 10px; border-radius: 7px; text-align: left; box-shadow: none;
   }
