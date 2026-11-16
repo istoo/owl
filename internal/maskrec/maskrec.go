@@ -44,9 +44,14 @@ const (
 	// JSON that repeats itself and a busy gateway held 64 MB of them
 	// (#2278). A screenshot's base64 hardly compresses, so the budget is
 	// half what it was whole.
-	keepSent   = 100
-	sentMax    = 4 << 20
-	sentBudget = 32 << 20
+	keepSent = 100
+	sentMax  = 4 << 20
+	// sentBudget was 32 << 20: on a busy owl those kept bodies were the
+	// second largest thing alive (18.4 MB zstd of 180 MB live, 0.2.22's
+	// heap report), for a page that shows the latest requests. Half of it
+	// still holds the latest 4 MB ones, and a request of a megabyte the
+	// latest sixty-odd.
+	sentBudget = 16 << 20
 	dayForm    = "2006-01-02"
 )
 
