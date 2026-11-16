@@ -456,3 +456,18 @@
 - [x] 0.2.18 运行 57 分钟：live 233.6 MB（0.2.17 在 15–21 分钟就到 780–996 MB）；insertAt 不再出现，growSlice 从 252–363 MB 降到 13.9 MB。
 - [x] 下一个大户：ccUUIDsOf 的集合占 51 MB（734 个会话文件，每个 uuid 存成一个 48 字节字符串）→ 改成存 16 字节（2fad5277b）。
       每个 uuid 占用从 83.1 字节降到 23.6 字节；sessions 包普通 785、race 779 都通过。等 CI 绿后跟界面改动一起发版。
+
+## 2026-11-16 内存：按全账（footprint）系统优化（用户：「按照这个领域顶尖专业人士的方式对内存进行优化」）
+
+方法：先对账（macOS footprint 与 Go runtime/metrics 逐项对上），分常驻 / 峰值 / 分配速率三类治理，定预算，
+每项优化配子进程里量的预算测试防回归。基线（0.2.21，运行 1h3m，窗口开着）：footprint 719MB =
+Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 116、CG 位图 34、加速器 5）+ C malloc 49 + 其它约 20。
+分配速率约 19.6GB/小时（5.4MB/s）。
+
+- [ ] A 运行时与账本（agent mem-runtime）：`owl heap` 输出完整账（footprint、图形、runtime/metrics 各类），
+      可复现的内存浸泡测试（子进程网关 + 假上游 + 真实大小请求），评估 SetMemoryLimit/GOGC/归还策略，前后数字。
+- [ ] B 图形 155MB（agent gfx-mem）：窗口显示/隐藏、Dock 翻动动画、托盘图标各自占多少，隐藏窗口时应释放。
+- [ ] C 分配速率（agent alloc-rate）：redact.MaskJSON 1.84GB/h、gateway.withFields 1.01GB/h，每请求副本数与字节。
+- [x] D 脱敏缓存写盘（0503957cb）：单次编码 170018 次分配/4.87MB → 1 次/1.99MB，2.27ms → 0.46ms；写盘最多每 30 秒一次（原约 9 秒）。旧代码上分配测试红。
+- [ ] E 存活大头预算：maskrec 正文 29MB（上限 32MB）、pii 模型 36MB（空闲卸载）、ccUUIDSet 15、tune 14.5、captureRequestBody 12 —— 各自有界，按 A 的账再定是否收紧。
+- [ ] 验收：每单元证据核对 → 合并 → 发版 → 本机同一工作量下 footprint 前后对比。
