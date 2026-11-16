@@ -45,6 +45,13 @@ function serve(st) {
 
 const rows = (page) => page.evaluate(() => [...document.querySelectorAll("#list li:not(.group)")].map((li) => ({ text: li.textContent, cur: li.classList.contains("cur") })));
 const rail = (page) => page.evaluate(() => [...document.querySelectorAll("#pickerRail .rail-item")].map((b) => b.getAttribute("aria-label")));
+// listed waits for the list to be the picked group's: a rail click animates
+// the list out before it draws the next group (switchPickerGroup), and a
+// loaded machine finishes that animation later than a fixed pause read
+const listed = (page, want, gone) => page.waitForFunction(([want, gone]) => {
+  const texts = [...document.querySelectorAll("#list li:not(.group)")].map((li) => li.textContent);
+  return want.every((w) => texts.some((x) => x.includes(w))) && gone.every((g) => !texts.some((x) => x.includes(g)));
+}, [want, gone]);
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const width of [1000, 440]) {
@@ -70,21 +77,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           let all = await rows(page);
           assert(all.some((r) => r.cur && r.text.includes("gpt-6.1-sol")), "listed under All, ticked");
           await item("OpenAI").click();
-          await page.waitForTimeout(400);
+          await listed(page, ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol"], ["Kimi K3", "DeepSeek V4"]);
           all = await rows(page);
           const cur = all.filter((r) => r.text.includes("gpt-6.1-sol"));
           assert.equal(cur.length, 1, `gpt-6.1-sol under OpenAI once: ${JSON.stringify(all)}`);
           assert(cur[0].cur, "ticked as the current model");
           assert(all.some((r) => r.text.includes("gpt-6-astra")) && !all.some((r) => r.text.includes("Kimi K3")), "the rest are OpenAI's");
           await item("Kimi").click();
-          await page.waitForTimeout(400);
+          await listed(page, ["Kimi K3"], ["gpt-6-astra", "DeepSeek V4"]);
           assert(!(await rows(page)).some((r) => r.text.includes("gpt-6.1-sol")), "not under another provider");
 
           // the current model is Kimi's only one: Kimi keeps its icon, in its place
           await open("kimi/k3");
           assert.deepEqual(await rail(page), ["All models", "Favorites", "Routing groups", "OpenAI", "Kimi", "DeepSeek"]);
           await item("Kimi").click();
-          await page.waitForTimeout(400);
+          await listed(page, ["Kimi K3"], ["gpt-6-astra", "DeepSeek V4"]);
           assert((await rows(page)).some((r) => r.cur && r.text.includes("Kimi K3")), "Kimi K3 under Kimi");
           assert.deepEqual(errors, [], "page runtime errors");
         } finally {
