@@ -179,6 +179,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // a provider's editor: the note panel knows which provider it is in
         await page.evaluate(() => show("providers"));
         await page.waitForFunction(() => providers?.providers?.length === 1);
+        // the editor's drawing is editor.js, fetched the first time the
+        // Providers page draws (ensureEditor): a loaded machine may still be
+        // fetching it, and renderEditor then opens the modal with its
+        // loading placeholder, which the script's arrival never redraws (the
+        // window's own editor path has `editing` set, this one doesn't).
+        // Wait for the drawing, then open the modal.
+        await page.waitForFunction(() => !!window.drawEditor);
         await page.evaluate(() => openModal(renderEditor(providers.providers[0])));
         const notes = await frameReady(page, NOTES);
         assert.equal(await page.locator('#modal .plugin-slot[data-slot="provider"] iframe').getAttribute("sandbox"), "allow-scripts", where);
