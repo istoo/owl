@@ -127,10 +127,37 @@ func heapSummary(st gateway.HeapStats) string {
 		who += ", with a window"
 	}
 	fmt.Fprintf(&b, "  process     %d (%s) owl %s, up %s\n", st.PID, who, st.Version, st.Uptime)
+	if st.FootprintOK && st.Footprint > 0 {
+		fmt.Fprintf(&b, "  footprint   %s (the OS's view: %s)\n", bytesSize(st.Footprint), st.FootprintKind)
+		if st.Footprint > st.Sys {
+			fmt.Fprintf(&b, "  outside Go  %s (footprint less Sys: the window, cgo and what the OS counts outside Go)\n", bytesSize(st.Footprint-st.Sys))
+		} else {
+			fmt.Fprintf(&b, "  outside Go  %s (footprint counts no more than Sys)\n", bytesSize(0))
+		}
+	} else {
+		fmt.Fprintln(&b, "  footprint   unknown (this build or system couldn't read it)")
+	}
 	fmt.Fprintf(&b, "  HeapAlloc   %s (live after a collection: %s)\n", bytesSize(st.HeapAlloc), bytesSize(st.LiveHeap))
 	fmt.Fprintf(&b, "  HeapInuse   %s\n", bytesSize(st.HeapInuse))
 	fmt.Fprintf(&b, "  HeapSys     %s (idle %s, of it returned to the system %s)\n", bytesSize(st.HeapSys), bytesSize(st.HeapIdle), bytesSize(st.HeapReleased))
 	fmt.Fprintf(&b, "  StackSys    %s\n", bytesSize(st.StackSys))
+	if st.ClassObjects > 0 || st.ClassOther > 0 || st.ClassStacks > 0 || st.ClassFree > 0 || st.ClassReleased > 0 {
+		fmt.Fprintf(&b, "  classes     objects %s, unused %s, free %s (%s returned), stacks %s, metadata %s, other %s\n",
+			bytesSize(st.ClassObjects), bytesSize(st.ClassUnused), bytesSize(st.ClassFree), bytesSize(st.ClassReleased),
+			bytesSize(st.ClassStacks), bytesSize(st.ClassMetadata), bytesSize(st.ClassOther))
+	}
+	if st.GCGoal > 0 || st.GCLive > 0 {
+		limit := "none"
+		if st.MemLimit > 0 {
+			limit = bytesSize(uint64(st.MemLimit))
+		}
+		gogc := "off"
+		if st.GOGC >= 0 {
+			gogc = fmt.Sprintf("%d", st.GOGC)
+		}
+		fmt.Fprintf(&b, "  GC          live %s, goal %s, GOMEMLIMIT %s, GOGC %s\n",
+			bytesSize(st.GCLive), bytesSize(st.GCGoal), limit, gogc)
+	}
 	fmt.Fprintf(&b, "  Sys         %s (all Go took from the system; a footprint far above it is outside Go)\n", bytesSize(st.Sys))
 	fmt.Fprintf(&b, "  NumGC       %d\n", st.NumGC)
 	fmt.Fprintf(&b, "  goroutines  %d\n", st.Goroutines)

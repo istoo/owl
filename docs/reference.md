@@ -2338,8 +2338,15 @@ collection (`runtime/pprof`'s `heap`, gzipped protobuf, which
 there. It prints the file and the runtime's numbers the gateway sends in
 `X-Magpie-Heap-Stats`: the process, `HeapAlloc` (and what is live after the
 collection), `HeapInuse`, `HeapSys`, `StackSys`, `Sys` (all Go took from
-the system; a footprint far above it is outside Go, such as the webview),
-`NumGC` and the goroutine count. The route answers only a program on this
+the system), `NumGC` and the goroutine count. Three more lines say what
+the OS and the runtime count separately: `footprint` is the OS's own
+number for this process (macOS's `phys_footprint`, Linux's `RssAnon` +
+`RssFile`, Windows's `PrivateUsage`; unknown when the build or system
+can't read it), and `outside Go` is that number less `Sys` — the webview,
+cgo and everything else outside Go. `classes` is `runtime/metrics`'
+split of Go's memory (heap objects, unused, free and returned, stacks,
+metadata, other), and `GC` is the last collection's live heap and goal
+beside `GOMEMLIMIT` and `GOGC`. The route answers only a program on this
 computer calling it as `localhost` or a loopback address: another machine,
 a proxy's or tunnel's client, any request with a browser's marks (an
 Origin, listed or not, `null`, `Sec-Fetch-*`, a `Mozilla/` user agent) and

@@ -17,6 +17,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/istoo/owl/internal/proc"
 	"github.com/istoo/owl/internal/provider"
 )
 
@@ -55,6 +56,29 @@ type HeapStats struct {
 	HeldBodyBytes   uint64 `json:"heldBodyBytes"`
 	PromptBodies    int    `json:"promptBodies"`
 	PromptBodyBytes uint64 `json:"promptBodyBytes"`
+
+	// the operating system's own count of what this process holds: the
+	// webview, cgo and everything else beside Go's Sys. Footprint is 0 and
+	// FootprintOK false when this build couldn't read it.
+	Footprint     uint64 `json:"footprint"`
+	FootprintKind string `json:"footprintKind"`
+	FootprintOK   bool   `json:"footprintOK"`
+
+	// runtime/metrics' split of Go's memory: what the heap holds as
+	// objects, what is reserved but idle, what was returned to the system,
+	// stacks, metadata and everything else, and the collection's live heap,
+	// goal and two knobs. MemLimit and GOGC are -1 when off or unset.
+	ClassObjects  uint64 `json:"classObjects"`
+	ClassUnused   uint64 `json:"classUnused"`
+	ClassFree     uint64 `json:"classFree"`
+	ClassReleased uint64 `json:"classReleased"`
+	ClassStacks   uint64 `json:"classStacks"`
+	ClassMetadata uint64 `json:"classMetadata"`
+	ClassOther    uint64 `json:"classOther"`
+	GCLive        uint64 `json:"gcLive"`
+	GCGoal        uint64 `json:"gcGoal"`
+	MemLimit      int64  `json:"memLimit"`
+	GOGC          int64  `json:"gogc"`
 }
 
 // processStarted is when this process began, for HeapStats' Uptime.
@@ -77,6 +101,9 @@ func (s *Server) heapProfile(w http.ResponseWriter, r *http.Request) {
 	runtime.GC()
 	var after runtime.MemStats
 	runtime.ReadMemStats(&after)
+	// read with the numbers above, before writing the profile allocates
+	fp, fpOK := proc.CurrentFootprint()
+	cl := readHeapClasses()
 	var buf bytes.Buffer
 	if err := pprof.Lookup("heap").WriteTo(&buf, 0); err != nil {
 		writeError(w, provider.Chat, http.StatusInternalServerError, "the heap profile couldn't be written: "+err.Error())
@@ -106,6 +133,22 @@ func (s *Server) heapProfile(w http.ResponseWriter, r *http.Request) {
 		HeldBodyBytes:   heldBytes,
 		PromptBodies:    kept,
 		PromptBodyBytes: keptBytes,
+
+		Footprint:     fp.Bytes,
+		FootprintKind: fp.Kind,
+		FootprintOK:   fpOK,
+
+		ClassObjects:  cl.Objects,
+		ClassUnused:   cl.Unused,
+		ClassFree:     cl.Free,
+		ClassReleased: cl.Released,
+		ClassStacks:   cl.Stacks,
+		ClassMetadata: cl.Metadata,
+		ClassOther:    cl.Other,
+		GCLive:        cl.Live,
+		GCGoal:        cl.Goal,
+		MemLimit:      cl.MemLimit,
+		GOGC:          cl.GOGC,
 	})
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -88,8 +89,57 @@ func TestHeapProfileOnlyToThisComputer(t *testing.T) {
 		if st.PID != os.Getpid() || st.HeapSys == 0 || st.Sys < st.HeapSys || st.HeapInuse == 0 || st.LiveHeap == 0 || st.NumGC == 0 || st.Goroutines < 1 {
 			t.Errorf("at %s: stats %+v", host, st)
 		}
+		// the OS's own count, beside Go's, where owl knows how to read it
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+			if !st.FootprintOK || st.Footprint == 0 || st.FootprintKind == "" {
+				t.Errorf("at %s: no OS footprint: %+v", host, st)
+			}
+		} else if st.FootprintOK {
+			t.Errorf("at %s: a footprint on %s: %+v", host, runtime.GOOS, st)
+		}
+		// runtime/metrics' classes and knobs
+		if st.ClassObjects == 0 || st.ClassStacks == 0 || st.GCGoal == 0 || st.GCLive == 0 {
+			t.Errorf("at %s: no heap classes: %+v", host, st)
+		}
+		if st.MemLimit == 0 || st.GOGC < -1 {
+			t.Errorf("at %s: knobs %+v", host, st)
+		}
 		if !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
 			t.Errorf("at %s: cacheable: %v", host, w.Header())
+		}
+	}
+}
+
+// A report says both what the OS counts and what the runtime counts, as
+// named fields in the header owl heap reads: a server from before the
+// ledger answers with the heap numbers alone.
+func TestHeapStatsCarryTheWholeLedger(t *testing.T) {
+	s := New()
+	r := httptest.NewRequest("GET", HeapPath, nil)
+	r.RemoteAddr, r.Host = "127.0.0.1:50123", "127.0.0.1:3425"
+	r.Header.Set("User-Agent", "Go-http-client/1.1")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(w.Header().Get(HeapStatsHeader)), &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"footprint", "footprintKind", "footprintOK",
+		"classObjects", "classUnused", "classFree", "classReleased",
+		"classStacks", "classMetadata", "classOther",
+		"gcLive", "gcGoal", "memLimit", "gogc",
+	} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("the stats name no %s", key)
+		}
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		if raw["footprintOK"] != true {
+			t.Errorf("footprintOK %v", raw["footprintOK"])
 		}
 	}
 }

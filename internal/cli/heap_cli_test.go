@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -86,9 +87,13 @@ func TestHeapWritesTheRunningGatewaysProfile(t *testing.T) {
 	if info, _ := os.Stat(file); info.Mode().Perm() != 0o600 && os.PathSeparator == '/' {
 		t.Errorf("mode %v", info.Mode())
 	}
-	for _, want := range []string{"mem.pb.gz", "HeapAlloc", "HeapInuse", "HeapSys", "Sys ", "NumGC", "goroutines", "process"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("printed no %s: %q", want, out)
+	want := []string{"mem.pb.gz", "HeapAlloc", "HeapInuse", "HeapSys", "Sys ", "NumGC", "goroutines", "process", "footprint", "classes", "GC          "}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		want = append(want, "outside Go")
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Errorf("printed no %s: %q", w, out)
 		}
 	}
 
