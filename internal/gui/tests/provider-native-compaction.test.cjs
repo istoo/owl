@@ -38,13 +38,22 @@ const claude = account("claude", "Claude Code", "claude", { anthropic: "https://
 function serve(lang, posts) {
   const providers = { providers: [relay, chat, codex, claude], presets: [], excluded: [], gateway: { running: true, window: true } };
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
-  return async (route) => {
+  // a /api/providers answer still on its way draws the page again when it
+  // lands, replacing the editor's nodes: open() waits for these before it
+  // lets the test interact
+  let reads = 0, idle = [];
+  const handler = async (route) => {
     const url = new URL(route.request().url());
     const json = (data) => route.fulfill({ json: data });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") {
+      reads++;
+      try {
+        return await json(providers);
+      } finally { if (--reads === 0) idle.splice(0).forEach((done) => done()); }
+    }
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname.startsWith("/api/provider/") && route.request().method() === "POST") {
       posts.push({ action: url.pathname.slice("/api/provider/".length), body: route.request().postDataJSON() });
@@ -55,6 +64,8 @@ function serve(lang, posts) {
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
     await route.fulfill({ body: await fs.readFile(file), contentType });
   };
+  handler.idle = () => reads ? new Promise((done) => idle.push(done)) : Promise.resolve();
+  return handler;
 }
 
 const strings = [
@@ -88,11 +99,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         const posts = [];
-        await page.route("**/*", serve(lang, posts));
+        const server = serve(lang, posts);
+        await page.route("**/*", server);
         await page.goto("http://owl.test/?view=providers");
         await page.locator(".row.provider", { hasText: name }).click();
         await unfold(page);
         await page.locator(".editor .bar").waitFor();
+        // a /api/providers read the page asked for earlier may still be on
+        // its way; when it lands renderProviders draws the open editor
+        // again, replacing the nodes a locator has already resolved. Wait
+        // for every such answer, then two frames for its draw, before the
+        // test scrolls or clicks anything.
+        await server.idle();
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         return { page, errors, posts };
       };
       const row = (page) => page.locator(".editor label.tick", { hasText: w.tick });

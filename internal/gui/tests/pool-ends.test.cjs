@@ -30,13 +30,22 @@ function serve(lang, first, posts) {
   let list = [first];
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
   const providers = () => ({ providers: list, presets: [], excluded: [], gateway: { running: true, window: true } });
-  return async (route) => {
+  // a /api/providers answer still on its way draws the page again when it
+  // lands, replacing the editor's nodes: open() waits for these before it
+  // lets the test interact
+  let reads = 0, idle = [];
+  const handler = async (route) => {
     const url = new URL(route.request().url());
     const json = (data) => route.fulfill({ json: data });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers());
+    if (url.pathname === "/api/providers") {
+      reads++;
+      try {
+        return await json(providers());
+      } finally { if (--reads === 0) idle.splice(0).forEach((done) => done()); }
+    }
     if (url.pathname === "/api/provider/capstop" || url.pathname === "/api/provider/capcareful") {
       const body = route.request().postDataJSON();
       posts.push(body);
@@ -50,6 +59,8 @@ function serve(lang, first, posts) {
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
     await route.fulfill({ body: await fs.readFile(file), contentType });
   };
+  handler.idle = () => reads ? new Promise((done) => idle.push(done)) : Promise.resolve();
+  return handler;
 }
 
 const label = {
@@ -70,10 +81,18 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         const errors = [], posts = [];
         page.on("pageerror", (e) => errors.push(e.message));
-        await page.route("**/*", serve(lang, codex(opts), posts));
+        const server = serve(lang, codex(opts), posts);
+        await page.route("**/*", server);
         await page.goto("http://owl.test/?view=providers");
         await page.locator(".row.provider", { hasText: "Codex" }).first().click();
         await page.locator(".editor .acc").first().waitFor();
+        // a /api/providers read the page asked for earlier may still be on
+        // its way; when it lands renderProviders draws the open editor
+        // again, replacing the nodes a locator has already resolved. Wait
+        // for every such answer, then two frames for its draw, before the
+        // test scrolls or clicks anything.
+        await server.idle();
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         return { page, errors, posts };
       };
 
@@ -97,11 +116,18 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const missing = await page.evaluate((ks) => ["zh", "zh-TW", "ja", "de"].flatMap((l) => ks.filter((k) => !I18N[l][k]).map((k) => `${l}: ${k}`)), keys);
           assert.deepEqual(missing, [], "every string has its translations");
         }
-        await ticks.nth(1).scrollIntoViewIfNeeded();
-        for (const i of [0, 1]) {
-          const box = await ticks.nth(i).boundingBox();
-          assert.ok(box.x >= 0 && box.x + box.width <= width, `tick ${i} fits across ${width}`);
-        }
+        // scroll and measure both ticks in one call: a measure is not an action,
+        // but its node must be the one in the page when it is read (#2658)
+        const boxes = await page.evaluate(() => {
+          const ticks = [...document.querySelectorAll(".editor .accts .pool-ends label")];
+          ticks[1]?.scrollIntoView({ block: "nearest" });
+          return ticks.map((tick) => {
+            const box = tick.getBoundingClientRect();
+            return { x: box.x, width: box.width };
+          });
+        });
+        assert.equal(boxes.length, 2, "two ticks are drawn");
+        boxes.forEach((box, i) => assert.ok(box.x >= 0 && box.x + box.width <= width, `tick ${i} fits across ${width}`));
         const scrollers = () => page.evaluate(() => [...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop).concat(document.scrollingElement.scrollTop));
         const before = await scrollers();
         const nth = (i) => `document.querySelectorAll(".editor .accts .pool-ends input")[${i}]?.checked`;
