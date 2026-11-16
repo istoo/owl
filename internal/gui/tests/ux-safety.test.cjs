@@ -193,6 +193,11 @@ for (const engine of process.env.BROWSER ? [process.env.BROWSER] : ["chromium", 
       });
       await page.locator('#providers .row.provider[data-id="relay"]').click();
       await page.getByRole("dialog").waitFor();
+      // the editor's form is editor.js, fetched the first time the Providers
+      // page draws: the click can open its "editor loading" placeholder
+      // first, and the field the menu is put on is not in it. Wait for the
+      // form itself before the menu and the redraw below.
+      await page.locator('#modal input[type="url"]').first().waitFor();
       await page.evaluate(() => {
         const element = document.createElement("div");
         element.id = "later-inert";

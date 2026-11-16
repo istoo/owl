@@ -50,6 +50,12 @@ for (const engine of engines) for (const lang of ["en", "zh"]) {
     await page.goto("http://owl.test/?view=providers");
     await page.waitForFunction((l) => state.settings.lang === l, lang);
     await page.waitForFunction(() => providers?.providers?.length === 5);
+    // the editor's drawing is editor.js, fetched the first time the
+    // Providers page draws (ensureEditor): a loaded machine may still be
+    // fetching it, and renderEditor then returns its "editor loading"
+    // placeholder, which the script's arrival never redraws (this direct
+    // open sets no `editing`). Wait for the drawing, then open the modal.
+    await page.waitForFunction(() => !!window.drawEditor);
 
     const site = async (id) => {
       await page.evaluate((id) => openModal(renderEditor(providers.providers.find((p) => p.id === id))), id);
