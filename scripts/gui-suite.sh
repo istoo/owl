@@ -66,7 +66,23 @@ while ! mkdir "$lock" 2>/dev/null; do
   sleep 30
 done
 echo $$ > "$lock/pid"
-trap 'rm -rf "$lock"' EXIT INT TERM
+# whatever ends the run (its end, Ctrl-C, a kill) ends every browser it
+# started, and only those: its own process tree, by pid. A run stopped
+# with SIGINT left 13 Playwright processes, and clearing them by name
+# (pkill -f ms-playwright) also closed another session's browsers (11-16)
+tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do tree "$c"; echo "$c"; done; }
+runner=""
+finish() {
+  if [ -n "$runner" ]; then
+    kill -INT "$runner" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$runner" 2>/dev/null || break; sleep 1; done
+  fi
+  local left; left=$(tree $$)
+  [ -n "$left" ] && kill $left 2>/dev/null || true
+  rm -rf "$lock"
+}
+trap finish EXIT
+trap 'exit 130' INT TERM
 
 # room first: what the user is doing comes before the suite. Three looks
 # in a row under the bar, 30s apart: one look at a dip started a run at
@@ -84,8 +100,11 @@ if [ "$(uname)" = Darwin ] && command -v taskpolicy >/dev/null; then low=(taskpo
 
 echo "gui-suite: ${#files[@]} files, concurrency $conc, load $(load1), log $log" >&2
 set +e
-"${low[@]}" node --test --test-concurrency="$conc" "${files[@]}" > "$log" 2>&1
+"${low[@]}" node --test --test-concurrency="$conc" "${files[@]}" > "$log" 2>&1 &
+runner=$!
+wait "$runner"
 code=$?
+runner=""
 set -e
 grep -E '^ℹ (tests|pass|fail|skipped|duration_ms)' "$log" || true
 grep -E '^✖' "$log" | sed -E 's/ \([0-9.]+ms\)$//' | sort -u || true
