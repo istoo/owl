@@ -464,8 +464,9 @@
 Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 116、CG 位图 34、加速器 5）+ C malloc 49 + 其它约 20。
 分配速率约 19.6GB/小时（5.4MB/s）。
 
-- [ ] A 运行时与账本（agent mem-runtime）：`owl heap` 输出完整账（footprint、图形、runtime/metrics 各类），
-      可复现的内存浸泡测试（子进程网关 + 假上游 + 真实大小请求），评估 SetMemoryLimit/GOGC/归还策略，前后数字。
+- [x] A 账本（fd620ddf9：owl heap 给 footprint、Go 外差额、runtime/metrics 各类、GC 目标）与浸泡尺子（d3eda44ca，docs/memory.md）。
+      运行时策略评估后不采纳：512MiB 软上限与不设无差异（构造上 2×live > GC 目标 1.5×live，从不触发）；96MiB 稳态 -16% 但 GC CPU 11%→19%，
+      64MiB 低于 live 时请求数 -30%。网关已有 30 秒空闲 FreeOSMemory（idle_memory.go）。降内存靠 live 与 Go 外占用。
 - [x] B 图形 155MB：Dock 翻动每帧新建 NSImage 被 NSDockTile 永久保留（34MB，每次点击 +29MB）→ 复用一张图，首次 +6.6MB、之后每次 +0.3MB；窗口后备 116MB 为可回收合成缓存（观测到 dirty→reclaimable），不动；托盘无泄漏。待真机目视 Dock 动画。
 - [ ] C 分配速率（agent alloc-rate）：redact.MaskJSON 1.84GB/h、gateway.withFields 1.01GB/h，每请求副本数与字节。
 - [x] D 脱敏缓存写盘（0503957cb）：单次编码 170018 次分配/4.87MB → 1 次/1.99MB，2.27ms → 0.46ms；写盘最多每 30 秒一次（原约 9 秒）。旧代码上分配测试红。
