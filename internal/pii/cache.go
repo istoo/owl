@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -38,12 +39,20 @@ func cachePath() string { return filepath.Join(dir(), "found-"+modelSHA[:12]+".b
 // for a burst of requests.
 var saveAfter = 2 * time.Second
 
+// saveEvery is the least time between two writes of one cache file. A
+// change is written saveAfter after it, but not before saveEvery has
+// passed since the last write began: answers arrive every few seconds,
+// and each write encodes and fsyncs the whole cache. What waits is only
+// what the model found, which asks again after a restart (#3682).
+var saveEvery = 30 * time.Second
+
 // diskState is a backend's cache file: read once, written saveAfter
-// after an answer.
+// after an answer, and no sooner than saveEvery after the write before.
 type diskState struct {
 	mu     sync.Mutex
 	loaded string // the file read into cache, once
 	timer  *time.Timer
+	last   time.Time // when the last write began
 	saving sync.Mutex
 	// saves counts a timer's write from when it is set until it is
 	// done, so a test's cleanup can wait for one under way.
@@ -79,21 +88,44 @@ func (bk *backend) loadCache() {
 	}
 }
 
-// saveSoon writes the file saveAfter from now, unless a write is due.
+// saveSoon writes the file saveAfter from now, unless a write is due:
+// no sooner than saveEvery after the last one.
 func (bk *backend) saveSoon() {
 	disk := bk.disk
 	disk.mu.Lock()
 	defer disk.mu.Unlock()
-	if disk.timer == nil {
-		disk.saves.Add(1)
-		disk.timer = time.AfterFunc(saveAfter, func() {
-			defer disk.saves.Done()
-			disk.mu.Lock()
-			disk.timer = nil
-			disk.mu.Unlock()
-			bk.saveCache()
-		})
+	bk.armSave(time.Now())
+}
+
+// armSave sets the one write for the later of saveAfter from now and
+// saveEvery after the last write. The caller holds disk.mu.
+func (bk *backend) armSave(now time.Time) {
+	disk := bk.disk
+	if disk.timer != nil {
+		return
 	}
+	wait := saveAfter
+	if due := disk.last.Add(saveEvery); due.After(now) {
+		if d := due.Sub(now); d > wait {
+			wait = d
+		}
+	}
+	disk.saves.Add(1)
+	disk.timer = time.AfterFunc(wait, func() {
+		defer disk.saves.Done()
+		now := time.Now()
+		disk.mu.Lock()
+		disk.timer = nil
+		if !disk.last.IsZero() && now.Before(disk.last.Add(saveEvery)) {
+			// a write the timer didn't schedule began since: wait the
+			// rest of saveEvery from it.
+			bk.armSave(now)
+			disk.mu.Unlock()
+			return
+		}
+		disk.mu.Unlock()
+		bk.saveCache()
+	})
 }
 
 // saveCache writes what cache holds, oldest first, to a file beside the
@@ -104,6 +136,9 @@ func (bk *backend) saveCache() error {
 	disk, cache := bk.disk, bk.cache
 	disk.saving.Lock()
 	defer disk.saving.Unlock()
+	disk.mu.Lock()
+	disk.last = time.Now()
+	disk.mu.Unlock()
 	cache.mu.Lock()
 	b := encodeCache(cache)
 	cache.mu.Unlock()
@@ -130,29 +165,41 @@ func (bk *backend) saveCache() error {
 
 // encodeCache is c, oldest first: the magic, a count, then each entry's
 // hash, its spans' count and each span's start, end, score (a float32)
-// and label.
+// and label. The size is counted first, so the file is written in one
+// allocation rather than a buffer that doubles and a reflection call per
+// field; it is called with the cache locked on every save.
 func encodeCache(c *lru) []byte {
-	var b bytes.Buffer
-	b.WriteString(cacheMagic)
-	put := func(v any) { binary.Write(&b, binary.LittleEndian, v) }
-	put(uint32(c.ll.Len()))
+	n := len(cacheMagic) + 4
 	for e := c.ll.Back(); e != nil; e = e.Prev() {
 		en := e.Value.(*entry)
-		b.Write(en.k[:])
-		put(uint16(len(en.fs)))
+		n += len(en.k) + 2
+		for _, f := range en.fs {
+			n += 13 + len(f.Label)
+			if len(f.Label) > 255 {
+				n -= len(f.Label) - 255
+			}
+		}
+	}
+	b := make([]byte, 0, n)
+	b = append(b, cacheMagic...)
+	b = binary.LittleEndian.AppendUint32(b, uint32(c.ll.Len()))
+	for e := c.ll.Back(); e != nil; e = e.Prev() {
+		en := e.Value.(*entry)
+		b = append(b, en.k[:]...)
+		b = binary.LittleEndian.AppendUint16(b, uint16(len(en.fs)))
 		for _, f := range en.fs {
 			label := f.Label
 			if len(label) > 255 {
 				label = label[:255]
 			}
-			put(uint32(f.Start))
-			put(uint32(f.End))
-			put(float32(f.Score))
-			b.WriteByte(byte(len(label)))
-			b.WriteString(label)
+			b = binary.LittleEndian.AppendUint32(b, uint32(f.Start))
+			b = binary.LittleEndian.AppendUint32(b, uint32(f.End))
+			b = binary.LittleEndian.AppendUint32(b, math.Float32bits(float32(f.Score)))
+			b = append(b, byte(len(label)))
+			b = append(b, label...)
 		}
 	}
-	return b.Bytes()
+	return b
 }
 
 var errBadCache = errors.New("not a cache file")

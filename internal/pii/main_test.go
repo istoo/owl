@@ -196,6 +196,9 @@ func fakeInstallAt(t *testing.T, mode string, vulkan bool, d string) string {
 		disk.loaded = ""
 		disk.mu.Unlock()
 		disk.saves.Wait() // a write under way reads dir
+		disk.mu.Lock()
+		disk.last = time.Time{} // a write under way set it after the reset
+		disk.mu.Unlock()
 		srv.mu.Lock()
 		srv.cpu, srv.gpuLost, srv.failed = false, "", ""
 		srv.gpuFails, srv.gpuAgain = 0, time.Time{}

@@ -169,6 +169,7 @@ func restart(t *testing.T) {
 	cache.mu.Unlock()
 	disk.mu.Lock()
 	disk.loaded = ""
+	disk.last = time.Time{}
 	disk.mu.Unlock()
 }
 
