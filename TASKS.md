@@ -466,7 +466,7 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
 
 - [ ] A 运行时与账本（agent mem-runtime）：`owl heap` 输出完整账（footprint、图形、runtime/metrics 各类），
       可复现的内存浸泡测试（子进程网关 + 假上游 + 真实大小请求），评估 SetMemoryLimit/GOGC/归还策略，前后数字。
-- [ ] B 图形 155MB（agent gfx-mem）：窗口显示/隐藏、Dock 翻动动画、托盘图标各自占多少，隐藏窗口时应释放。
+- [x] B 图形 155MB：Dock 翻动每帧新建 NSImage 被 NSDockTile 永久保留（34MB，每次点击 +29MB）→ 复用一张图，首次 +6.6MB、之后每次 +0.3MB；窗口后备 116MB 为可回收合成缓存（观测到 dirty→reclaimable），不动；托盘无泄漏。待真机目视 Dock 动画。
 - [ ] C 分配速率（agent alloc-rate）：redact.MaskJSON 1.84GB/h、gateway.withFields 1.01GB/h，每请求副本数与字节。
 - [x] D 脱敏缓存写盘（0503957cb）：单次编码 170018 次分配/4.87MB → 1 次/1.99MB，2.27ms → 0.46ms；写盘最多每 30 秒一次（原约 9 秒）。旧代码上分配测试红。
 - [ ] E 存活大头预算：maskrec 正文 29MB（上限 32MB）、pii 模型 36MB（空闲卸载）、ccUUIDSet 15、tune 14.5、captureRequestBody 12 —— 各自有界，按 A 的账再定是否收紧。
