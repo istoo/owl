@@ -9222,7 +9222,9 @@ function holdModal(later) {
   m.addEventListener("pointerup", () => { pressedBody = null; }, true);
   m.addEventListener("keydown", () => { modalHold.touched = true; }, true);
   m.addEventListener("focusin", (e) => {
-    modalMark(e.target);
+    // a redraw giving its copy the focus is not a press: what was pressed
+    // stays held where it was (modalRefocus)
+    if (!modalRefocus) modalMark(e.target);
     // WebKit focuses the dialog and scrolls it on a click: put the fields back
     if (e.target !== d || pressedBody == null) return;
     const body = d.querySelector(".ebody"), at = pressedBody;
