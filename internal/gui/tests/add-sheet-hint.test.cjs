@@ -42,19 +42,24 @@ function server(lang) {
   };
 }
 
-// the hint, its width drawn in the box's font, and the room the box gives it
-const hint = (page) => page.evaluate(() => {
+// the hint, its width and the long hint's drawn in the box's font, and
+// the room the box gives it
+const hint = (page, long) => page.evaluate((long) => {
   const q = document.querySelector("#addSheet .find"), cs = getComputedStyle(q);
-  const s = document.createElement("span");
-  s.textContent = q.placeholder;
-  s.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${cs.font};letter-spacing:${cs.letterSpacing}`;
-  document.body.append(s);
-  const need = s.getBoundingClientRect().width;
-  s.remove();
+  const width = (text) => {
+    const s = document.createElement("span");
+    s.textContent = text;
+    s.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${cs.font};letter-spacing:${cs.letterSpacing}`;
+    document.body.append(s);
+    const w = s.getBoundingClientRect().width;
+    s.remove();
+    return w;
+  };
+  const need = width(q.placeholder), needLong = width(long);
   const room = q.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const bar = document.querySelector(".top").getBoundingClientRect(), f = q.getBoundingClientRect();
-  return { text: q.placeholder, need, room, afloat: f.top >= bar.top - 1 && f.bottom <= bar.bottom + 1 };
-});
+  return { text: q.placeholder, need, needLong, room, afloat: f.top >= bar.top - 1 && f.bottom <= bar.bottom + 1 };
+}, long);
 
 async function wheel(page, dy) {
   const v = await page.locator("#view-providers").boundingBox();
@@ -87,7 +92,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
           // in its row there is room for the whole hint, at every width
           await page.waitForFunction(() => document.querySelector("#addSheet .find").style.getPropertyValue("--hint-w"));
-          let h = await hint(page);
+          let h = await hint(page, long);
           assert(!h.afloat);
           assert([long, short].includes(h.text), h.text);
           if (width === 1300 || width === 900) assert.equal(h.text, long, "the whole hint in its row");
@@ -101,22 +106,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             await page.waitForTimeout(30);
           }
           await page.waitForTimeout(250);
-          h = await hint(page);
+          h = await hint(page, long);
           assert([long, short].includes(h.text), h.text);
           assert(h.need <= h.room + 0.5, `the hint fits ${h.afloat ? "in the bar" : "in the held head"}: ${h.need} > ${h.room} (${h.text})`);
-          if (width >= 1300) assert.equal(h.text, long, "the whole hint where the bar has room");
+          // owl's title bar carries the page's tools beside its title, so a
+          // floated search at 1300px has less room than upstream's: the long
+          // hint is asked for where the room the bar gives it fits
+          if (h.needLong <= h.room + 0.5) assert.equal(h.text, long, "the whole hint where the bar has room");
 
           // squeezed: the window made narrow under it, the hint goes short
           // rather than cut, and comes back with the room
           await page.setViewportSize({ width: Math.max(320, width - 300), height: 700 });
           await page.waitForTimeout(250);
-          h = await hint(page);
+          h = await hint(page, long);
           assert(h.need <= h.room + 0.5, `the hint fits once narrowed: ${h.need} > ${h.room} (${h.text})`);
           await page.setViewportSize({ width, height: 700 });
           await page.waitForTimeout(250);
-          h = await hint(page);
+          h = await hint(page, long);
           assert(h.need <= h.room + 0.5, `the hint fits once widened: ${h.need} > ${h.room} (${h.text})`);
-          if (width >= 1300) assert.equal(h.text, long, "the whole hint back with the room");
+          if (h.needLong <= h.room + 0.5) assert.equal(h.text, long, "the whole hint back with the room");
           assert.deepEqual(errors, []);
           await context.close();
         });
