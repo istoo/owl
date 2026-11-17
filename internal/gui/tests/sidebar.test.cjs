@@ -59,10 +59,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.ok(await page.evaluate(() => document.body.classList.contains("side-nav")), "a sidebar from 1024 points");
       assert.ok(await page.locator("#side .side-scroll #nav").isVisible(), "the pages are in the sidebar");
       assert.equal(await page.locator(".top #nav").count(), 0, "and not in the header");
-      assert.deepEqual(await page.locator("#nav .nav-gl:visible").allTextContents(), w.groups);
+      // owl draws no title over the first group (docs/owl-design.md)
+      assert.deepEqual(await page.locator("#nav .nav-gl:visible").allTextContents(), w.groups.slice(1));
+      assert.equal(await page.locator("#nav .nav-gl").first().isVisible(), false, "the first group has no title");
+      // owl's Routing is one page (a group is made in it), so no Groups row
       assert.deepEqual(await page.locator("#nav button[data-view]").evaluateAll((bs) => bs.map((b) => b.dataset.view)),
-        ["agents", "sessions", "library", "providers", "routing", "groups", "gateway", "usage", "masking", "plugins"]);
-      assert.ok(await page.locator("#side .side-foot #prefs").isVisible(), "Settings at the sidebar's foot");
+        ["agents", "sessions", "library", "providers", "routing", "gateway", "usage", "masking", "plugins"]);
+      assert.ok(await page.locator("#sideStatus #prefs").isVisible(), "Settings in the status bar under the page (owl's sidebar)");
       assert.equal((await page.locator("#prefs .side-l").textContent()).trim(), w.settings);
       // no page's name or group cut, and nothing scrolls sideways
       const cut = await page.locator("#side :is(.nav-gl, button[data-view] > span, #prefs .side-l)").evaluateAll((es) => es.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
@@ -84,58 +87,47 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const [tf, pressed] = await r.evaluate((b) => [getComputedStyle(b).transform, getComputedStyle(b).backgroundColor]);
         await page.mouse.move(box.x + box.width + 400, box.y);
         await page.mouse.up();
-        assert.equal(tf, "none", `${sel} pressed is not squeezed`);
         // a page's row has the open page's shape come to it instead
-        // (sidebar-glide.test.cjs); Settings, at the foot, darkens
-        if (sel === "#prefs") assert.notEqual(pressed, bg, `${sel} pressed darkens`);
+        // (sidebar-glide.test.cjs); Settings' gear gives a soft press of
+        // its own (owl) and darkens
+        if (sel === "#prefs") {
+          assert.equal(tf, "matrix(0.9, 0, 0, 0.9, 0, 0)", `${sel} pressed gives the gear's soft press`);
+          assert.notEqual(pressed, bg, `${sel} pressed darkens`);
+        } else assert.equal(tf, "none", `${sel} pressed is not squeezed`);
       }
 
       // the gateway's address at the foot, drawn from boot.js ahead of the
       // read, not held back until the providers have come in
       assert.ok(await page.locator("#sideGw").isVisible(), "the gateway's line from boot.js");
       assert.match(await page.locator("#sideGw").textContent(), /127\.0\.0\.1:3425/);
-      assert.ok(await page.locator("#sideGw span").evaluate((s) => s.scrollWidth <= s.clientWidth), "the address is read whole");
+      assert.ok(await page.locator("#sideGw span:not(.side-gw-chev)").evaluate((s) => s.scrollWidth <= s.clientWidth), "the address is read whole");
       assert.equal(reads.length, 1, "read once for the sidebar");
 
-      // Settings: its tabs listed under it, its own strip hidden, and picked there
+      // Settings: its tabs are its own strip on the page (owl keeps them
+      // there; the sidebar lists no tabs)
       await page.locator("#prefs").click();
-      const subs = page.locator("#side .nav-sub:not(.leaving) .nav-s");
-      await subs.first().waitFor();
-      assert.equal(await subs.count(), 8);
-      assert.equal(await page.locator("#setTabs").isVisible(), false, "the page's own strip is hidden");
-      assert.deepEqual(await subs.evaluateAll((ss) => ss.map((s) => s.dataset.of)),
+      const tabs = page.locator("#setTabs [role=tab]");
+      await tabs.first().waitFor();
+      assert.ok(await page.locator("#setTabs").isVisible(), "the page's own strip lists Settings' tabs");
+      const ids = await tabs.evaluateAll((bs) => bs.filter((b) => !b.hidden).map((b) => b.id));
+      assert.deepEqual(ids,
         ["setTab-general", "setTab-usage", "setTab-network", "setTab-models", "setTab-privacy", "setTab-otel", "setTab-sync", "setTab-about"]);
-      assert.deepEqual(await subs.evaluateAll((ss) => ss.filter((s) => s.scrollWidth > s.clientWidth + 1).map((s) => s.textContent)), [], "tab names read whole");
-      // the selection sets off as the row is pressed, ahead of the page,
-      // and goes back when the press leaves the row
-      const hlTo = () => page.evaluate(() => { const h = document.querySelector(".nav-sub:not(.leaving) .nav-hl"); return h.style.transform; });
-      const rowAt = (of) => page.evaluate((of) => `translateY(${document.querySelector(`.nav-s[data-of=${of}]`).offsetTop}px)`, of);
-      const startAt = await hlTo();
-      const net = await page.locator(".nav-s[data-of=setTab-network]").boundingBox();
-      await page.mouse.move(net.x + net.width / 2, net.y + net.height / 2);
-      await page.mouse.down();
-      assert.equal(await hlTo(), await rowAt("setTab-network"), "pressed, the selection is going to it");
-      assert.equal(await page.locator("#setTab-network").evaluate((b) => b.classList.contains("on")), false, "before the page has the tab");
-      // the selection is the one shape: the row pressed has no ground of its own
-      assert.equal(await page.locator(".nav-s[data-of=setTab-network]").evaluate((b) => getComputedStyle(b).backgroundColor), "rgba(0, 0, 0, 0)", "no block under the finger ahead of the selection");
-      await page.mouse.move(net.x + net.width / 2, net.y + 200);
-      assert.equal(await hlTo(), startAt, "the press left the row: back");
-      await page.mouse.up();
-      assert.equal(await page.locator("#setTab-network").evaluate((b) => b.classList.contains("on")), false, "nothing picked");
-      await page.locator(".nav-s[data-of=setTab-models]").click();
+      await page.locator("#setTab-models").click();
       await page.waitForFunction(() => document.querySelector("#setTab-models").classList.contains("on"));
       await frame(page);
-      assert.equal(await page.locator(".nav-s.cur").getAttribute("data-of"), "setTab-models");
-      assert.equal(await page.locator(".nav-s.cur").getAttribute("aria-selected"), "true");
+      assert.equal(await page.locator("#setTab-models").getAttribute("aria-selected"), "true");
+      // the strip scrolls, and the picked tab is whole in it (owl)
+      assert.ok(await page.locator("#setTabs").evaluate((t) => {
+        const b = t.querySelector("#setTab-models").getBoundingClientRect(), r = t.getBoundingClientRect();
+        return b.left >= r.left - 0.5 && b.right <= r.right + 0.5;
+      }), "the picked tab is whole in the strip");
       const crumb = await page.locator("#crumb").evaluate((c) => [...c.querySelectorAll("span, b")].map((e) => e.textContent));
-      assert.deepEqual(crumb, [w.settings, w.models], "the header says where the reader is");
-      // the selection sits on the tab picked
-      const [hl, cur] = await page.evaluate(() => [document.querySelector(".nav-sub:not(.leaving) .nav-hl").getBoundingClientRect().top, document.querySelector(".nav-s.cur").getBoundingClientRect().top]);
-      assert.ok(Math.abs(hl - cur) < 1, `the selection is on the tab: ${hl} ${cur}`);
+      // owl's crumb names the page; the tab is named by its strip
+      assert.deepEqual(crumb, [w.settings], "the header says where the reader is");
 
-      // another page without tabs of its own: the list folds away
+      // another page: the strip leaves with Settings
       await page.locator('#nav button[data-view="agents"]').click();
-      await page.waitForFunction(() => !document.querySelector(".nav-sub"));
+      await page.waitForFunction(() => !document.querySelector("#setTabs")?.offsetParent);
 
       // a point narrower, the header's row has them again, and no sidebar
       await page.setViewportSize({ width: 1023, height: 760 });
@@ -149,7 +141,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // Settings' tabs are its own strip again
       await page.locator("#prefs").click();
       await page.locator("#setTabs").waitFor();
-      assert.equal(await page.locator(".nav-sub").count(), 0);
 
       assert.deepEqual(errors, []);
       await context.close();
@@ -195,34 +186,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await context.close();
     });
 
-    await t.test("the list opens and folds as it plays", async () => {
+    await t.test("Settings opens its page and its strip, and leaves both", async () => {
       const context = await browser.newContext({ viewport: { width: 1200, height: 760 } });
       const page = await context.newPage();
       await page.route("**/*", serve("en", []));
       await page.goto("http://owl.test/");
       await page.waitForSelector("#nav button.on");
-      // the unroll is counted as its animations are made, ahead of the
-      // click (#2950): on a busy machine the whole play is over before
-      // the one sample after the click lands, and a finished animation
-      // is out of getAnimations(); an animation made is a fact that
-      // stays put, so the assert reads that, not the moment sampled
-      await page.evaluate(() => {
-        window.navAnims = [];
-        const animate = Element.prototype.animate;
-        Element.prototype.animate = function (frames, options) {
-          window.navAnims.push(this);
-          return animate.call(this, frames, options);
-        };
-      });
       await page.locator("#prefs").click();
-      const box = page.locator("#side .nav-sub").first();
-      await box.waitFor();
-      assert.ok(await box.evaluate((b) => window.navAnims.includes(b)), "the list unrolls");
+      await page.locator("#setTabs [role=tab]").first().waitFor();
+      assert.ok(await page.locator("#setTabs").isVisible(), "the strip is on the page");
       await page.locator('#nav button[data-view="agents"]').click();
-      // folding: out of reach at once, gone once it has played
-      assert.equal(await page.locator(".nav-sub:not(.leaving)").count(), 0);
-      assert.equal(await page.locator(".nav-s").count(), 0, "its rows are no tabs while they fold");
-      await page.waitForFunction(() => !document.querySelector(".nav-sub"));
+      await page.waitForFunction(() => !document.querySelector("#setTabs")?.offsetParent);
+      assert.equal(await page.locator("#setTabs").isVisible(), false, "and leaves with Settings");
+      assert.deepEqual(await page.locator("#side .nav-sub").count(), 0, "the sidebar lists no tabs");
       await context.close();
     });
   });

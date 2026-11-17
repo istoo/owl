@@ -46,8 +46,8 @@ const sizes = [
   { name: "wide", width: 1200, height: 760 },
   { name: "narrow", width: 760, height: 760, side: true },
   { name: "short", width: 1200, height: 460 },
-  // too short for the whole list: the foot scrolls, its end in sight
-  { name: "tiny", width: 1200, height: 340, over: true },
+  // too short for the page: the button stays in its bar
+  { name: "tiny", width: 1200, height: 340 },
 ];
 const langs = ["en", "zh", "zh-TW", "ja", "de"];
 
@@ -67,44 +67,34 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://owl.test/");
       await page.waitForSelector("#nav button.on");
       assert.ok(await page.evaluate(() => document.body.classList.contains("side-nav")), "the sidebar shows");
-      const prefs = page.locator("#side .side-foot #prefs");
+      // owl keeps Settings in the status bar under the page, its tabs on the
+      // page's own strip (app.js layoutNav; no list in the sidebar)
+      const prefs = page.locator("#sideStatus #prefs");
       const before = await prefs.boundingBox();
 
-      // clicked, the list unrolls and the button stays under the pointer
+      // clicked, Settings opens and the button stays under the pointer
       await page.mouse.click(before.x + before.width / 2, before.y + before.height / 2);
       const opening = await drift(page, 700);
-      const subs = page.locator("#side .nav-sub:not(.leaving) .nav-s");
-      await subs.first().waitFor();
-      assert.equal(await subs.count(), 8, "Settings' tabs are listed");
+      const tabs = page.locator("#setTabs [role=tab]");
+      await tabs.first().waitFor();
+      assert.equal(await tabs.evaluateAll((bs) => bs.filter((b) => !b.hidden).length), 8, "Settings' tabs are on its strip");
       const after = await prefs.boundingBox();
-      assert.ok(opening < 1, `the button moved ${opening}px while the list opened`);
+      assert.ok(opening < 1, `the button moved ${opening}px while Settings opened`);
       assert.ok(Math.abs(after.y - before.y) < 1 && Math.abs(after.x - before.x) < 1, `the button stays put: ${JSON.stringify(before)} then ${JSON.stringify(after)}`);
       assert.ok(await page.locator("#prefs").evaluate((b) => b.classList.contains("on")), "Settings is open");
-      // the list grows from the button: it sits right above it, the open tab in sight
-      const [listBottom, btnTop] = await page.evaluate(() => [document.querySelector(".nav-sub:not(.leaving)").getBoundingClientRect().bottom, document.querySelector("#prefs").getBoundingClientRect().top]);
-      assert.ok(listBottom <= btnTop + 0.5 && btnTop - listBottom < 12, `the list is just above the button: ${listBottom} ${btnTop}`);
-      // and is read in the order shown, tabs then Settings then the gateway
-      assert.deepEqual(await page.locator(".side-foot").evaluate((f) => [...f.children].map((c) => c.id || c.className)), ["nav-sub", "prefs", "sideGw"], "read top down");
-      const inSight = (sel) => page.locator(sel).evaluate((s) => {
-        const r = s.getBoundingClientRect(), f = s.closest(".side-foot").getBoundingClientRect();
-        return r.top >= f.top - 0.5 && r.bottom <= f.bottom + 0.5;
-      });
-      assert.ok(await inSight("#prefs"), "the button is in sight");
-      const over = await page.locator(".side-foot").evaluate((f) => f.scrollHeight > f.clientHeight + 1);
-      assert.equal(over, !!size.over, "the foot scrolls only when the list can't fit");
-      if (!size.over) assert.ok(await inSight(".nav-s.cur"), "the open tab is in sight");
+      assert.ok(await page.locator("#setTabs").isVisible(), "its strip is in sight");
 
       // a tab picked there: the button still where it was
-      await page.locator(".nav-s[data-of=setTab-network]").click();
+      await page.locator("#setTab-network").click();
       await page.waitForFunction(() => document.querySelector("#setTab-network").classList.contains("on"));
       assert.ok((await drift(page, 300)) < 1, "picking a tab leaves the button put");
       assert.ok(Math.abs((await prefs.boundingBox()).y - before.y) < 1);
 
-      // another page: the list folds away and the button never moved
+      // another page: Settings' strip leaves and the button never moved
       await page.locator('#nav button[data-view="agents"]').click();
       const closing = await drift(page, 600);
-      await page.waitForFunction(() => !document.querySelector(".nav-sub"));
-      assert.ok(closing < 1, `the button moved ${closing}px while the list folded`);
+      await page.waitForFunction(() => !document.querySelector("#setTabs")?.offsetParent);
+      assert.ok(closing < 1, `the button moved ${closing}px while Settings left`);
       assert.ok(Math.abs((await prefs.boundingBox()).y - before.y) < 1, "the button is where it began");
 
       assert.deepEqual(errors, []);
