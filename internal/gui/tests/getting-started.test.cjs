@@ -97,7 +97,6 @@ const STRINGS = ["Get started", "Add a model source", "Connect an agent", "Set u
 
 async function open(browser, layout, lang, w, posts) {
   const context = await browser.newContext({ viewport: layout.viewport, reducedMotion: "reduce" });
-  await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "agents"); } catch {} });
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   page.setDefaultNavigationTimeout(60000);
@@ -105,6 +104,9 @@ async function open(browser, layout, lang, w, posts) {
   page.on("pageerror", (e) => page.errors.push(e.message));
   await page.route("**/*", server(lang, w, posts));
   await page.goto("http://owl.test" + layout.url);
+  if (layout.name === "panel") {
+    await page.locator('#pHome [data-open="agents"]').click();
+  }
   // folded under Get started, the rows are there but out of view
   await page.locator(".row.agent").first().waitFor({ state: "attached" });
   return { context, page };
@@ -140,7 +142,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal((await page.locator(".guide-h").textContent()), await tr("Get started"));
         assert.equal(await stepDone(page, "source"), false);
         assert.equal(await stepDone(page, "agent"), false);
-        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 0, m: 2 }));
+        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 0, m: 3 }));
         // the agents found here are named, Cursor (never connectable) not;
         // with no models yet they can't be connected
         assert.deepEqual(await page.locator(".guide-agent").evaluateAll((bs) => bs.map((b) => b.dataset.id)), ["codex", "claude", "opencode"]);
@@ -175,10 +177,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // be connected, and a routing group is a click away
         w.served = 12;
         await page.goto("http://owl.test" + layout.url);
+        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await card.waitFor();
         assert.equal(await stepDone(page, "source"), true);
         assert.match(await page.locator('.guide-step[data-step="source"] .guide-say').textContent(), /12/);
-        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 1, m: 2 }));
+        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 1, m: 3 }));
         const codex = page.locator('.guide-agent[data-id="codex"]');
         assert.equal(await codex.isDisabled(), false);
         const tpl = page.locator(".guide-tpl");
@@ -205,6 +208,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // done stays done: a reload brings no card back, and the agent
         // connected is in view, the rest folded as for anyone
         await page.goto("http://owl.test" + layout.url);
+        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(".row.agent").first().waitFor();
         assert.equal(await page.locator(".guide").count(), 0);
         assert.equal(await folded(page), 4);
