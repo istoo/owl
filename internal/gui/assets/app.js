@@ -6714,17 +6714,6 @@ function depLine(kind, head, why, ...acts) {
   return card;
 }
 
-// depLine: one quiet line over the Providers list: an amber dot, what
-// happened and why, and its buttons on the right
-function depLine(kind, head, why, ...acts) {
-  const card = el("div", "deprecation " + kind), body = el("div", "dep-body"), a = el("div", "dep-acts");
-  card.setAttribute("role", "note");
-  body.append(el("div", "dep-head", head), el("p", "dep-why", why));
-  a.append(...acts);
-  card.append(el("span", "dep-dot"), body, a);
-  return card;
-}
-
 // unmovedLine: a retired built-in whose accounts haven't moved to its
 // plugin (a failed install): nothing serves them, so it is never hidden.
 // An amber dot, what happened and why, and the move, tried again here.

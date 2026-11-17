@@ -1,6 +1,6 @@
 module github.com/istoo/owl
 
-go 1.26.8
+go 1.26.10
 
 require (
 	github.com/MoeForge/moejs v0.1.0

@@ -49,7 +49,7 @@ func TestPushPostsJSONAndNeverPutsTheKeyInTheAddress(t *testing.T) {
 		t.Fatalf("requests %v", f.urls)
 	}
 	m := f.got[0]
-	if m["device_key"] != "SECRETKEY123" || m["title"] != "Title" || m["body"] != "Body" || m["group"] != "owl" || m["icon"] != "https://usemagpie.ai/apple-touch-icon.png" {
+	if m["device_key"] != "SECRETKEY123" || m["title"] != "Title" || m["body"] != "Body" || m["group"] != "owl" || m["icon"] != "https://raw.githubusercontent.com/istoo/owl/main/build/icon/generated/owl-1024.png" {
 		t.Fatalf("body %v", m)
 	}
 }

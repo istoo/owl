@@ -1,10 +1,10 @@
 // Settings › About's Update source (RootSir and Sakugar_ on X): where an
 // update is read and downloaded from, one menu button as the language's is.
 // app.js imports this when the page is drawn, so it weighs nothing on the
-// core. "" is automatic; site never goes to GitHub, github never to
-// usemagpie.ai.
+// core. "" is automatic; site reads only the release asset, github only
+// the GitHub API.
 window.updateSourcePick = function updateSourcePick(s, keep) {
-  const names = { "": "Automatic", site: "usemagpie.ai only", github: "GitHub only" };
+  const names = { "": "Automatic", site: "GitHub release only", github: "GitHub only" };
   const b = $("#updateSourcePick");
   const chosen = s.updateSource in names ? s.updateSource : "";
   b.dataset.value = chosen;

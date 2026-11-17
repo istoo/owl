@@ -279,7 +279,7 @@ func dshOn(at place, dir, list string, fresh, lead func() string) *Agent {
 			// reasoningEffort since 0.1.5 (a model through owl offers its
 			// own levels), llm-deepseek's before (off, low, high or max;
 			// dsh's own default is high)
-			Key: "effort", Label: "thinking",
+			Key: "effort", Label: "thinking", Closed: true,
 			Get: func() string { return dshGetEffort(dir, lead()) },
 			Set: func(v string) error { return dshSetEffort(dir, v, gw(), lead()) },
 			Options: func(cur map[string]string) []Option {

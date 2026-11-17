@@ -1448,9 +1448,9 @@ func retagRows(db *sql.DB, ids []string, from, to string) ([]string, error) {
 // row's provider, where it would otherwise be refused ("This chat uses
 // openai, but your current provider is owl", modelProviderMismatch).
 // A paginated thread moves by its row alone; a legacy one that Codex
-// keeps as plain lines goes in place, its first line written over at one
-// length (openai and owl) with the row following. A packed rollout or
-// one of another length is left to the next sync. Recency is not looked
+// keeps as plain lines is relabeled with the row following, its line
+// padded when owl's id is shorter and its file rewritten when longer. A
+// packed rollout is left to the next sync. Recency is not looked
 // at: the end waits for no turn to be open. It says the ids it moved and
 // the first error it met, having gone on past it.
 func RetagLoadedCodexThreads(home, from, to string) ([]string, error) {
@@ -1518,7 +1518,7 @@ func RetagLoadedCodexThreadsBut(home, from, to string, keep func(id string) bool
 				continue
 			}
 			path := filepath.Clean(r.path)
-			if len(from) != len(to) || !filepath.IsAbs(path) || packed(path) || !strings.Contains(filepath.Base(path), r.id) || !sameDir(codexHomeOf(path), home) {
+			if !filepath.IsAbs(path) || packed(path) || !strings.Contains(filepath.Base(path), r.id) || !sameDir(codexHomeOf(path), home) {
 				continue
 			}
 			fi, err := os.Lstat(path)

@@ -235,7 +235,7 @@ var codexEffortsAll = []string{"none", "minimal", "low", "medium", "high", "xhig
 func codexEfforts(ms []catalog.Model, model string) []Option {
 	e := catalog.Efforts(ms, model)
 	if len(e) == 0 {
-		return static("low", "medium", "high", "xhigh")
+		return static(codexEffortsAll...)
 	}
 	d := Option{Value: "", Note: "Codex's default for the model", Takes: codexcat.TakesEffort(ms, model)}
 	if d.Takes != "" {
@@ -799,16 +799,15 @@ func codexIn(at place) *Agent {
 			t3BringBack(dir, to)
 			return
 		}
-		// in place first where it can be (bringOver's, and those started
-		// on owl that Codex hasn't packed): no copy of each, no rewrite
-		if len(to) == len(owlID) {
-			moved, err := sessions.RelabelCodexThreads(dir, owlID, to)
-			if len(moved) > 0 {
-				log.Printf("codex: %d thread(s) on owl moved back to %s, where Codex lists them", len(moved), to)
-			}
-			if err != nil {
-				log.Println("codex: moving owl's threads back:", err)
-			}
+		// in place first (bringOver's, and those started on owl that
+		// Codex hasn't packed): no copy of each in the trash; an id of
+		// another length pads the line, or rewrites that one file
+		back, err := sessions.RelabelCodexThreads(dir, owlID, to)
+		if len(back) > 0 {
+			log.Printf("codex: %d thread(s) on owl moved back to %s, where Codex lists them", len(back), to)
+		}
+		if err != nil {
+			log.Println("codex: moving owl's threads back:", err)
 		}
 		// then a paginated thread by its row alone, packed or not (bringOver's, and those
 		// started on owl): Codex reads its provider there, so none of
@@ -2381,7 +2380,7 @@ func codexIn(at place) *Agent {
 				Options: func(map[string]string) []Option { return modelOptions(true) },
 			},
 			{
-				Key: "effort", Label: "effort",
+				Key: "effort", Label: "effort", Closed: true,
 				// unset reads as Default, which it is; the level Codex then
 				// takes is on the Default option (Takes), not the value, so
 				// picking Default doesn't read back as medium (lgtm)
@@ -2514,7 +2513,7 @@ func codexIn(at place) *Agent {
 				// [agents] default_subagent_reasoning_effort: unset, a
 				// subagent runs at the session's effort, or at its model's
 				// default when it has a model of its own
-				Key: "subagent_effort", Label: "subagent effort", Quiet: true,
+				Key: "subagent_effort", Label: "subagent effort", Quiet: true, Closed: true,
 				Get: func() string { v, _ := subEffort(); return v },
 				Set: func(v string) error {
 					if v == "" {
@@ -2564,7 +2563,7 @@ func codexIn(at place) *Agent {
 				// the app lost its chats, projects and Chrome control
 				// (#1824, Qyburn3 on X). Kept in the stash, where set("")
 				// leaves it.
-				Key: "login", Label: "sign-in", Quiet: true,
+				Key: "login", Label: "sign-in", Quiet: true, Closed: true,
 				Get: func() string { return stashShared()[at.key("codex.login")] },
 				Set: func(v string) error {
 					if v != "" && v != "api" && v != "chatgpt" {
@@ -2990,20 +2989,19 @@ func codexStaleCache(path, tag string) error {
 }
 
 // codexOnto moves the threads of the Codex home dir on the provider from
-// to the provider to, where Codex lists and resumes them: in place when
-// the ids are the same length (RelabelCodexThreads), a paginated one by
-// its row at any age (RetagPagedCodexThreads), and the rest whose last
-// turn is in the last packedSince rewritten with a copy kept, newest
-// first and packedBudget bytes a call. It says the ids it moved, and more
-// when the budget left some for another call. bringOver, bringBeside and
-// lendOwn move with it.
+// to the provider to, where Codex lists and resumes them: each plain one
+// in place (RelabelCodexThreads, which pads a shorter id or rewrites that
+// one file for a longer one, owl's being shorter than most), a paginated
+// one by its row at any age (RetagPagedCodexThreads), and the packed ones
+// whose last turn is in the last packedSince rewritten with a copy kept,
+// newest first and packedBudget bytes a call. It says the ids it moved,
+// and more when the budget left some for another call. bringOver,
+// bringBeside and lendOwn move with it.
 func codexOnto(dir, from, to string) (ids []string, more bool) {
-	if len(from) == len(to) {
-		moved, err := sessions.RelabelCodexThreads(dir, from, to)
-		ids = append(ids, moved...)
-		if err != nil {
-			log.Printf("codex: moving %s's threads to %s: %v", from, to, err)
-		}
+	moved, err := sessions.RelabelCodexThreads(dir, from, to)
+	ids = append(ids, moved...)
+	if err != nil {
+		log.Printf("codex: moving %s's threads to %s: %v", from, to, err)
 	}
 	retagged, err := sessions.RetagPagedCodexThreads(dir, from, to)
 	ids = append(ids, retagged...)

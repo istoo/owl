@@ -146,8 +146,8 @@ func TestCodexThreadsFollowOwlIn(t *testing.T) {
 			t.Fatalf("rollout not back on custom:\n%s", b)
 		}
 	})
-	// a relay's id of another length is rewritten, a copy kept, the last
-	// 30 days of it; an older thread stays for Sessions to move
+	// a relay's id of another length moves as OpenAI's does: owl's id is
+	// shorter, so its line is padded, the file kept whole, no copy kept
 	t.Run("on a relay's table of another length", func(t *testing.T) {
 		const old = "019a0000-0000-7000-8000-0000000000c4"
 		cfg := "model = \"m\"\nmodel_provider = \"myrelay\"\n\n[model_providers.myrelay]\nname = \"My relay\"\nbase_url = \"https://relay.example/v1\"\nwire_api = \"responses\"\n"
@@ -170,7 +170,7 @@ func TestCodexThreadsFollowOwlIn(t *testing.T) {
 		if err := cx.Fields[0].Set("fake/m1"); err != nil {
 			t.Fatal(err)
 		}
-		for id, want := range map[string]string{plain: "owl", theirs: "owl", packed: "owl", old: "myrelay"} {
+		for id, want := range map[string]string{plain: "owl", theirs: "owl", packed: "owl", old: "owl"} {
 			if p := codexRowOn(t, dir, id); p != want {
 				t.Errorf("connected: thread %s on %q, want %q", id, p, want)
 			}
@@ -181,8 +181,8 @@ func TestCodexThreadsFollowOwlIn(t *testing.T) {
 		if p := zstMetaProvider(t, packedPath+".zst"); p != "owl" {
 			t.Fatalf("packed rollout on %q, want owl", p)
 		}
-		if l, _ := filepath.Glob(filepath.Join(settings.Dir(), "trash", "codex-provider", "*"+theirs, "move.json")); len(l) != 1 {
-			t.Fatalf("rewritten with no copy kept: %v", l)
+		if l, _ := filepath.Glob(filepath.Join(settings.Dir(), "trash", "codex-provider", "*"+theirs)); len(l) > 0 {
+			t.Fatalf("padded in place, but a copy was kept: %v", l)
 		}
 		if err := cx.Unwire(); err != nil {
 			t.Fatal(err)

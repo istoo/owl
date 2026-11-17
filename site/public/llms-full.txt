@@ -3700,7 +3700,7 @@ owl keeps a hash of it (for the cache) and the classifier’s answer, in memory 
 
 That depends on the classifier and on how distinct your intents are. With a few clearly different kinds, a small model picks well; with overlapping ones it will sometimes guess. Since a wrong or missing answer only changes which model answers, start with two or three broad intents, watch the trace for a day and adjust the wording.
 
-Questions or a setup worth sharing? Ask on [Discord](https://discord.gg/vGSnD3ZKQF). Routing groups in general are covered in [Get started](https://usemagpie.ai/docs/start#routing).
+Questions or a setup worth sharing? Open an issue on [GitHub](https://github.com/istoo/owl/issues). Routing groups in general are covered in [Get started](https://usemagpie.ai/docs/start#routing).
 
 ---
 
@@ -10732,7 +10732,7 @@ curl -s http://127.0.0.1:3425/v1/owl/concurrency
 
 > **Away from home**, reach the shared owl over a VPN such as Tailscale or WireGuard, with its address there. Don’t open its port to the internet.
 
-Questions or a setup worth sharing? Ask on [Discord](https://discord.gg/vGSnD3ZKQF). The [reference](https://github.com/istoo/owl/blob/main/docs/reference.md) has the details.
+Questions or a setup worth sharing? Open an issue on [GitHub](https://github.com/istoo/owl/issues). The [reference](https://github.com/istoo/owl/blob/main/docs/reference.md) has the details.
 
 ---
 
@@ -10888,7 +10888,7 @@ Then: `sudo chown -R 65532:65532 ./config`, `docker compose up -d`, open `http:/
 - **Updates..** Pull the new image and recreate the container on the same volume: `docker pull ghcr.io/istoo/owl:latest`, then `docker rm -f owl` and the same `docker run`, or `docker compose pull && docker compose up -d`. owl releases several times a day; for one update a day with Renovate or Watchtower, follow `daily` (with Renovate, pin its digest), or `stable` for one a week.
 - **Build it yourself..** `docker build -t owl .` in a checkout of [the repository](https://github.com/istoo/owl) makes the same image.
 
-Questions or a setup worth sharing? Ask on [Discord](https://discord.gg/vGSnD3ZKQF). The [reference](https://github.com/istoo/owl/blob/main/docs/reference.md#docker) has the details.
+Questions or a setup worth sharing? Open an issue on [GitHub](https://github.com/istoo/owl/issues). The [reference](https://github.com/istoo/owl/blob/main/docs/reference.md#docker) has the details.
 
 ---
 
@@ -11113,7 +11113,7 @@ A plugin is an npm package owl runs; the user installs it from Settings → Plug
 - No API or link lets another app register itself as an agent, or install a plugin, without the user: plugins are installed in owl by the user, and agent rows come from adapters in owl’s source.
 - `owl://import` links add a *provider* (a source of models, with its key), not an agent or an app: see [Add to owl](https://usemagpie.ai/docs/import).
 
-Questions, or an adapter you’d like to discuss first: open an [issue](https://github.com/istoo/owl/issues) or ask on [Discord](https://discord.gg/vGSnD3ZKQF).
+Questions, or an adapter you’d like to discuss first: open an [issue](https://github.com/istoo/owl/issues).
 
 ---
 
@@ -11916,7 +11916,7 @@ A plugin can add a page of its own to owl’s window. Once it is on, the page ha
 {
   "name": "owl-usage-glance",
   "version": "0.1.0",
-  "magpie": {
+  "owl": {
     "page": {
       "title": "Usage glance", "file": "page/index.html", "icon": "page/icon.svg",
       "titles": { "zh": "用量速览", "ja": "使用量の概要" }

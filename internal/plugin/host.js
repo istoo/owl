@@ -3018,64 +3018,6 @@ async function importFiles({ provider, texts, proxy }, signal) {
   return { results }
 }
 
-// keptAs is a success r as save keeps it: save keeps an OAuth sign-in only
-// when "refresh" is in r, or an api one when "key" is. An access with no
-// refresh is kept with an empty one, and a success with nothing at all to
-// keep is null, a failure.
-function keptAs(r) {
-  if ("refresh" in r || "key" in r) return r
-  if (typeof r.access === "string" && r.access) return { ...r, refresh: "" }
-  return null
-}
-
-// ---- accounts from a file -----------------------------------------------------
-
-// A plugin may take accounts from a file the user picks (owl's own hook,
-// which OpenCode ignores):
-//   auth.import(texts, { signal }) → what each file's text holds, checked
-//     with the vendor as a sign-in is: an array of sign-in results
-//     ({ type: "success", … } as a callback or an api authorize gives one,
-//     or { type: "failed", error, accountId? }), or one of them.
-//   auth.importFrom: the file to pick, in a sentence (importFroms: the same
-//     in other languages, by language code).
-// Each success is kept as a sign-in is, as one more account or over the
-// account it already is. It runs through the provider's proxy, as a
-// sign-in does.
-const IMPORT_MOST = 100
-
-function importOf(auth) {
-  if (typeof auth?.import !== "function") return {}
-  const from = shown(auth.importFrom, 300)
-  const froms = inLanguages(auth.importFroms, 300)
-  return { importable: true, ...(from ? { importFrom: from } : {}), ...(froms ? { importFroms: froms } : {}) }
-}
-
-async function importFiles({ provider, texts, proxy }, signal) {
-  const a = authOf(provider)
-  if (typeof a.import !== "function") throw new Error(`${provider} takes no accounts from a file`)
-  const files = (Array.isArray(texts) ? texts : []).filter((t) => typeof t === "string" && t.trim())
-  const got = await signingIn(signal, proxy ?? "", provider, freshKey(provider), () => a.import(files, { signal }))
-  if (signal?.aborted) throw abortedSignIn()
-  const list = (Array.isArray(got) ? got : got ? [got] : []).slice(0, IMPORT_MOST)
-  const results = []
-  for (const r of list) {
-    const user = typeof whoOf(r) === "string" ? whoOf(r).slice(0, 200) : ""
-    if (!r || r.type !== "success") {
-      results.push({ status: "failed", user, error: failed(r).error || `${provider} didn't take it` })
-      continue
-    }
-    const kept = keptAs(r)
-    if (!kept) {
-      results.push({ status: "failed", user, error: `${provider} gave nothing to keep` })
-      continue
-    }
-    const had = new Set(accountsOf(readAuth(), r.provider ?? provider))
-    const saved = await save(provider, signInKey(provider), kept)
-    results.push({ status: had.has(saved.account) ? "updated" : "added", user, ...saved })
-  }
-  return { results }
-}
-
 async function apiKey({ provider, method, inputs, key, account, proxy }, signal) {
   const m = authOf(provider).methods[method]
   if (!m || m.type !== "api") throw new Error("not an API key method")

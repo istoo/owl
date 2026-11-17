@@ -105,7 +105,7 @@ func TestCommandCodeModelLimits(t *testing.T) {
 		Provider struct {
 			Owl struct {
 				Models map[string]map[string]any `json:"models"`
-			} `json:"magpie"`
+			} `json:"owl"`
 		} `json:"provider"`
 	}
 	if err := json.Unmarshal(b, &written); err != nil {
