@@ -128,12 +128,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert.ok(c.hit, `${where}: ${c.id} is covered`);
           assert.equal(c.drag, "no-drag", `${where}: ${c.id} drags the window`);
         }
-        // beside the sidebar the page's own tools are in the bar too: the
-        // search boxes, the Library folder
-        if (width === 1100) {
-          const own = { settings: "setQ", library: "lib-more" }[view];
-          if (own) assert.ok(controls.some((c) => c.id === own || c.cls.split(" ").includes(own)), `${where}: ${own} is in the bar: ${JSON.stringify(controls.map((c) => c.id))}`);
-        }
+        // owl keeps a page's own tools (Settings' search, the Library's
+        // folder) in the page, not in the title bar
         // the bar itself drags, between its tools
         assert.equal(await page.locator("header.top").evaluate((h) => getComputedStyle(h).getPropertyValue("--wails-draggable").trim()), "drag", `${where}: the header drags`);
         // (a header packed as narrow as it goes leaves the brand out, as on
