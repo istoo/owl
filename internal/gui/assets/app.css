@@ -5921,9 +5921,8 @@ body.linux .action-confirm::backdrop { -webkit-backdrop-filter: none; backdrop-f
 .field.ag-speed .ag-speed-by { color: var(--faint); font-weight: 400; white-space: pre; }
 
 /* ---- owl's own rules upstream no longer carries (merge restore) ---- */
-owl's own rules upstream no longer carries (merge restore) ---- */
 
-
+.provider .pswitch{ width: 28px; height: 16px; }
 .provider .pswitch i{ width: 12px; height: 12px; }
 
 
