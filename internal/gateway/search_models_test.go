@@ -21,6 +21,7 @@ import (
 // model when the provider is sent Command Code's zero-data-retention
 // header, under which it refuses every built-in tool.
 func TestCommandCodeSearchesForSomeModels(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	srv, seen := relayOfEvery(t)
 	fresh(t)
 	save := func(h map[string]string) {

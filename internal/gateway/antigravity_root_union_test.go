@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/istoo/owl/internal/provider"
 	"github.com/tidwall/gjson"
 )
 
@@ -18,6 +19,7 @@ const rgSchema = `{"type":"object","properties":{"pattern":{"type":"string"},"cu
 // {"type":"string"} and Claude there answered 400 "tools.4.custom.
 // input_schema.type: Input should be 'object'".
 func TestAntigravityRootOneOfKeepsObject(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	got := plainSchema(json.RawMessage(rgSchema))
 	var parameters map[string]any
 	if err := json.Unmarshal(got, &parameters); err != nil {
@@ -32,6 +34,7 @@ func TestAntigravityRootOneOfKeepsObject(t *testing.T) {
 // The same tool through the route the reporter took: an OpenAI Chat
 // declaration, parseChat, then the Antigravity body.
 func TestAntigravityChatToolRootOneOfKeepsObject(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r, err := parseChat([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"rg","description":"search","parameters":` + rgSchema + `}}]}`))
 	if err != nil {
 		t.Fatal(err)

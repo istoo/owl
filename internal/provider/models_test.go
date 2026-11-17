@@ -264,6 +264,7 @@ func TestIsOpenCode(t *testing.T) {
 
 // A plan with no list to ask gives its own models and asks nothing.
 func TestFetchPlanWithoutList(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	own := []catalog.Model{{ID: "auto", Name: "Auto"}, {ID: "hy3", Name: "Hy3"}}
 	p := Provider{ID: "plan", Chat: "http://127.0.0.1:1/v2", Account: &Account{Agent: "plan", models: func() []catalog.Model { return own }}}
 	ms, err := p.Fetch(context.Background())

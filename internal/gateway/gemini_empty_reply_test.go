@@ -20,6 +20,7 @@ import (
 // Code Assist and a Gemini API share the decoder and translate; a Gemini
 // API of the user's own is the one a test can point at a fake upstream.
 func TestGeminiEmptyReplyIsAnError(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -130,6 +131,7 @@ func TestGeminiEmptyRepliesAskedAgain(t *testing.T) {
 }
 
 func TestLateRestsEmptyReply(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	if lateRests("Antigravity: an empty reply (the model answered nothing; try again)") {
 		t.Errorf("lateRests should be false for empty reply")
 	}
@@ -142,6 +144,7 @@ func TestLateRestsEmptyReply(t *testing.T) {
 // the accounts must not be put into rest backoff, and the routing group must
 // fall over to another member to answer (#1221).
 func TestGeminiEmptyReplyGroupFailover(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, stream := range []bool{true, false} {
 		t.Run(map[bool]string{true: "stream", false: "nostream"}[stream], func(t *testing.T) {
 			s, _ := antigravityGroupFor(t, []string{"u1@example.com", "u2@example.com"}, "gemini-3.8-flash", func(w http.ResponseWriter, r *http.Request) {

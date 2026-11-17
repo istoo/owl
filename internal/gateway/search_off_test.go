@@ -14,6 +14,7 @@ import (
 // service. Configured APIs still search, without falling back to a plan
 // when they fail; without APIs no replacement search tool is offered.
 func TestSearchProviderOff(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	setHome(t, t.TempDir())

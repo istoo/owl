@@ -11,6 +11,7 @@ import (
 // the caller has (the Providers page's), read once, not from a list read
 // again for them.
 func TestDrawersOfTheCallersList(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	p := provider.Provider{ID: "antigravity", Account: &provider.Account{Agent: "antigravity"}}
 	calls := 0
 	got := DrawersOf(p, func() []catalog.Model {

@@ -34,6 +34,7 @@ func agyViewFile(role string, snake bool) string {
 }
 
 func TestGeminiFunctionResponseImage(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, c := range []struct {
 		role  string
 		snake bool

@@ -288,6 +288,7 @@ func TestSearcherEffortPicked(t *testing.T) {
 
 // A level that isn't one is refused, so a typo doesn't go to a vendor.
 func TestSideEffortChecked(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	st := settings.Load()
 	st.SearcherEffort = "hard"
@@ -306,6 +307,7 @@ func TestSideEffortChecked(t *testing.T) {
 // The reporter's searcher, Gemini 3 Flash on Antigravity, is asked the
 // level picked as its thinkingLevel; at the default it is sent none.
 func TestSearcherEffortOnGemini(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	ag := provider.Provider{ID: "antigravity", Account: &provider.Account{Agent: "antigravity", User: "u"}}
 	level := func(effort string) string {
 		t.Helper()

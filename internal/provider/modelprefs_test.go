@@ -702,6 +702,7 @@ func TestHasUpstreamNameReadsTheKeyHoweverItIsSpelled(t *testing.T) {
 // is a different thing: a "*" in it is whatever a request goes out under, so
 // each level is asked for by its own id and the effort keeps choosing.
 func TestUpstreamNameAsGivesAModelTheNameItWasGiven(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	prefsHome(t)
 	a, err := Find("a")
 	if err != nil {
@@ -741,6 +742,7 @@ func TestUpstreamNameAsGivesAModelTheNameItWasGiven(t *testing.T) {
 // really went out — read against the family, every level of it reads as
 // another model answering.
 func TestSentNameInAsksForTheVariantTheEffortPicks(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	prefsHome(t)
 	// Antigravity's ids of one model at three levels, as its fetch left them
 	if err := os.MkdirAll(filepath.Dir(catalog.LivePath("antigravity")), 0o755); err != nil {
@@ -785,6 +787,7 @@ func TestSentNameInAsksForTheVariantTheEffortPicks(t *testing.T) {
 // built by (codeAssistID) and the rule a ledger reads a record back against
 // are one rule, and these are the two ends of it.
 func TestSentNameInAsksAVariantIdForWhatTheEffortPicks(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	prefsHome(t)
 	// one model at three levels, and one at two, so a family's default is
 	// the top of it in one case and not the other
@@ -841,6 +844,7 @@ func TestSentNameInAsksAVariantIdForWhatTheEffortPicks(t *testing.T) {
 // owl knows, which is what the gateway's own dispatch (codeAssistID) reads
 // the same way.
 func TestSentNameIsJudgedByTheAccountAndNotByTheProviderId(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	prefsHome(t)
 	if err := os.MkdirAll(filepath.Dir(catalog.LivePath("antigravity")), 0o755); err != nil {
 		t.Fatal(err)

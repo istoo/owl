@@ -129,6 +129,7 @@ func TestSubscriptionUsageServesStale(t *testing.T) {
 }
 
 func TestChosenWindows(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	ws := []QuotaWindow{{Name: "Gemini 3.8 Flash (High)", Model: "gemini-3.8-flash-high"}, {Name: "Gemini 3 Flash", Model: "gemini-3-flash"}, {Name: "Weekly"}}
 	got := chosenWindows(ws, map[string]bool{"gemini-3.8-flash-high": true}, nil)
 	if len(got) != 2 || got[0].Model != "gemini-3.8-flash-high" || got[1].Name != "Weekly" {

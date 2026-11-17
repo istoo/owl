@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/istoo/owl/internal/provider"
 	"github.com/tidwall/gjson"
 )
 
@@ -66,6 +67,7 @@ func geminiSchemaFaults(s gjson.Result, at string) []string {
 }
 
 func TestAntigravityBooleanSchemaAndXKeys(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r, err := parseAnthropic([]byte(boolSchemaAsk))
 	if err != nil {
 		t.Fatal(err)

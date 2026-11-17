@@ -249,6 +249,7 @@ func TestModelIDRefused(t *testing.T) {
 // The picks of a provider's list (liveIDs) and its keys' models
 // (Serving) are read by the id the model is listed by.
 func TestModelIDServingAndPrice(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	localIDHome(t)
 	setID(t, "relay-a/deepseek-v4.1-flash-1017", "deepseek-v4.1-flash")
 	ids := liveIDs("relay-a")
@@ -266,6 +267,7 @@ func TestModelIDServingAndPrice(t *testing.T) {
 // the account's own say of it is: the account's picks kept from before,
 // and the variant an Antigravity family goes out as at an effort.
 func TestModelIDAtAnAccount(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	prefsHome(t)
 	if err := os.MkdirAll(filepath.Dir(catalog.LivePath("antigravity")), 0o755); err != nil {
 		t.Fatal(err)

@@ -54,6 +54,7 @@ func brokenTwice(line string) string {
 // Claude Code 2.1.316's own system blocks (claude -p, captured 11-11): the
 // first is turned away, once broken after only its first letter.
 func TestAntigravityCloakClaudeCode2316(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	system := "x-anthropic-billing-header: cc_version=2.1.316.2e4; cc_entrypoint=sdk-cli;\nYou are a Claude agent, built on Anthropic's Claude Agent SDK.\n"
 	got := antigravityCloak(system)
 	want := "x-a|n|thropic-b|i|lling-h|e|ader: cc_version=2.1.316.2e4; cc_entrypoint=sdk-cli;\nYou are a Claude agent, b|u|ilt on A|n|thropic's C|l|aude A|g|ent S|D|K.\n"
@@ -66,6 +67,7 @@ func TestAntigravityCloakClaudeCode2316(t *testing.T) {
 }
 
 func TestAntigravityCloakBreaksEveryLineItTurnsAway(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, system := range []string{
 		claudeCodeSystem,
 		"You are a Claude agent, built on Anthropic's Claude Agent SDK.",
@@ -118,6 +120,7 @@ func TestAntigravityCloakBreaksEveryLineItTurnsAway(t *testing.T) {
 }
 
 func TestAntigravityHermesHint(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	if antigravityHint(hermesOldSystem) != antigravityHermesHint {
 		t.Error("Hermes' old persona isn't told its own hint")
 	}
@@ -182,6 +185,7 @@ func codexAGPost(s *Server, body string) (int, string) {
 // user can turn on, they are refused as before, told why at a status the
 // agent doesn't retry.
 func TestAntigravityAnswersHermesAndCodexByDefault(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	var sent string
 	s, _ := antigravityGroupFor(t, []string{"u@example.com"}, "gemini-3-flash", fakeGoogle(&sent))
 
@@ -231,6 +235,7 @@ func TestAntigravityAnswersHermesAndCodexByDefault(t *testing.T) {
 // CLI's own sign-in, on the same Code Assist envelope, and every other
 // provider are sent the prompt as the agent wrote it.
 func TestOnlyAntigravityIsSentThePromptBrokenUp(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r := &Request{System: hermesOldSystem + "\n" + codexGPT5System, Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "hi"}}}}}
 	gemini := provider.Provider{ID: "gemini-cli", Account: &provider.Account{Agent: "gemini"}}
 	if b := string(codeAssistBody(gemini, r, "gemini-3-flash", nil)); !strings.Contains(b, "You are Hermes Agent, an intelligent") || strings.Contains(b, `​`) || strings.Contains(b, zeroWidth) {

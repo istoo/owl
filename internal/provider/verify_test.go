@@ -9,6 +9,7 @@ import (
 // whose details say VALIDATION_REQUIRED (#152); the agent is told what to
 // do, with the link when there is one.
 func TestVerificationRefusal(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	withLink := []byte(`{"error":{"code":403,"message":"Verify your account to continue.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"VALIDATION_REQUIRED","domain":"cloudcode-pa.googleapis.com","metadata":{"validation_url":"https://accounts.google.com/signin/continue?sarp=1&x=2"}}]}}`)
 	link, ok := Verification(withLink)
 	if !ok || link != "https://accounts.google.com/signin/continue?sarp=1&x=2" {

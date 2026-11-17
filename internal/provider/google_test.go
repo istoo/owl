@@ -134,6 +134,7 @@ func writeGeminiLogin(t *testing.T, env string) {
 // Gemini CLI's own sign-in is found, and its expired token is refreshed in
 // memory: the file Gemini CLI keeps is left as it was.
 func TestGeminiOwnLoginRefreshesInMemory(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{}
 	googleSandbox(t, f)
 	writeGeminiLogin(t, "")
@@ -161,6 +162,7 @@ func TestGeminiOwnLoginRefreshesInMemory(t *testing.T) {
 // minted for another client (Antigravity's) can't be refreshed as Gemini
 // CLI's and isn't listed; one without an ID token is taken as Gemini CLI's.
 func TestGeminiOwnLoginOnlyGeminiCLIsClient(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	idToken := func(claims map[string]any) string {
 		b, _ := json.Marshal(claims)
 		return "e30." + base64.RawURLEncoding.EncodeToString(b) + ".sig"
@@ -198,6 +200,7 @@ func TestGeminiOwnLoginOnlyGeminiCLIsClient(t *testing.T) {
 // Google turns individuals away from Gemini CLI's sign-in; the account
 // then needs a project, and owl says how to name one.
 func TestGeminiNeedsAProject(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{load: `{"allowedTiers":[{"id":"standard-tier","name":"Gemini Code Assist","userDefinedCloudaicompanionProject":true,"isDefault":true}],
 		"ineligibleTiers":[{"reasonCode":"UNSUPPORTED_CLIENT","reasonMessage":"This client is no longer supported","tierId":"free-tier"}]}`}
 	googleSandbox(t, f)
@@ -268,6 +271,7 @@ func TestSetGoogleProject(t *testing.T) {
 // roll it out to the account, previews where its quota has one — and each
 // goes to Code Assist by the id the CLI sends.
 func TestGeminiModelsAsTheCLIOffersThem(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	ids := func(ms []catalog.Model) string {
 		var s []string
 		for _, m := range ms {
@@ -355,6 +359,7 @@ func TestGeminiModelsAsTheCLIOffersThem(t *testing.T) {
 // Antigravity's account is onboarded on the daily endpoint, asking until
 // it is done, and its requests carry what Antigravity sends.
 func TestAntigravityProjectAndEnvelope(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{
 		load:    `{"allowedTiers":[{"id":"free-tier","name":"Antigravity","isDefault":true}]}`,
 		onboard: `{"done":true,"response":{"cloudaicompanionProject":"ag-proj"}}`,
@@ -409,6 +414,7 @@ func TestAntigravityProjectAndEnvelope(t *testing.T) {
 // read as bloat), so the GUI can show one figure a family; the windows
 // themselves, and the model each counts for routing, stay as they were.
 func TestAntigravityQuotaFamilies(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{
 		load:    `{"allowedTiers":[{"id":"free-tier","name":"Antigravity","isDefault":true}]}`,
 		onboard: `{"done":true,"response":{"cloudaicompanionProject":"ag-proj"}}`,
@@ -462,6 +468,7 @@ func TestAntigravityQuotaFamilies(t *testing.T) {
 // after the models', each model naming its group, and a page of text shows
 // the groups' windows in place of the models'.
 func TestAntigravityQuotaPools(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{
 		load:    `{"allowedTiers":[{"id":"free-tier","name":"Antigravity","isDefault":true}]}`,
 		onboard: `{"done":true,"response":{"cloudaicompanionProject":"ag-proj"}}`,
@@ -564,6 +571,7 @@ func TestAntigravityQuotaPools(t *testing.T) {
 // #745 (werldl517-cyber): a pool's windows stand in for its models' only
 // for the spans the pool has; with only its week, a model's 5 hours stay.
 func TestPooledWindowsPartialAggregateKeepsModelFallback(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	ws := []QuotaWindow{
 		{Name: "Gemini 3 Flash", Model: "gemini-3-flash", Pool: "Gemini", Span: 5 * time.Hour, Used: 40},
 		{Name: "7 days", Pool: "Gemini", Span: 7 * 24 * time.Hour, Aside: true, Used: 80},
@@ -608,6 +616,7 @@ func TestPooledWindowsPartialAggregateKeepsModelFallback(t *testing.T) {
 // model it adds isn't given those of a model of that name elsewhere
 // (Anthropic's 1M for Claude), nor said to see when it doesn't.
 func TestAntigravityModelsAsItListsThem(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{
 		load:    `{"allowedTiers":[{"id":"free-tier","name":"Antigravity","isDefault":true}]}`,
 		onboard: `{"done":true,"response":{"cloudaicompanionProject":"ag-proj"}}`,
@@ -661,6 +670,7 @@ func TestAntigravityModelsAsItListsThem(t *testing.T) {
 // list and in Usage's windows, so no two read the same; a level tagged
 // with its own family keeps the name it was given.
 func TestAntigravityRetiredModelNamedForItself(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	f := &fakeGoogle{
 		load:    `{"allowedTiers":[{"id":"free-tier","name":"Antigravity","isDefault":true}]}`,
 		onboard: `{"done":true,"response":{"cloudaicompanionProject":"ag-proj"}}`,
@@ -747,6 +757,7 @@ func TestAntigravityRetiredModelNamedForItself(t *testing.T) {
 // name does; no two models read the same, and the names Antigravity gives
 // the rest stay.
 func TestAntigravityRetiredModelNamedWithoutTag(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	raw, err := os.ReadFile("testdata/antigravity-models-2026-10-20.json")
 	if err != nil {
 		t.Fatal(err)
@@ -831,6 +842,7 @@ func TestAntigravityRetiredModelNamedWithoutTag(t *testing.T) {
 // models, whichever Google lists first and whether or not it has 5 hours
 // (01huadalang on Discord: a Gemini 4 bar of 7 days, and Claude's gone).
 func TestAntigravityQuotaModelGroup(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	argon := func(five bool) string {
 		b := `{"bucketId":"gemini-argon-wtu-weekly","window":"weekly","remainingFraction":0.53,"resetTime":"2099-01-07T00:00:00Z","displayName":"Gemini 4 Argon Weekly Limit"}`
 		if five {

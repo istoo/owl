@@ -839,6 +839,7 @@ func TestUpstreamNameBlankInTheFileIsNoName(t *testing.T) {
 // every model of the key, which is what a query lists back as it was given,
 // "*" and all, rather than a name with one filled in.
 func TestUpstreamNameWildcardStandsWhereverItStands(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Key: "k",
 		Chat: "https://relay.example/v1", Models: []string{"sol", "other"}}); err != nil {
@@ -922,6 +923,7 @@ func TestUpstreamNameWildcardStandsWhereverItStands(t *testing.T) {
 // and a relay that serves gemini-3.7-flash-high is asked for the base id it
 // has no answer for.
 func TestUpstreamNameFollowsTheAntigravityVariant(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	var raw []catalog.Model
 	for _, l := range []string{"gemini-3.7-flash-high - Gemini 3.7 Flash (High)", "gemini-3.7-flash-low - Gemini 3.7 Flash (Low)",
@@ -1010,6 +1012,7 @@ func TestUpstreamNameFollowsTheAntigravityVariant(t *testing.T) {
 // which owl cannot point at a relay — and the rule keyed by the account is
 // read in internal/provider, where the account is what a caller hands in.
 func TestUpstreamNameReadTheSameByTheRouteAndTheLedger(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	var raw []catalog.Model
 	for _, l := range []string{"gemini-3.7-flash-high - High", "gemini-3.7-flash-low - Low", "gemini-3.7-flash-medium - Medium"} {
@@ -1091,6 +1094,7 @@ func TestUpstreamNameReadTheSameByTheRouteAndTheLedger(t *testing.T) {
 // and reads itself back by that id (SentNameIn), which is the whole of what
 // the ledger has to work from.
 func TestRouteJudgesTheUpstreamNameByTheAccountAndNotByTheProvidersId(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	var raw []catalog.Model
 	for _, l := range []string{"gemini-3.7-flash-high - High", "gemini-3.7-flash-low - Low", "gemini-3.7-flash-medium - Medium"} {
@@ -1151,6 +1155,7 @@ func TestRouteJudgesTheUpstreamNameByTheAccountAndNotByTheProvidersId(t *testing
 // agent's model list kept from before the families were one model — each go
 // out at, and are judged against, the same id at every level.
 func TestAntigravityEnvelopeIsNamedAsTheLedgerJudgesIt(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	var raw []catalog.Model
 	for _, l := range []string{"gemini-3.7-flash-high - High", "gemini-3.7-flash-low - Low", "gemini-3.7-flash-medium - Medium"} {

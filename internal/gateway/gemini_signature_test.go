@@ -318,6 +318,7 @@ func TestShortenedIDHasNoSignature(t *testing.T) {
 // Ids owl gave before #1536, with no length in their mark, still give
 // their signatures back: a conversation started on an older owl goes on.
 func TestOldSignedIDsStillRead(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, c := range sigFixtures() {
 		var old string
 		if b, err := base64.StdEncoding.DecodeString(c.sig); err == nil && base64.StdEncoding.EncodeToString(b) == c.sig {

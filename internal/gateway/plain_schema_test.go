@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"github.com/istoo/owl/internal/provider"
 	"reflect"
 	"testing"
 )
@@ -61,6 +62,7 @@ func TestPlainSchemaResolvesPointerIntoProperties(t *testing.T) {
 // it points still finds its last segment among $defs, as it did before
 // pointers were walked (#4561 review).
 func TestPlainSchemaSelfRefBySegment(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	in := `{"type":"object",
 	"$defs":{"Mode":{"type":"string","enum":["x","y"]}},
 	"properties":{
@@ -92,6 +94,7 @@ func TestPlainSchemaSelfRefBySegment(t *testing.T) {
 // Antigravity refuses a function declaration over any keyword outside its
 // schema subset (#187: exclusiveMinimum from zcode's and dsh's tools).
 func TestPlainSchemaKeepsOnlyWhatAntigravityTakes(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	in := `{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","additionalProperties":false,
 	"properties":{
 		"limit":{"type":"integer","exclusiveMinimum":0,"maximum":100,"description":"how many"},

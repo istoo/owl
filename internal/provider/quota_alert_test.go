@@ -135,6 +135,7 @@ func TestBalanceNumber(t *testing.T) {
 
 // what was told is kept across a restart: the file, not memory
 func TestCheckAlertsKeepsMarks(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	path := filepath.Join(t.TempDir(), "usage-alerts.json")
 	now := time.Now()
 	reset := now.Add(time.Hour)
@@ -152,6 +153,7 @@ func TestCheckAlertsKeepsMarks(t *testing.T) {
 // window is what should be told of, once per pool and named with it — not
 // once for every model drawing on it, and not the 5-hour asides.
 func TestDueAlertsPoolWindows(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	reset := now.Add(48 * time.Hour)
 	five, week := 5*time.Hour, 7*24*time.Hour
@@ -203,6 +205,7 @@ func TestDueAlertsPoolWindows(t *testing.T) {
 // does, so its renewal is reminded of too. The pools' 5-hour asides say
 // nothing, as any 5-hour window does (#720: too often to be news).
 func TestDueRemindersPoolWeekly(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	soon := now.Add(20 * time.Hour)
 	five, week := 5*time.Hour, 7*24*time.Hour

@@ -187,6 +187,7 @@ func TestAIStudioKeyRelaysGeminiClient(t *testing.T) {
 // sign-in, Vertex, a relay's Gemini URL and an image model keep what they
 // did.
 func TestGeminiKeySearchesScope(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	plain := &Request{WebSearch: true, Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "news?"}}}}}
 	tools := &Request{WebSearch: true, Messages: plain.Messages, Tools: []Tool{{Name: "bash"}}}
 	none := &Request{WebSearch: true, Messages: plain.Messages, Tools: tools.Tools, ToolChoice: "none"}

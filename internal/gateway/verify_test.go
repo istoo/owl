@@ -57,6 +57,7 @@ func TestVerifyRefusalRestsTheLastOne(t *testing.T) {
 // Without a link, the agent is told to verify it in the vendor's app; with
 // another to ask, the request goes on to it and the refused one rests.
 func TestVerifyRefusalFallsBack(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	a := &scripted{replies: []reply{{403, "application/json", `{"error":{"code":403,"message":"Verify your account to continue.","status":"PERMISSION_DENIED"}}`}}}
 	b := &scripted{replies: []reply{{200, "", chatOK}}}

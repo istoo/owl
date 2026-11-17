@@ -14,6 +14,7 @@ import (
 // request with no function tools; Antigravity refuses googleSearch beside
 // them, so one with tools is given owl's search instead (#757).
 func TestCodeAssistSearchesWithoutTools(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	ag := provider.Provider{ID: "antigravity", Account: &provider.Account{Agent: "antigravity", User: "u"}}
 	plain := &Request{WebSearch: true, Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "news?"}}}}}
 	tools := &Request{WebSearch: true, Messages: plain.Messages, Tools: []Tool{{Name: "bash"}}}
@@ -85,6 +86,7 @@ func TestCodeAssistDecodesGrounding(t *testing.T) {
 // An image model on Code Assist is asked for images beside text, or it
 // answers in words only.
 func TestCodeAssistImageModelAsksForImages(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r := &Request{Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "draw a cat"}}}}}
 	if b := string(buildCodeAssist(r, "gemini-3.1-flash-image", "antigravity")); !strings.Contains(b, `"responseModalities":["TEXT","IMAGE"]`) {
 		t.Errorf("image model: %s", b)

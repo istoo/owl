@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"github.com/istoo/owl/internal/provider"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 // upstream's inlineData part comes back, and a thought image (a draft)
 // stays out (#620).
 func TestGeminiImageModelReturnsItsImage(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -55,6 +57,7 @@ func TestGeminiImageModelReturnsItsImage(t *testing.T) {
 // Antigravity and Gemini CLI wrap each chunk in {response}; streamed to a
 // Gemini client, the picture goes out as an inlineData chunk.
 func TestCodeAssistStreamsImages(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	rec := httptest.NewRecorder()
 	enc := &geminiEncoder{w: newSSEWriter(rec), model: "antigravity/gemini-3.1-flash-image"}
 	d := &codeAssistDecoder{}

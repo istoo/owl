@@ -19,6 +19,7 @@ import (
 // copied before, with the plain token, still gets an answer, recorded as
 // the SDK's as it was.
 func TestAgyAgent(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	setHome(t, t.TempDir())
 	f := &fake{t: t, reply: sse(
 		`data: {"id":"c1","choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`,
@@ -65,6 +66,7 @@ func TestAgyAgent(t *testing.T) {
 // from the gateway or through another owl (Anthropic Messages between
 // the two). A turn with no tool already ended with the user's.
 func TestAgyToolResultsAreTheUsers(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	const ask = `{"role":"user","parts":[{"text":"<USER_REQUEST>\nsay hi\n</USER_REQUEST>"}]}`
 	const ran = `,{"role":"model","parts":[{"text":"Thinking.","thought":true},{"functionCall":{"id":"c1","name":"run_command","args":{"CommandLine":"echo hi"}},"thoughtSignature":"c2ln"}]}` +
 		`,{"role":"model","parts":[{"functionResponse":{"id":"c1","name":"run_command","response":{"output":"hi"}}}]}`

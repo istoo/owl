@@ -1,5 +1,16 @@
 package provider
 
+// PLUGIN-SERVED (see AGENTS.md): Antigravity ("antigravity") is a
+// retired built-in subscription served by its plugin,
+// @magpie-community/opencode-antigravity-auth. The built-in asks Google
+// nothing (googleLogins lists no account its plugin serves; the mover reads
+// googleSavedLogins), and a moved one's sign-ins, models, requests and
+// usage are all the plugin's (only the move, in migrate*.go, still reads
+// its accounts). A fix here alone doesn't reach those users; fix the
+// plugin (github.com/magpie-community/plugins, packages/antigravity) and
+// raise the mover's min in internal/provider/migrate_antigravity.go.
+// Gemini CLI ("gemini") and the agy agent stay built in.
+
 import (
 	"context"
 	"fmt"

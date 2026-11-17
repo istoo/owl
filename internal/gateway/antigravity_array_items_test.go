@@ -24,6 +24,7 @@ const arrayItems400 = `{"error":{"code":400,"message":"* GenerateContentRequest.
 // takes (the reporter's table: {} and {"type":"string"} both answer 200);
 // before, it went as it came and Google turned the whole turn away.
 func TestAntigravityArrayGetsItems(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r, err := parseAnthropic([]byte(arrayItemsAsk))
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +91,7 @@ func TestPlainSchemaArraysAllHaveItems(t *testing.T) {
 // that refused doesn't rest. Before, the route ended on the 400 (the
 // reporter's tries held the one attempt).
 func TestGroupFailsOverGoogleSchema400(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	a := &scripted{replies: []reply{{400, "", arrayItems400}}}
 	b := &scripted{replies: []reply{{200, "", chatOK}}}

@@ -15,6 +15,7 @@ import (
 // the account's other models go on answering; an account whose models
 // all fail, with no answer between, still rests whole, as before.
 func TestModelLadderClimbsPastSiblingAnswers(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	old := allowances
 	defer func() { allowances = old }()
 	allowances = func(string) map[string]provider.Allowance { return nil }

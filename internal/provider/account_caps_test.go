@@ -255,7 +255,8 @@ func TestCapNeverSpendsACodexReset(t *testing.T) {
 // next one with room, and kept off it while it is at the cap, though it is
 // below where the switch list goes back (90%): lifted, it goes back.
 func TestCodexSwitchedAtCap(t *testing.T) {
-	home := signIn(t) // me@example.com, acct-1
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
+	home := signIn(t)                      // me@example.com, acct-1
 	rememberLogins(true)
 	codexSignIn(t, home, "new@example.com", "r-new") // signed in to now
 	rememberLogins(true)
@@ -327,6 +328,7 @@ func TestCodexSwitchedAtCap(t *testing.T) {
 // days"; a cap on it holds the pool's models only, and the account's cap
 // counts it like any window.
 func TestPoolWindowCapHeld(t *testing.T) {
+	t.Cleanup(AntigravityBuiltinForTest()) // the retired built-in route
 	now := time.Now()
 	five, week := now.Add(2*time.Hour), now.Add(4*24*time.Hour)
 	ws := []QuotaWindow{

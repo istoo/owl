@@ -75,6 +75,7 @@ func TestBuildCodeAssistForGemini(t *testing.T) {
 }
 
 func TestBuildCodeAssistForAntigravity(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	var env struct {
 		Request map[string]any `json:"request"`
 	}
@@ -120,6 +121,7 @@ func TestBuildCodeAssistForAntigravity(t *testing.T) {
 }
 
 func TestCodeAssistDecoder(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	var got []Event
 	d := &codeAssistDecoder{}
 	for _, line := range []string{
@@ -162,6 +164,7 @@ func TestCodeAssistDecoder(t *testing.T) {
 // an old variant id moves with an effort asked; Gemini 3 Flash takes
 // medium as medium, Pro as high.
 func TestCodeAssistAntigravityLevels(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	var raw []catalog.Model
 	for _, l := range []string{"gemini-3-flash - Gemini 3 Flash", "gemini-3.1-pro-high - Gemini 3.1 Pro (High)", "gemini-3.1-pro-low - Gemini 3.1 Pro (Low)",
@@ -214,6 +217,7 @@ func TestCodeAssistAntigravityLevels(t *testing.T) {
 // An image model asked low, which fits to minimal (3.1 Flash Image has
 // minimal and high), still goes at high.
 func TestCodeAssistReasoningOffAtLow(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	os.MkdirAll(filepath.Dir(catalog.CachePath()), 0o755)
 	if err := os.WriteFile(catalog.CachePath(), []byte(`{"google":{"models":{
@@ -268,6 +272,7 @@ func TestCodeAssistReasoningOffAtLow(t *testing.T) {
 // cuts it up, and a call named with Gemini's namespace is the client's
 // tool (#636). Text that only looks like one stays text.
 func TestCodeAssistTextCalls(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	chunk := func(parts string, finish string) string {
 		f := ""
 		if finish != "" {
@@ -337,6 +342,7 @@ func TestCodeAssistTextCalls(t *testing.T) {
 // tool_results ("tool_use ids were found without tool_result blocks
 // immediately after"). Gemini keeps each image beside its response.
 func TestCodeAssistToolImagesAfterEveryResponse(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r, err := parseAnthropic([]byte(`{"model":"x","max_tokens":2000,
 		"tools":[{"name":"Read","input_schema":{"type":"object","properties":{"file_path":{"type":"string"}}}}],
 		"messages":[

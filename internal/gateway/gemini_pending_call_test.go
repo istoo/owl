@@ -242,6 +242,7 @@ func TestGeminiMessagesClientInterruptedCall(t *testing.T) {
 
 // A history whose every call is answered goes as it was.
 func TestGeminiAnsweredCallsUnchanged(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	up, bodies := geminiPairingUpstream(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -280,6 +281,7 @@ func TestGeminiAnsweredCallsUnchanged(t *testing.T) {
 // Antigravity, in the one tool_result turn; a call with no id answered by
 // name is left as it is.
 func TestPairFunctionTurnsShapes(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	call := func(id, name string) map[string]any {
 		fc := map[string]any{"name": name}
 		if id != "" {

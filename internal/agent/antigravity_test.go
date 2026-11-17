@@ -59,6 +59,7 @@ func antigravityFile(t *testing.T, path string) map[string]json.RawMessage {
 // model list come back when it is turned off, and what else the file holds
 // is never touched.
 func TestAntigravityGateway(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	path := filepath.Join(home, ".antigravity", "settings.json")
 	if !slices.ContainsFunc(All(), func(x *Agent) bool { return x.ID == "antigravity" && x.Name == "Antigravity" }) {
@@ -129,6 +130,7 @@ func TestAntigravityGateway(t *testing.T) {
 // With no file of the user's, turning owl on and off leaves nothing of
 // it: no gateway, no models.
 func TestAntigravityGatewayFromNothing(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	path := filepath.Join(home, ".antigravity", "settings.json")
 	f := antigravity(home).Field("model")
@@ -152,6 +154,7 @@ func TestAntigravityGatewayFromNothing(t *testing.T) {
 // Picking a model of the user's own while on owl gives their gateway
 // back and sets that model.
 func TestAntigravityOwnModelBack(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	path := filepath.Join(home, ".antigravity", "settings.json")
 	os.MkdirAll(filepath.Dir(path), 0o755)
@@ -180,6 +183,7 @@ func TestAntigravityOwnModelBack(t *testing.T) {
 // A sync brings the gateway's address and key up to date and keeps what
 // the user added to the block; a gateway that isn't owl's is left alone.
 func TestAntigravitySync(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	path := filepath.Join(home, ".antigravity", "settings.json")
 	a := antigravity(home)
@@ -224,6 +228,7 @@ func TestAntigravitySync(t *testing.T) {
 // An organisation's admin_settings.json, or AGY_LLM_GATEWAY_URL, wins over
 // the user's file, so the row says it doesn't reach owl.
 func TestAntigravityAdminWins(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	a := antigravity(home)
 	if err := a.Field("model").Set("owl/anth/claude-sonnet-5"); err != nil {
@@ -250,6 +255,7 @@ func TestAntigravityAdminWins(t *testing.T) {
 // ~/.antigravity is Antigravity IDE's and agy's too, so it isn't the app:
 // the app's bundle, 2.15 or later, or the file its own backend writes is.
 func TestAntigravityDetected(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	a := antigravity(home)
 	os.MkdirAll(filepath.Join(home, ".antigravity", "extensions"), 0o755)
@@ -285,6 +291,7 @@ func TestAntigravityDetected(t *testing.T) {
 // the levels the models it lists have, the default first, kept in owl
 // for the gateway to ask, and offered only while it is on owl.
 func TestAntigravityEffort(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	home := antigravityHome(t)
 	path := filepath.Join(home, ".antigravity", "settings.json")
 	os.MkdirAll(filepath.Dir(path), 0o755)

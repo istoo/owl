@@ -1,6 +1,7 @@
 package gateway
 
 import "testing"
+import "github.com/istoo/owl/internal/provider"
 
 // Antigravity answers a 429 "Resource has been exhausted (e.g. check
 // quota)" to Claude Code's and the Agent SDK's system prompt whatever the
@@ -8,6 +9,7 @@ import "testing"
 // Codex on the same account fine); owl says so rather than leave a user
 // chasing a quota. Both lines are as Claude Code 2.1.288 sends them.
 func TestAntigravityTurnsAwayClaudeCodesSystemPrompt(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, system := range []string{
 		"x-anthropic-billing-header: cc_version=2.1.288.e3f; cc_entrypoint=sdk-cli;\nYou are Claude Code, Anthropic's official CLI for Claude.",
 		"You are a Claude agent, built on Anthropic's Claude Agent SDK.\n\nYou are an interactive agent …",

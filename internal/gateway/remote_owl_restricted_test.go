@@ -99,6 +99,7 @@ func TestRemoteOwlVerifyAndKeyLimitScoping(t *testing.T) {
 // reconnects aren't sent on to the remote that just refused, and the
 // remote's other models are still asked.
 func TestRemoteOwlVerifyHeldOnTheModel(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	var asked []string
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

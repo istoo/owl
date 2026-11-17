@@ -56,6 +56,7 @@ func TestGeminiSnakeCaseParts(t *testing.T) {
 // Through the gateway: an image sent as inline_data to /v1beta reaches a
 // Chat upstream as the image it is.
 func TestGeminiSnakeCaseImageReachesUpstream(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	setHome(t, t.TempDir())
 	f := &fake{t: t, reply: sse(
 		`data: {"id":"c1","choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`,
@@ -75,6 +76,7 @@ func TestGeminiSnakeCaseImageReachesUpstream(t *testing.T) {
 // (Code Assist) is given it as inline data, where it was left out and the
 // model answered as if it had read it (#934).
 func TestChatFilePart(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	body := `{"model":"m","messages":[{"role":"user","content":[
 		{"type":"text","text":"Transcribe every page."},
 		{"type":"file","file":{"filename":"excerpt.pdf","file_data":"data:application/pdf;base64,UERG"}},

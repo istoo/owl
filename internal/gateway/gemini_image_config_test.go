@@ -107,6 +107,7 @@ func sameConfig(got, want string) bool {
 // goes to the Gemini API when the user set the model's API to Gemini. A
 // request that asks for none is sent none.
 func TestGeminiImageConfigReachesTheGeminiAPI(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	const model = "gemini-3-pro-image-preview"
 	for _, tc := range []struct {
 		name   string
@@ -163,6 +164,7 @@ func TestGeminiImageConfigReachesTheGeminiAPI(t *testing.T) {
 // envelope: Antigravity is asked as a Gemini API is, its request a Gemini
 // request.
 func TestGeminiImageConfigReachesCodeAssist(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	rec := &asksKept{}
 	s, _ := antigravityGroupFor(t, []string{"u@example.com"}, agDrawer, func(w http.ResponseWriter, r *http.Request) {
 		rec.keep(r)

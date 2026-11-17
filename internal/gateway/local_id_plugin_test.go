@@ -29,6 +29,7 @@ import (
 // fetch is still asked for the model by the id its own list gives it —
 // in the body, the URL and the model header the plugin reads.
 func TestLocalModelIDAtAPlugin(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	bun := testenv.Bun(t)
 	fresh(t)
 	t.Setenv("OWL_BUN", bun)
@@ -137,6 +138,7 @@ func TestLocalModelIDAtAPlugin(t *testing.T) {
 // variant of the vendor's id the effort picks, not as the family's bare id
 // a wire name gives it.
 func TestLocalModelIDAtAnAntigravityAccount(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	fresh(t)
 	if err := os.MkdirAll(filepath.Dir(catalog.LivePath("antigravity")), 0o755); err != nil {
 		t.Fatal(err)

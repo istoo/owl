@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"github.com/istoo/owl/internal/provider"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,7 @@ func lastTurn(t *testing.T, contents any) (role, text string) {
 // model's. An agent compacting with its ask in the system prompt is asked
 // for the summary, not told to go on with the task.
 func TestGeminiContentsNeverEndWithModel(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	said := []Message{
 		{Role: "user", Parts: []Part{{Kind: Text, Text: "fix the bug"}}},
 		{Role: "assistant", Parts: []Part{{Kind: Thinking, Text: "looking"}, {Kind: Text, Text: "Fixed it in main.go."}}},
@@ -213,6 +215,7 @@ func vertexTurnsAway(_ int, body map[string]any) (int, string) {
 // response in a user turn of its own (#1533), and keeps parallel calls'
 // responses together in one.
 func TestGeminiToolResponseTurnHoldsNoText(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	r := &Request{Messages: []Message{
 		{Role: "user", Parts: []Part{{Kind: Text, Text: "Read a sample file."}}},
 		{Role: "assistant", Parts: []Part{
