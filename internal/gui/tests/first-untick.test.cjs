@@ -35,6 +35,8 @@ function serve(lang, list, posts) {
     if (url.pathname === "/api/state") return json(state);
     if (url.pathname === "/api/providers") return json(providers);
     if (url.pathname === "/api/groups") return json({ groups: [] });
+    // the press marks owl in use so an update can wait: not an account action
+    if (url.pathname === "/api/update/using") return json({});
     if (url.pathname.startsWith("/api/") && route.request().method() === "POST") {
       posts.push({ action: url.pathname.slice("/api/".length), body: route.request().postDataJSON() });
       return json(providers);

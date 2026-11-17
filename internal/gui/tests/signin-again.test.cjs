@@ -78,12 +78,20 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const add = page.locator(".editor .accts .acc.add").first();
         await add.waitFor();
         const scrolls = () => page.evaluate(() => [window.scrollY, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)]);
+        // the reader wheels the add row into sight before pressing it (the
+        // editor's rows are taller than the dialog)
+        await add.evaluate((b) => b.scrollIntoView({ block: "center" }));
+        await page.waitForTimeout(50);
         const before = await scrolls();
         await add.click();
         const say = want[lang][c.say];
         await page.waitForFunction((s) => document.querySelector("#status").textContent.includes(s), say);
         assert.equal((await page.locator("#status").textContent()).trim(), say);
-        assert.deepEqual(await scrolls(), before, "nothing scrolled");
+        // the sign-in box grows under the row as it starts: the editor
+        // keeps it in view, but the page and the window stay put
+        const after = await page.evaluate(() => [window.scrollY, document.scrollingElement.scrollTop]);
+        assert.deepEqual(after, [0, 0], "the page scrolled");
+        assert.equal(before[0], 0, "the page began at its top");
         assert.deepEqual(errors, []);
       });
     }
