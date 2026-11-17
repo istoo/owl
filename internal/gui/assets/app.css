@@ -410,7 +410,7 @@ body:not(.side-nav) #nav button[data-view="groups"], body.side-nav .rt-togroups 
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     font-size: 10.5px; font-weight: 500; line-height: 1.1; color: var(--muted);
   }
-  body.web:not(.panel) .top #nav > button.on { color: var(--fg); }
+  body.web:not(.panel) .top #nav > button.on { color: var(--mark); }
   body.web:not(.panel) .top #nav > button > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   body.web:not(.panel) .top #nav .nav-ic { display: block; flex: none; width: 23px; height: 23px; }
   body.web:not(.panel) .top #nav > button.has-dot::after { top: 5px; right: calc(50% - 17px); }
@@ -496,7 +496,7 @@ body.side-nav #nav.hl-on button[data-view] { transition: color .22s var(--ease);
 body.side-nav #nav.hl-on button[data-view] .nav-ic { transition: color .22s var(--ease); }
 body.side-nav #nav button[data-view] > * { position: relative; z-index: 1; }
 body.side-nav .nav-ic { display: block; flex: none; width: 21px; height: 21px; color: var(--muted); }
-body.side-nav #nav button.on .nav-ic { color: var(--fg); }
+body.side-nav #nav button.on .nav-ic { color: var(--mark); }
 body.side-nav #nav button.has-dot::after { top: 7px; right: 14px; width: 6px; height: 6px; }
 /* the status bar under the page beside the rail: where the gateway listens,
    then Settings' gear at its right end */
@@ -507,7 +507,7 @@ body.window.side-nav .foot .status:not(:empty):not(.lift), body.window.side-nav 
 .side-status > #prefs { flex: none; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0; border-radius: 6px; color: var(--muted); }
 .side-status > #prefs svg { width: 16px; height: 16px; }
 .side-status > #prefs:hover:not(.on) { background: var(--pill); color: var(--fg); }
-.side-status > #prefs.on { background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); }
+.side-status > #prefs.on { background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--mark); }
 /* the row under the pointer is lit as by a torch (navlamp.js), a page's
    row and the gateway's address alike: --lx is the pointer's place in the
    word, --si how lit the row is, --lo the row's own ink. Its heart is a
@@ -4095,7 +4095,7 @@ body:not(.side-nav) #addSheet > .row-head.stuck::before { opacity: 1; box-shadow
 .opt { position: relative; z-index: 1; white-space: nowrap; height: 22px; padding: 0 10px; border-radius: 5px; font-size: 12px; color: var(--muted); transition: color .18s var(--ease), transform .14s var(--ease); }
 /* the pick reads as one: its thumb edged, where the light theme's grey
    track was nearly the card (the owner's review) */
-.opt.on { color: var(--fg); }
+.opt.on { color: var(--mark); }
 .segs .thumb { box-shadow: 0 1px 2px rgba(0, 0, 0, .14), 0 0 0 1px var(--line); }
 /* how often owl checks for updates, while it doesn't by itself */
 .update-every-row.off .segs, .update-restart-row.off .segs, .update-restart-row.off .setting-switch, .search-all-row.off .segs { opacity: .55; }

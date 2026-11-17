@@ -185,10 +185,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(errors, []);
     });
 
-    test(`${engine}: ${theme}, the header's tabs and the panel's take the colour`, async (t) => {
+    // owl's tray panel has no page tabs: its pages open as the panel's own
+    // views over panelhome.js's overview, so the window's nav is what a
+    // chosen page is drawn in; the panel's colour is the ground below
+    test(`${engine}: ${theme}, the header's tabs take the colour`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
-      for (const [query, width, sel] of [["view=agents", 900, ["#nav button.on"]], ["mode=panel", 380, [".ptabs button.on"]]]) {
+      for (const [query, width, sel] of [["view=agents", 900, ["#nav button.on"]]]) {
         for (const accent of ["", "#0d9488"]) {
           const { page, errors } = await open(browser, { theme, accent }, width, query, sel[0]);
           const r = await settled(page, sel);
@@ -236,7 +239,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       }
       // the panel draws its own grounds on body.panel: tinted too
       const panelBg = async (accent) => {
-        const { page, errors } = await open(browser, { theme, accent }, 380, "mode=panel", ".ptabs button.on");
+        const { page, errors } = await open(browser, { theme, accent }, 380, "mode=panel", "#pHome .ph-today");
         const v = await page.evaluate(() => { const p = document.createElement("i"); p.style.background = "var(--bg)"; document.body.append(p); const c = getComputedStyle(p).backgroundColor; p.remove(); return c; });
         assert.deepEqual(errors, []);
         await page.context().close();
