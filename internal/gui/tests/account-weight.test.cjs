@@ -86,13 +86,22 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await chip("max@example.com").isVisible(), false, `${at}: a weight under Smart`);
       // Routing is under Advanced
       { const adv = page.locator(".editor details.advanced"); await adv.waitFor({ state: "attached" }); if (!(await adv.evaluate((d) => d.open))) await adv.locator(":scope > summary").click(); }
-      const by = page.locator(".editor").getByRole("button", { name: await say(page, lang, "By weight"), exact: true });
+      // owl's editor offers Routing as one menu (renderRouting's
+      // route-pick-btn), not the row of segments upstream's test assumes
+      const by = page.locator(".editor .route-pick-btn");
+      const pick = async (name) => {
+        if ((await by.textContent()).trim() === name) return;
+        // a save's answer redraws the editor under the press: wait for it
+        await page.waitForFunction(() => !document.querySelector(".editor .busy"));
+        await by.click();
+        await page.locator(".route-menu .pm-item", { hasText: new RegExp(`^${name}$`) }).click();
+      };
       await by.scrollIntoViewIfNeeded();
       // the weights it shows sit above it, in the accounts, so the editor
       // holds it where it was clicked rather than keep its scroll
       const top = () => by.evaluate((b) => Math.round(b.getBoundingClientRect().top));
       const was = await top();
-      await by.click();
+      await pick(await say(page, lang, "By weight"));
       await chip("max@example.com").waitFor();
       assert(Math.abs((await top()) - was) <= 1, `${at}: By weight moved from ${was} to ${await top()}`);
       // the routing's hint names accounts too
@@ -107,7 +116,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         return { who: r.dataset.accountId, h: Math.round(line.getBoundingClientRect().height), over: line.scrollWidth - line.clientWidth, out: c ? Math.round(c.getBoundingClientRect().right - r.getBoundingClientRect().right) : -1 };
       }));
       for (const f of fit) {
-        assert.ok(f.h <= (web ? 48 : 24), `${at}: ${f.who}'s line is one line (${f.h}px)`);
+        // owl's row at a phone's width puts the plan and the rest on a line
+        // below the address, and wraps a long address rather than cutting it
+        // (app.css, max-width 480): two address lines and a tail at most.
+        // Above that width the row stays one line.
+        assert.ok(f.h <= (web ? 88 : 24), `${at}: ${f.who}'s line is one line (${f.h}px)`);
         assert.ok(f.over <= 1 && f.out <= 0, `${at}: ${f.who}'s line runs past its row (${f.over}, ${f.out})`);
       }
       if (process.env.ARTIFACT_DIR && lang === "en") {
@@ -137,7 +150,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal((await page.locator("#status").textContent()).trim(), note, at);
 
       // back to Smart hides them
-      await page.locator(".editor").getByRole("button", { name: await say(page, lang, "Smart"), exact: true }).first().click();
+      await pick(await say(page, lang, "Smart"));
       assert.equal(await chip("max@example.com").isVisible(), false, `${at}: a weight under Smart`);
       // open, the editor scrolls and the dialog around it doesn't: the lines
       // its check-in and warm-up rows keep out of sight were held against

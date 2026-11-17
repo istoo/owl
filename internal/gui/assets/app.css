@@ -3300,6 +3300,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
    address instead of cutting it: it is the one thing that says which
    account a row is, and its title still names it whole */
 .acc-tail { display: contents; }
+/* the break only lays out the narrow row below; above it, it would sit
+   as an empty flex item and take a gap of its own from every other child */
+.acc-line > .acc-break { display: none; }
 @media (max-width: 480px) {
   .acc-line { flex-wrap: wrap; row-gap: 2px; }
   .acc-line > .acct-who { flex: 1 1 auto; }
