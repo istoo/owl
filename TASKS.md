@@ -609,3 +609,10 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       临时 ref 与探测 ref 已删。`test.yml` 不在分支 push 上触发，已手动调度；两个 run：
       Test https://github.com/istoo/owl/actions/runs/44134964830 ；
       GUI full/both https://github.com/istoo/owl/actions/runs/44134989128 。
+- [x] CI 合流（`5d5355e31`）：test.yml 取上游 4f94b8a 的 macOS 四份并行（pkg-shards 三份 + gateway 独立一份）、
+      gateway 走 race-shards 的 32 测试分块、Test 45m / Gateway 30m 超时、Vet 只跑一份；保留 owl 的独立 race job、
+      Windows peer identity、站点测试选 install/credits、release 自建发布（并把上游的 Latest 标记逻辑移进 owl 的 Publish）、
+      gui.yml。未加上游 docker-daily.yml：它读 usemagpie.ai 的 daily feed，owl 不发这类请求且 release_feed.py 没有 daily 通道。
+      actionlint 1.7.12 全部 workflow exit 0（补了 4 处既有 shellcheck disable，删掉 checkout@v4 不认识的
+      allow-unsafe-pr-checkout）；`go list ./...` 127 包，pkg-shards 1/2/3 = 42/43/42，并集完全相等、无重叠。
+      新 Test run：https://github.com/istoo/owl/actions/runs/44159644833 （头 5d5355e31）。GUI 44134989128 未被取消。
