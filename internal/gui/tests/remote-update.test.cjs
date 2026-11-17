@@ -89,7 +89,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const tip = await rup(name).getAttribute("title");
           assert.ok(tip.length > 20, `${name}'s tip says why: ${tip}`);
         }
-        assert.match(await rup("NAS").getAttribute("title"), /docker pull ghcr\.io\/yetone\/owl:latest/);
+        assert.match(await rup("NAS").getAttribute("title"), /docker pull ghcr\.io\/istoo\/owl:latest/);
         assert.match(await rup("Arch").getAttribute("title"), /yay -S owl-bin/);
         assert.match(await rup("Arch").getAttribute("title"), /pacman/);
         assert.match(await rup("Home").getAttribute("title"), /v0\.1\.200/);

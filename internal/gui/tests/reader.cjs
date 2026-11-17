@@ -327,7 +327,8 @@ async function openPage(page, view) {
   const tab = page.locator(`#nav [data-view="${view}"]`);
   if (await tab.isVisible()) await tab.click();
   else {
-    await page.locator("#nav .nav-more").click();
+    // owl draws its own More beside the one the markup carries hidden
+    await page.locator("#nav .nav-more:visible").click();
     const name = (await tab.textContent()).trim();
     await page.locator(".nav-more-menu .pm-item", { hasText: name }).first().click();
   }
