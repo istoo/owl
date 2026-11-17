@@ -596,6 +596,15 @@ type providersJSON struct {
 	// Unmoved are the retired built-ins whose accounts haven't moved onto
 	// their plugins yet, served by nothing until they do, with why
 	Unmoved []provider.MoveCandidate `json:"unmoved,omitempty"`
+	// Withdrawn are the plugins this owl still has that owl gives to
+	// nobody new, for the page to say the risk and what to use instead
+	Withdrawn []plugin.Withdrawal `json:"withdrawn,omitempty"`
+	// AgyMove are the withdrawn Antigravity plugin's accounts (by email)
+	// that Antigravity (local agy CLI) can take as they are, which it
+	// doesn't have yet (provider.MoveToAgy), and AgyMoved what moving
+	// them did, account by account
+	AgyMove  []string                   `json:"agyMove,omitempty"`
+	AgyMoved []provider.ImportedAccount `json:"agyMoved,omitempty"`
 	// Moved is the agents the change moved off models it stopped serving
 	// (agent.Reseat), for the page to say so.
 	Moved []agent.Move `json:"moved,omitempty"`
@@ -1096,11 +1105,18 @@ func providersState() providersJSON {
 		}
 		s.MovesTo[id] = provider.MovePackage(id)
 	}
+	s.AgyMove = provider.AgyMoveUsers()
 	for _, c := range provider.MoveCandidates() {
+		// Antigravity's plugin is retired too: its accounts go to agy-cli,
+		// on AgyMove's line
+		if c.ID == "antigravity" && len(s.AgyMove) > 0 {
+			continue
+		}
 		if provider.BuiltinRetired(c.ID) {
 			s.Unmoved = append(s.Unmoved, c)
 		}
 	}
+	s.Withdrawn = plugin.WithdrawnKept()
 	if err := provider.FileError(); err != nil {
 		s.FileError = err.Error()
 	}
@@ -1216,6 +1232,7 @@ var errRetired = errors.New("owl's built-in subscriptions are retired: their com
 var (
 	moveProvider  = provider.Move
 	adoptProvider = provider.Adopt
+	moveToAgy     = provider.MoveToAgy
 )
 
 // moveContext keeps a move going though the page that asked for it goes
@@ -1589,6 +1606,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			in.AuthHeader = *req.AuthHeader
 		}
 		var moved []agent.Move
+		var agyMoved []provider.ImportedAccount
 		switch r.PathValue("action") {
 		case "show":
 			// a signed-in account the user removed, back with its picks
@@ -1622,6 +1640,17 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			ctx, cancel := moveContext(r)
 			defer cancel()
 			if err := adoptProvider(ctx, in.ID); err != nil {
+				failMove(rw, err)
+				return
+			}
+		case "toagy":
+			// the retired Antigravity plugin's accounts onto Antigravity
+			// (local agy CLI), which signs in with the same Google client
+			// (@tongzhenbao on X)
+			ctx, cancel := moveContext(r)
+			defer cancel()
+			var err error
+			if agyMoved, err = moveToAgy(ctx); err != nil {
 				failMove(rw, err)
 				return
 			}
@@ -2465,6 +2494,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		}
 		st := providersState()
 		st.Moved = moved
+		st.AgyMoved = agyMoved
 		writeJSON(rw, st)
 		// the tray panel's account switch draws the kept list: a change
 		// made here is in it at once

@@ -1715,7 +1715,7 @@ func (h *host) releaseSlot(c *call) {
 // cancellable are the methods whose work the host ends when their caller
 // gives up: a gateway request's I/O, and a sign-in's steps, so a sign-in
 // cancelled or timed out saves nothing the plugin answers after (#5016).
-var cancellable = map[string]bool{"gatewayRequest": true, "authorize": true, "callback": true, "apiKey": true}
+var cancellable = map[string]bool{"gatewayRequest": true, "authorize": true, "callback": true, "apiKey": true, "importFiles": true}
 
 // call asks the host method with params and reads its answer into out.
 func (h *host) call(ctx context.Context, method string, params, out any) error {

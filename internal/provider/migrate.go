@@ -698,7 +698,9 @@ func move(ctx context.Context, id string, mv *mover) (err error) {
 		return fmt.Errorf("no %s account to move", id)
 	}
 	had := pluginListed(mv.pkg)
-	if err := installPlugin(ctx, mv.pkg, mv.min); err != nil {
+	// the user's own accounts: a package withdrawn for anyone new is
+	// still theirs (plugin.KeepWithdrawn)
+	if err := installPlugin(plugin.KeepWithdrawn(ctx), mv.pkg, mv.min); err != nil {
 		return installFailed(mv.pkg, err)
 	}
 	installed := !had
@@ -1136,7 +1138,7 @@ func keepMovedCurrent(ctx context.Context) {
 		if mv.min == "" {
 			continue
 		}
-		if err := installPlugin(ctx, mv.pkg, mv.min); err != nil {
+		if err := installPlugin(plugin.KeepWithdrawn(ctx), mv.pkg, mv.min); err != nil {
 			log.Printf("updating %s's plugin: %s", id, err)
 		}
 	}

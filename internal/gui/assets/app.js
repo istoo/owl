@@ -6620,9 +6620,22 @@ function renderMovable() {
   let hid = "";
   try { hid = localStorage.getItem("owl.deprecatedHidden") || ""; } catch {}
   const ids = ps.map((p) => p.id).join(",");
-  const unmoved = providers.unmoved || [];
-  box.hidden = (!ps.length || hid === ids) && !unmoved.length;
+  const unmoved = providers.unmoved || [], wd = providers.withdrawn || [];
+  // the line moving Antigravity's accounts to agy is in agymove.js,
+  // imported when there are any (@tongzhenbao on X); while it is drawn it
+  // says what the withdrawn plugin's line would, with the Move itself
+  const agy = providers.agyMove?.length && (window.agyMoveLine ? agyMoveLine() : void import("./agymove.js").then(renderMovable, () => {}));
+  box.hidden = (!ps.length || hid === ids) && !unmoved.length && !wd.length && !agy;
   for (const p of unmoved) box.append(unmovedLine(p));
+  if (agy) box.append(agy);
+  // a plugin owl gives nobody new (plugin.WithdrawnOf): it still works,
+  // and its user is told the risk and what to use instead
+  for (const w of wd) {
+    if (agy && w.id === "antigravity") continue;
+    const go = el("button", "text action", t("Use {name}", { name: w.instead }));
+    go.onclick = () => openPlugins("agy");
+    box.append(depLine("withdrawn", t("{name}'s plugin can get your account suspended", { name: w.name }), t("Google suspends accounts it sees used outside its own app. Use {name} instead, which runs your own agy.", { name: w.instead }), go));
+  }
   if (!ps.length || hid === ids) return;
   const names = ps.map((p) => p.name).join(t(", "));
   // one quiet line over the list, as calm as its rows: an amber dot, what
@@ -6646,6 +6659,17 @@ function renderMovable() {
   acts.append(hide, review);
   card.append(el("span", "dep-dot"), body, acts);
   box.append(card);
+}
+
+// depLine: one quiet line over the Providers list: an amber dot, what
+// happened and why, and its buttons on the right
+function depLine(kind, head, why, ...acts) {
+  const card = el("div", "deprecation " + kind), body = el("div", "dep-body"), a = el("div", "dep-acts");
+  card.setAttribute("role", "note");
+  body.append(el("div", "dep-head", head), el("p", "dep-why", why));
+  a.append(...acts);
+  card.append(el("span", "dep-dot"), body, a);
+  return card;
 }
 
 // unmovedLine: a retired built-in whose accounts haven't moved to its
