@@ -7,26 +7,27 @@ import (
 	"github.com/istoo/owl/internal/provider"
 )
 
-// user-agent=agent has a key+URL provider pass the agent's User-Agent on
-// (#1851), user-agent=owl goes back to owl's, and a signed-in
-// account, which goes as its own client, is refused it.
+// A key+URL provider passes the agent's User-Agent on by default (#1851,
+// nb5p on Discord): user-agent=owl sends owl's in its place,
+// user-agent=agent goes back to the default, and a signed-in account, which
+// goes as its own client, is refused agent.
 func TestProviderUserAgentPair(t *testing.T) {
 	p := provider.Provider{ID: "plan", Name: "Plan", Chat: "https://plan.example/v1", Key: "k"}
-	if err := applyPairs(&p, []string{"user-agent=agent"}); err != nil || !p.PassUserAgent {
-		t.Fatalf("agent: %v %v", p.PassUserAgent, err)
+	if err := applyPairs(&p, []string{"user-agent=owl"}); err != nil || !p.OwlUserAgent || p.PassesUserAgent() {
+		t.Fatalf("owl: %v %v", p.OwlUserAgent, err)
 	}
-	if err := applyPairs(&p, []string{"user-agent=owl"}); err != nil || p.PassUserAgent {
-		t.Fatalf("owl: %v %v", p.PassUserAgent, err)
+	if err := applyPairs(&p, []string{"user-agent=agent"}); err != nil || p.OwlUserAgent || !p.PassesUserAgent() {
+		t.Fatalf("agent: %v %v", p.OwlUserAgent, err)
 	}
 	if err := applyPairs(&p, []string{"user-agent=claude"}); err == nil || !strings.Contains(err.Error(), "agent|owl") {
 		t.Fatalf("a made-up value: %v", err)
 	}
 	a := provider.Provider{ID: "zcode", Name: "ZCode", Account: &provider.Account{Agent: "zcode"}}
-	if err := applyPairs(&a, []string{"user-agent=agent"}); err == nil || a.PassUserAgent {
+	if err := applyPairs(&a, []string{"user-agent=agent"}); err == nil || a.OwlUserAgent {
 		t.Fatalf("an account took it: %v", err)
 	}
-	if err := applyPairs(&a, []string{"user-agent=owl"}); err != nil {
-		t.Fatalf("an account turning it off: %v", err)
+	if err := applyPairs(&a, []string{"user-agent=owl"}); err != nil || a.OwlUserAgent {
+		t.Fatalf("an account turning it off: %v %v", a.OwlUserAgent, err)
 	}
 }
 

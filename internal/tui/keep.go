@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -62,11 +61,11 @@ func keepGateway(connected bool) string {
 	switch {
 	case err == nil && st.Installed:
 		if err := k.start(); err == nil {
-			return "owl: the gateway goes on in owl's service (owl daemon status)"
+			return tr("owl: the gateway goes on in owl's service (owl daemon status)")
 		}
 	case err == nil && !k.removed():
 		if err := k.install(); err == nil {
-			msg := "owl: the gateway goes on in owl's service, which now starts with this system or your login, so agents connected to owl reach it with owl tui closed; owl daemon uninstall removes it"
+			msg := tr("owl: the gateway goes on in owl's service, which now starts with this system or your login, so agents connected to owl reach it with owl tui closed; owl daemon uninstall removes it")
 			if l := k.linger(); l != "" {
 				msg += " (" + l + ")"
 			}
@@ -75,13 +74,13 @@ func keepGateway(connected bool) string {
 	}
 	pid, log, err := k.background()
 	if err != nil {
-		return gatewayGoneNote() + " (couldn't start owl serve in the background: " + err.Error() + ")"
+		return gatewayGoneNote() + " " + trf("(couldn't start owl serve in the background: %s)", err.Error())
 	}
-	msg := fmt.Sprintf("owl: the gateway goes on in the background (owl serve, pid %d, log %s) until this system stops", pid, log)
+	msg := trf("owl: the gateway goes on in the background (owl serve, pid %d, log %s) until this system stops", pid, log)
 	if wslHere() {
-		msg += "; for it to start with WSL, turn systemd on with [boot] systemd=true in /etc/wsl.conf and run owl daemon install"
+		msg += tr("; for it to start with WSL, turn systemd on with [boot] systemd=true in /etc/wsl.conf and run owl daemon install")
 	} else {
-		msg += "; owl daemon install starts it with the system"
+		msg += tr("; owl daemon install starts it with the system")
 	}
 	return msg
 }
@@ -92,7 +91,7 @@ func keepGateway(connected bool) string {
 // which nothing ever starts (#3756): the note says the switch that has the
 // terminal hand the gateway on instead.
 func atLoginNote() string {
-	return gatewayGoneNote() + "; owl opens at login and serves it then. Where no desktop logs in here, `owl autostart off` has owl tui hand it on as it quits"
+	return gatewayGoneNote() + tr("; owl opens at login and serves it then. Where no desktop logs in here, `owl autostart off` has owl tui hand it on as it quits")
 }
 
 // BackgroundLog is the log of a owl serve that owl tui left

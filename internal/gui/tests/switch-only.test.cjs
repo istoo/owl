@@ -59,9 +59,9 @@ const label = {
 };
 const strings = [
   "Only switch {agent}'s sign-in",
-  "owl signs {agent} in to the next account with room when the one it is on is used up, and keeps it there till that one is used up too, by writing {agent}'s own sign-in; {agent}'s requests go straight to OpenAI, never through owl. A {agent} app or session already open stays on its account until it is opened again. Connected to owl, {agent}'s requests go through it as before.",
+  "When an account is used up, owl signs {agent} in to the next one, and requests go straight to OpenAI. Open {agent} sessions keep their account until reopened.",
   "owl only switches {agent}'s sign-in; its requests go straight to OpenAI",
-  "{agent}'s requests go through owl to fail over to your other accounts again",
+  "A connected {agent} fails over to your other accounts through owl again",
 ];
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {

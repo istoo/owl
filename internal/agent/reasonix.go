@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -20,13 +19,14 @@ import (
 
 	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/edit"
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/pelletier/go-toml/v2"
 )
 
 const reasonixKey = "OWL_REASONIX_API_KEY"
 
-var reasonixKeyLine = regexp.MustCompile(`(?m)^\s*(?:export\s+)?` + reasonixKey + `\s*=`)
+var reasonixKeyLine = lazyre.New(`(?m)^\s*(?:export\s+)?` + reasonixKey + `\s*=`)
 
 // Every API request and catalog sync constructs its own Agent. The transaction
 // must cover the whole edit and rollback across those instances, including reads.

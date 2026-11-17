@@ -82,15 +82,15 @@ func serveGateway(ctx context.Context) (wait func()) {
 // nothing else to say: served here, or why agents can't reach it.
 func gatewayStatus() string {
 	if gw.here.Load() {
-		return sMuted.Render("● gateway " + gateway.URL() + " · served while owl tui is open")
+		return sMuted.Render("● " + trf("gateway %s · served while owl tui is open", gateway.URL()))
 	}
 	if e := gw.err.Load(); e != nil && *e != "" {
-		return sBad.Render("✗ ") + sText.Render("gateway not running: "+*e)
+		return sBad.Render("✗ ") + sText.Render(trf("gateway not running: %s", *e))
 	}
 	return ""
 }
 
 // gatewayGoneNote is said as the terminal quits having served the gateway.
 func gatewayGoneNote() string {
-	return "owl: the gateway stopped with owl tui; agents connected to owl reach it while owl tui, owl web or owl serve runs"
+	return tr("owl: the gateway stopped with owl tui; agents connected to owl reach it while owl tui, owl web or owl serve runs")
 }

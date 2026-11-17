@@ -53,6 +53,7 @@ func runsHere(cmd string) bool {
 
 // heal points owl's own servers whose program isn't here at this owl.
 func (l *Library) heal() {
+	l.healMarketLines() // a market server's line that never started (market_launch.go)
 	exe := ""
 	for _, s := range l.MCP {
 		if s == nil || !ownServer(s) || runsHere(s.Command) {

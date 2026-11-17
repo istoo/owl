@@ -52,7 +52,7 @@ func heapCmd(args []string) error {
 	if file == "" {
 		file = "owl-heap-" + time.Now().Format("20060102-150405") + ".pb.gz"
 	}
-	prof, stats, err := fetchHeap(gateway.URL())
+	prof, stats, err := fetchHeap(gateway.ClientURL())
 	if err != nil {
 		return err
 	}

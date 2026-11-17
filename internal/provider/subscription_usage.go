@@ -41,6 +41,11 @@ type QuotaWindow struct {
 	// "100% left". Claude's "Extra usage" row (claudeOveragesWindow) is
 	// the one Text window with Used 100: the account counts as spent.
 	Text bool `json:"text,omitempty"`
+	// Lane names a window of an allowance apart from the account's own
+	// ("images", ImageLane): its row is Text, and says only when it comes
+	// back, if known. Added as cards are handed out (WithImageLane), never
+	// cached.
+	Lane string `json:"lane,omitempty"`
 	// Amount of Limit is the window's own count in Unit, when the vendor
 	// counts it so (WorkBuddy's credits): Used is Amount as a share of
 	// Limit. The GUI says it as used or left, as it says the share (#659).
@@ -58,8 +63,16 @@ type QuotaWindow struct {
 	// (SuperMagic's points, #3950). Used is then no reading (0); the GUI
 	// says the figure left, and routing knows the account by it and puts
 	// the one with the most left first among a provider's accounts in the
-	// same unit (Allowance.Left). nil when not told.
+	// same unit (Allowance.Left). nil when not told. On an account with a
+	// usage cap, Amount of Limit and Used are what the wallet spent in the
+	// cap's period instead (wallet_spend.go, #5770), for the cap to hold.
 	Balance *float64 `json:"balance,omitempty"`
+	// Spent is, on a wallet's window (Balance), how much of it owl saw
+	// go since SpentSince, the first reading of the period a cap counts it
+	// over: the window's own until its reset, else the local day
+	// (wallet_spend.go). nil when not counted.
+	Spent      *float64   `json:"spent,omitempty"`
+	SpentSince *time.Time `json:"spentSince,omitempty"`
 	// Family is the model family a per-model window belongs to (Antigravity's
 	// "Gemini 3.1 Pro (High)" is Gemini's), for the GUI to show one figure a
 	// family, the tightest; each window is still here, and routing reads
@@ -83,9 +96,16 @@ type QuotaWindow struct {
 	// Credits is set on each window of a ChatGPT account that holds
 	// credits (has_credits with a balance left, or unlimited): using the
 	// window up doesn't stop it, the vendor spends the credits instead
-	// (codexGoesOnCredits). Routing reads it (Allowance.OnCredits); kept
+	// (codexGoesOnCredits); and on each of a Kimi Code key's while its
+	// booster holds money (kimiBooster). Routing reads it
+	// (Allowance.OnCredits); kept
 	// with the reading, so one shown from before still says it.
 	Credits bool `json:"credits,omitempty"`
+	// Extra is set on a Claude account's "Usage credits" window
+	// (claudeExtraWindow): the extra usage Anthropic bills past the plan,
+	// set aside. A cap the user sets on it holds the account at 100% of a
+	// plan window once reached (Allowance.extraCapped), never outright.
+	Extra bool `json:"extra,omitempty"`
 	// Capped is set, for the GUI only (WithCapped), on a window an
 	// account's usage cap counts: neither Aside nor unlimited. One model's
 	// own counts for that model (CapHeld), so it is marked like the rest.
@@ -97,6 +117,10 @@ type QuotaWindow struct {
 	// CapID is, beside Capped, how the window is known to a cap of its
 	// own (WindowCapID), for the GUI to set and show one.
 	CapID string `json:"capId,omitempty"`
+	// OwnCap is set beside Capped on a window set aside: only a cap the
+	// user set on it itself holds the account there (WindowCaps.own),
+	// never the account's, and the GUI offers none new.
+	OwnCap bool `json:"ownCap,omitempty"`
 	// Holds is what the whole window holds, reckoned from owl's own
 	// calls through the account (usage.WithWindowHolds), for the GUI and,
 	// through ReckonHolds, owl quota --json and /v1/owl/quotas
@@ -162,6 +186,10 @@ type SubscriptionQuota struct {
 	// BalanceTrend is the Balance over time, as owl read it, and when
 	// it runs out at that pace (balance_history.go)
 	BalanceTrend *BalanceTrend `json:"balanceTrend,omitempty"`
+	// Estimate is set when the Balance is one the user typed less what
+	// owl priced the key's calls at since (key_balance_own.go), not a
+	// vendor's reading
+	Estimate *BalanceEstimate `json:"estimate,omitempty"`
 	// SharedBalance is set on each key of a provider found to read one
 	// account's balance with others (balance_shared.go): the name of the
 	// first of them, whose card shows it once for all
@@ -221,12 +249,20 @@ type SubscriptionQuota struct {
 	// CheckinOff is set on such an account the user left out of its
 	// vendor's check-in (settings.CheckinOff, #1902): it isn't checked in.
 	CheckinOff bool `json:"checkinOff,omitempty"`
+	// CheckinKey is such an account's entry in its vendor's check-in, the
+	// key Check in now presses it by (CheckInAccount).
+	CheckinKey string `json:"checkinKey,omitempty"`
 	// Kind is the card's kind as another owl is told it (CachedCards):
 	// subscription, plan or balance; "" here.
 	Kind string `json:"kind,omitempty"`
 	// From is the remote owl a card is that one's (remote_quotas.go),
 	// by its name here; "" for this computer's own.
 	From string `json:"from,omitempty"`
+	// Via is the owls (catalog.Self) a card told another owl
+	// passed through, the one that read it first, this one last
+	// (CachedCards): the receiver leaves out a card that comes back to
+	// it (catalog.Loops). Only between owls; nil here.
+	Via []string `json:"via,omitempty"`
 	// LastServedAt is when the account, plan or key last answered a
 	// request through this computer's gateway, nil when it hasn't in the
 	// last 30 days (served.go); set by Quotas, never cached.
@@ -247,6 +283,14 @@ type SubscriptionQuota struct {
 	// this computer (#1547, remote_key_limits.go): the limit that owl
 	// holds the key to, beside the windows that show it.
 	GatewayKey *GatewayKeyLimit `json:"gatewayKey,omitempty"`
+	// Routing is, on a card told another owl (RemoteCardsPath), what
+	// each window's json leaves out for routing (Span, Model, Aside), in
+	// the windows' order: that owl weighs its Remote owl by the card
+	// (RemoteAllowance, #6708). Set only as cards are told; nil elsewhere.
+	Routing []lastWindow `json:"routing,omitempty"`
+	// routable: a remote owl's card whose windows have Routing laid
+	// back on them (keepRemoteCards), so routing may go by them
+	routable bool
 	// In-process read order, separate from the vendor's ReadAt and never
 	// persisted: restarting starts a new sequence.
 	readSeq uint64
@@ -325,10 +369,10 @@ func SubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 		}
 		readCtx, seq := quotaReading(bg)
 		asked := claudeAskGeneration.Load()
-		go func() {
+		goRead(func() {
 			out := fetchSubscriptionUsage(readCtx)
 			noteDailyCredits(out, time.Now())
-			noteQuotaHistory(out, time.Now())
+			noteCardHistory(out, time.Now())
 			c.Lock()
 			c.data = cacheCards(c.data, out, seq, false)
 			c.at, c.pending = time.Now(), nil
@@ -340,7 +384,7 @@ func SubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 			// has it finished, hook and all
 			toldUsage()
 			close(done)
-		}()
+		})
 	}
 	pending := c.pending
 	c.Unlock()
@@ -382,7 +426,7 @@ func visibleQuotas(all []SubscriptionQuota) []SubscriptionQuota {
 		}
 		if q.Provider == "gemini" || q.Provider == "antigravity" {
 			if chosen == nil {
-				chosen = exposedIDs()
+				chosen = keptExposedIDs("gemini", "antigravity")
 			}
 			var base func(string) string
 			if q.Provider == "antigravity" {
@@ -402,15 +446,62 @@ func visibleQuotas(all []SubscriptionQuota) []SubscriptionQuota {
 	return out
 }
 
-// exposedIDs is, for each provider, the models owl offers from it.
-func exposedIDs() map[string]map[string]bool {
+// keptExposed is exposedIDs for Gemini's and Antigravity's quotas, kept
+// while StampNow stays the same, and no longer than exposedFor. The tray
+// reads usage every few minutes, and building it each time loaded the
+// whole catalog (5.6 MB of a tray-only owl's 12.8 MB live heap) before
+// catalog's loadIdle could let it go.
+var keptExposed struct {
+	sync.Mutex
+	ids   map[string]map[string]bool
+	key   string
+	stamp Stamp
+	at    time.Time
+}
+
+// exposedFor bounds how long keptExposed is trusted across what a Stamp
+// can't see: a model retired by its date, another app's account file.
+const exposedFor = 30 * time.Minute
+
+// exposedBuilds counts keptExposedIDs' builds, for a test.
+var exposedBuilds atomic.Int64
+
+// keptExposedIDs is exposedIDs(ids...), built again only after a change
+// or for other ids. What it gives is shared: read only.
+func keptExposedIDs(ids ...string) map[string]map[string]bool {
+	key := strings.Join(ids, "\x00")
+	now := StampNow()
+	keptExposed.Lock()
+	defer keptExposed.Unlock()
+	if keptExposed.ids != nil && keptExposed.key == key && keptExposed.stamp == now && time.Since(keptExposed.at) < exposedFor {
+		return keptExposed.ids
+	}
+	exposedBuilds.Add(1)
+	built := exposedIDs(ids...)
+	// a change while it was built: the next read builds it again
+	if StampNow() == now {
+		keptExposed.ids, keptExposed.key, keptExposed.stamp, keptExposed.at = built, key, now, time.Now()
+	} else {
+		keptExposed.ids = nil
+	}
+	return built
+}
+
+// exposedIDs is, for each provider of ids, the models owl offers from
+// it. Only those are built: every provider's whole list, each account's
+// and plugin's, was built for the two whose quotas are narrowed, on each
+// usage read (20 MB of a live owl's idle two minutes).
+func exposedIDs(ids ...string) map[string]map[string]bool {
 	out := map[string]map[string]bool{}
 	for _, p := range All() {
-		ids := map[string]bool{}
-		for _, m := range p.Exposed() {
-			ids[m.ID] = true
+		if !slices.Contains(ids, p.ID) {
+			continue
 		}
-		out[p.ID] = ids
+		offered := map[string]bool{}
+		for _, m := range p.Exposed() {
+			offered[m.ID] = true
+		}
+		out[p.ID] = offered
 	}
 	return out
 }
@@ -545,7 +636,13 @@ func fetchSubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 			} else if ok {
 				forgetLoginReading(l.Login)
 			}
-			fetches = append(fetches, func() SubscriptionQuota { return loginReading(viaLogin(agent, l.User), l.Login).read })
+			fetches = append(fetches, func() SubscriptionQuota {
+				q := loginReading(viaLogin(agent, l.User), l.Login).read
+				if q.User == "" {
+					q.User = l.User // as perLogin names it
+				}
+				return q
+			})
 		}
 	}
 	fetches = append(fetches, pluginUsageFetches(via, hidden, placed)...)
@@ -603,7 +700,7 @@ func accountJSON(ctx context.Context, url, token string, headers map[string]stri
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := Keyed(http.DefaultClient).Do(req)
 	if err != nil {
 		return err
 	}
@@ -633,12 +730,16 @@ func (e *accountStatusError) Error() string { return http.StatusText(e.status) }
 // a Team seat isn't the email alone `claude auth status` gives.
 func claudeSubscriptionUsage(ctx context.Context, user string) SubscriptionQuota {
 	q := SubscriptionQuota{Provider: "claude", Name: "Claude Code", Icon: "claude-color", Windows: []QuotaWindow{}}
-	if _, _, ok := claudeCredential(); !ok {
+	c, _, ok := claudeCredential()
+	if !ok {
 		q.Error = "Claude Code is signed out; run claude auth login"
 		return q
 	}
-	_, plan, _ := claudeIdentity()
-	q.Plan = plan
+	// named as the account is (claudeAccount): `claude auth status` says
+	// "max" for Max 20x too, which Claude sells as Ultra (shangyuan0818 on X)
+	_, statusPlan, _ := claudeIdentity()
+	acct, _ := claudeProfileAccount()
+	q.Plan = claudeLivePlan(c, statusPlan, acct)
 	var err error
 	q.Windows, err = claudeWindows(ctx, user, true)
 	if err != nil {
@@ -754,14 +855,35 @@ var claudeAsked atomic.Int64
 // in one wall-clock tick. tried and wait still schedule the next /usage.
 var claudeAskGeneration atomic.Uint64
 
-func markClaudeUsageAsked() {
+// claudeEveryAsked is the ask generation of the user's last refresh of
+// every allowance at once (AskEveryClaudeUsage): a saved account read
+// before it (claudeUsageEntry.asked) is read again, as its card's refresh
+// would read it (#5380), by a read that starts within claudeEveryFor of
+// the ask (claudeEveryAt): one the 30-second floor put off isn't run by a
+// timed read long after.
+var (
+	claudeEveryAsked atomic.Uint64
+	claudeEveryAt    atomic.Int64
+)
+
+const claudeEveryFor = 2 * time.Minute
+
+func markClaudeUsageAsked() { markClaudeAsk(false) }
+
+// markClaudeAsk is an ask of Claude's usage; every, the user's refresh of
+// every allowance, whose saved accounts are read too.
+func markClaudeAsk(every bool) {
 	// Serialize the ask with both caches' snapshots and publications:
 	// neither may observe the old generation, then publish after this ask.
 	// When both locks are needed, the subscription cache comes first.
 	subscriptionUsageCache.Lock()
 	loginUsageCache.Lock()
-	claudeAsked.Store(time.Now().UnixNano())
-	claudeAskGeneration.Add(1)
+	at := time.Now().UnixNano()
+	claudeAsked.Store(at)
+	if g := claudeAskGeneration.Add(1); every {
+		claudeEveryAt.Store(at)
+		claudeEveryAsked.Store(g)
+	}
 	loginUsageCache.Unlock()
 	subscriptionUsageCache.Unlock()
 }
@@ -770,8 +892,21 @@ func markClaudeUsageAsked() {
 // Usage page, refreshing it, `owl quota` — so Claude Code's /usage is
 // run at once rather than when the next unasked reading is due
 // (claudeUsageWait); the next SubscriptionUsage waits for it.
-func AskClaudeUsage() {
-	markClaudeUsageAsked()
+func AskClaudeUsage() { askClaudeUsage(false) }
+
+// AskEveryClaudeUsage is the user refreshing every allowance by hand: the
+// tray panel's or the Usage page's Refresh, routing's read of the
+// allowances, the TUI's r (#5380: the panel said "Allowances refreshed"
+// while each saved Claude account kept its old reading, which only its
+// own card's refresh read again). As AskClaudeUsage, and each saved
+// Claude account's /usage is run too, as its card's refresh runs it, the
+// 30-second floor and all. Opening the page, its timer and `owl
+// quota` ask with AskClaudeUsage, which starts no saved account's Claude
+// Code (savedRefresh).
+func AskEveryClaudeUsage() { askClaudeUsage(true) }
+
+func askClaudeUsage(every bool) {
+	markClaudeAsk(every)
 	AskUsage()
 	l := &loginUsageCache
 	l.Lock()
@@ -808,11 +943,12 @@ func AskUsage() {
 // (active) is read when the user asked since it last was, when the last
 // reading's claudeUsageWait (claudeNearOutWait near out) is up and Claude
 // Code was used since, or when Claude Code was refused for its limit
-// since. A saved
-// account is read only when its card is refreshed (savedRefresh), or when
-// the switch off a spent account has no reading of it (spareRead), or
-// when the keep-alive runs Claude Code on it (keepingAlive), by
-// Claude Code run in the account's own config directory
+// since. A saved account is read only when its card is refreshed
+// (savedRefresh) or every allowance was refreshed by hand since it was
+// read (AskEveryClaudeUsage), or when the switch off a spent account
+// has no reading of it (spareRead), or when the keep-alive runs Claude
+// Code on it (keepingAlive), by Claude Code run in the account's own
+// config directory
 // (readSavedClaudeUsage), Claude Code's own sign-in left as it is (#1630).
 // Any other time it is what was kept.
 // owl itself never asks Anthropic.
@@ -829,7 +965,12 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 	// limit since (claudeLimitHitAfter, #4443)
 	due := e.tried.IsZero() || claudeAsked.Load() != 0 && asked > e.asked ||
 		active && now.Sub(e.tried) >= claudeWaitOf(e, now) && (e.heard.After(e.tried) || claudeUsedSince(e.tried)) ||
-		active && claudeLimitHitAfter(e.tried)
+		active && claudeLimitHitAfter(e.tried) ||
+		// a first reading that failed (Claude Code not on a GUI's PATH, a
+		// network blink) is tried again after the wait, as nothing is kept
+		// to show and nobody need have used Claude Code since: a user who
+		// never routes Claude through owl would see "not read" for good
+		active && e.ws == nil && e.err != nil && now.Sub(e.tried) >= e.wait
 	// a saved account the switch off a spent one has no reading of
 	// (spareRead): read once, and again only after a wait while its read
 	// keeps failing, never every look
@@ -841,7 +982,10 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 	if active {
 		alive = nil
 	}
-	read := ((active || savedRefresh(ctx, user)) && due || spare || alive != nil) && (now.Sub(e.tried) >= claudeAskFloor || alive != nil) && !holding(ctx)
+	// every allowance refreshed by hand since this saved account's last
+	// read (AskEveryClaudeUsage), as its own card's refresh would
+	every := !active && claudeEveryAsked.Load() > e.asked && now.Sub(time.Unix(0, claudeEveryAt.Load())) < claudeEveryFor
+	read := ((active || savedRefresh(ctx, user) || every) && due || spare || alive != nil) && (now.Sub(e.tried) >= claudeAskFloor || alive != nil) && !holding(ctx)
 	c.Lock()
 	// one reading an ask or a wait, its first caller's; the others keep
 	// to it
@@ -860,7 +1004,7 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 	heard := e.ws != nil && now.Sub(e.heard) < claudeHeard
 	if !read {
 		switch {
-		case ok && e.err != nil && !(heard && !claudeUsageDenied.MatchString(e.err.Error())):
+		case ok && e.err != nil && !(heard && !claudeDenied(e.err.Error())):
 			return []QuotaWindow{}, e.err
 		case ok && e.ws != nil:
 			return e.windows(now), nil
@@ -904,7 +1048,7 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 		if f, ok := c.m[key]; ok {
 			// A failed read cannot establish that an account refusal cleared.
 			// A successful reading or a new header clears it instead.
-			if f.err != nil && claudeUsageDenied.MatchString(f.err.Error()) && !claudeUsageDenied.MatchString(err.Error()) {
+			if f.err != nil && claudeDenied(f.err.Error()) && !claudeDenied(err.Error()) {
 				err = f.err
 			}
 			if f.tried.Equal(now) {
@@ -914,11 +1058,13 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 			e = f // headers received while /usage ran are newer than e
 		}
 		c.Unlock()
-		if e.ws != nil && time.Since(e.heard) < claudeHeard && !claudeUsageDenied.MatchString(err.Error()) {
+		if e.ws != nil && time.Since(e.heard) < claudeHeard && !claudeDenied(err.Error()) {
 			return e.windows(time.Now()), nil // a fresh header stands unless the account was refused
 		}
 		return ws, err
 	}
+	// a whole reading: a window it leaves out hasn't started
+	ws = claudeWithUnstarted(ws)
 	c.Lock()
 	if c.m == nil {
 		c.m = map[string]claudeUsageEntry{}
@@ -937,7 +1083,8 @@ var (
 )
 
 // savedRefresh says ctx is the refresh of the card of the saved Claude
-// account user, the one ask that runs Claude Code for a saved account. The
+// account user, one ask that runs Claude Code for a saved account; the
+// other is the user's refresh of every allowance (AskEveryClaudeUsage). The
 // Usage page opened, its timer, `owl quota` and routing keep to what
 // was read: a run in every saved account's directory for each of them
 // would start Claude Code once per account.
@@ -1077,17 +1224,7 @@ func codexWindows(ctx context.Context, token, accountID string) (plan string, ou
 // or less) is none left, whatever has_credits says.
 func codexGoesOnCredits(u codexUsage) bool {
 	c := u.Credits
-	if c == nil {
-		return false
-	}
-	if c.Unlimited {
-		return true
-	}
-	if !c.Has {
-		return false
-	}
-	n, err := strconv.ParseFloat(strings.TrimSpace(c.Balance), 64)
-	return err != nil || n > 0
+	return c != nil && CodexGoesOnCredits(c.Has, c.Unlimited, c.Balance)
 }
 
 // codexUsage is what /wham/usage tells of a ChatGPT account.
@@ -1105,9 +1242,11 @@ type codexUsage struct {
 	RateLimit struct {
 		// false once its allowance is used up; held only with no credits
 		// to go on with (codexHeld)
-		Allowed   *bool        `json:"allowed"`
-		Primary   *codexWindow `json:"primary_window"`
-		Secondary *codexWindow `json:"secondary_window"`
+		Allowed *bool `json:"allowed"`
+		// the backend's own word that a limit is hit
+		LimitReached *bool        `json:"limit_reached"`
+		Primary      *codexWindow `json:"primary_window"`
+		Secondary    *codexWindow `json:"secondary_window"`
 	} `json:"rate_limit"`
 	SpendControl *struct {
 		Reached bool `json:"reached"`
@@ -1163,7 +1302,7 @@ var codexReservePlans = []string{"team", "self_serve_business_prolite"}
 // says held: wrongly held costs the app its ChatGPT extras while owl
 // serves the turn, wrongly not held leaves it sending nothing at all.
 func codexHeld(u codexUsage) bool {
-	if u.RateLimit.Allowed == nil || *u.RateLimit.Allowed {
+	if !codexAtLimit(u) {
 		return false
 	}
 	c := u.Credits
@@ -1178,6 +1317,28 @@ func codexHeld(u codexUsage) bool {
 		return false
 	}
 	return true
+}
+
+// codexAtLimit is whether the reading says the allowance is used up as
+// the Codex app's composer reads it: rate_limit.allowed false, and that
+// alone. Not said is not at the limit, and neither is allowed true with a
+// window at 100%: the app's gate returns open on anything but allowed
+// false (ChatGPT.app 26.1029.61003, the macOS build of the version
+// xiaoq6285 runs on Windows, async chunk "a6kU": search
+// "n.rate_limit?.allowed!==!1||"; the same in OpenAI.Codex 26.1027 on the
+// Windows box and in 26.1021), and its remaining-percent reading keeps a
+// window of an allowed account at 1% or more (search
+// "Math.max(100-e,+(!0===t))"), so to the app such an account still has
+// room. Holding it would take the app out of ChatGPT (durable threads,
+// remote control, its usage meter, #996) for no Send it would grey.
+//
+// A used-up 5h window with the week open is held through allowed: the
+// backend says allowed false and limit_reached true there (the real Team
+// reply in testdata, 5h at 100% and the week at 63%), which is what
+// greys the app's Send.
+func codexAtLimit(u codexUsage) bool {
+	a := u.RateLimit.Allowed
+	return a != nil && !*a
 }
 
 type codexWindow struct {
@@ -1223,7 +1384,7 @@ func copilotSubscriptionUsage(ctx context.Context, githubToken, host string) Sub
 			req.Header.Set(k, v)
 		}
 		var res *http.Response
-		res, err = http.DefaultClient.Do(req)
+		res, err = Keyed(http.DefaultClient).Do(req)
 		if err == nil {
 			defer res.Body.Close()
 			b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))

@@ -75,8 +75,10 @@ func ourKey(k string) bool {
 // (#1332). A key of another owl's, which this gateway would refuse, is
 // not.
 func gatewayTakes(k string) bool {
-	_, ok := access.Authenticate(k)
-	return ok
+	who, ok := access.Authenticate(k)
+	// Owl Browser's key reaches no model, so an agent holding it
+	// doesn't go through owl
+	return ok && !who.Browser
 }
 
 // gatewayKey says want is a key owl gives an agent for its gateway:

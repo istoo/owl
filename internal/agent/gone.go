@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/istoo/owl/internal/claudecode"
 	"github.com/istoo/owl/internal/proc"
 )
 
@@ -58,6 +59,14 @@ func (a *Agent) cliHeld() (held, known bool) {
 	switch a.ID {
 	case "claude":
 		at = []string{filepath.Join(home, ".claude", "local", exe("claude"))}
+		// the Claude Code owl downloaded for a machine with none (a
+		// server's, claudecode.Install): owl's own runs make ~/.claude,
+		// and `owl claude` starts it, so the folder is no leftover. A
+		// systemd service's Agents page said Claude's CLI was not found
+		// while that Claude Code answered its requests (Wing8Aqua on X).
+		if p, _ := claudecode.Downloaded(); p != "" {
+			at = append(at, p)
+		}
 	case "opencode":
 		at = []string{filepath.Join(home, ".opencode", "bin", exe("opencode"))}
 	case "codex":

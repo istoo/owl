@@ -25,16 +25,24 @@ import (
 // Privacy) that would have masked it. Its answer at "/" never says it is
 // owl (ServedBy), so the next owl starting asks it to leave.
 func CodexRelay() http.Handler {
-	client := &http.Client{Transport: upstreamTransport()}
+	// the caller's sign-in goes to the ChatGPT backend's origin only
+	client := &http.Client{Transport: upstreamTransport(), CheckRedirect: provider.KeepsCredentials}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !loopbackHost(r.Host) || r.Header.Get("Origin") != "" {
-			// as the gateway's corsGuard: a rebound or foreign page, or
-			// a frame's null, never reaches the sign-in Codex sends
-			relayError(w, http.StatusForbidden, "owl's Codex relay serves Codex on this computer only")
-			return
-		}
+		// anything but Codex's own path is told owl isn't running
+		// before who asks is judged: a browser extension or a page calling
+		// the gateway's address while owl is quit was told the relay
+		// "serves Codex on this computer only", which said nothing of
+		// opening owl (jipairamen on X, a translation extension). The
+		// answer passes nothing on, so it is the same for every caller.
 		if !strings.HasPrefix(r.URL.Path, CodexPath+"/") {
 			relayError(w, http.StatusServiceUnavailable, relayGone)
+			return
+		}
+		if !loopbackHost(r.Host) || r.Header.Get("Origin") != "" {
+			// as the gateway's corsGuard: a rebound or foreign page, an
+			// extension, or a frame's null, never reaches the sign-in
+			// Codex sends
+			relayError(w, http.StatusForbidden, relayNoPages)
 			return
 		}
 		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -110,6 +118,10 @@ func CodexRelay() http.Handler {
 
 // relayGone is the relay's answer to anything but Codex's own turns.
 const relayGone = "owl isn't running: only Codex threads open when it quit are passed on, on Codex's own ChatGPT sign-in. Open owl for everything else."
+
+// relayNoPages is its answer to a web page's or an extension's call on
+// Codex's path, or one at a name other than this computer's.
+const relayNoPages = "owl isn't running: only Codex threads on this computer that were open when it quit are passed on, never a web page's or a browser extension's call. Open owl for everything else."
 
 // relayRefuses says why a turn can't be passed on with owl gone, ""
 // when it can: what only the running gateway serves, and a turn masking

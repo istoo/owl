@@ -12,6 +12,7 @@ import (
 	"github.com/istoo/owl/internal/codexcat"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/settings"
+	"github.com/istoo/owl/internal/usage"
 )
 
 // codexSignInToken is Codex's ChatGPT sign-in as Codex keeps it, which
@@ -39,7 +40,7 @@ func codexOwnOffOwl(r *http.Request, body []byte, model string) (to *http.Reques
 	}
 	// one of Codex's hidden side calls on its own model that a setting
 	// sends elsewhere — a thread's title or description, a composer
-	// prediction — is owl's to answer where it stands (codexTitlesTo
+	// prediction, the app's prompt suggestions — is owl's to answer where it stands (codexTitlesTo
 	// and its siblings, further down handle), never to put on Codex's
 	// ChatGPT sign-in: with no sign-in to be had the request was answered
 	// 404 and Codex named the thread after its first message, whatever the
@@ -132,6 +133,8 @@ func codexSideSet(kind string) bool {
 		return st.CodexDescriptions != ""
 	case isPredictionKind(kind):
 		return st.CodexPredictions != ""
+	case usage.PurposeOf(kind) == "kind:ambient_suggestions":
+		return st.CodexSuggestions != ""
 	}
 	return false
 }

@@ -21,4 +21,6 @@ export const SPONSORS = [
   { id: "fastai", home: "https://www.fastaitoken.com/register?aff=OWL&utm=official" },
   { id: "soleapi", home: "https://soleapi.com/r/owl" },
   { id: "aigocode", home: "https://www.aigocode.net/invite/OWL?utm_source=owl&utm_medium=home", readme: "https://www.aigocode.net/invite/OWL?utm_source=owl&utm_medium=readme" },
+  { id: "modelgo", readme: "https://modelgo.ai/?utm_source=owl&utm_medium=sponsorship&utm_content=readme&campaign_id=owl&ad_group_id=readme" },
+  { id: "x6ai", readme: "https://console.x6.ai/register?code=gkSc9RGu" },
 ];

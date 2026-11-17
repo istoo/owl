@@ -50,7 +50,7 @@ func owlOnPort(port string) bool {
 		if pid == os.Getpid() {
 			continue
 		}
-		if path, err := proc.Executable(pid); err == nil && proc.IsOwl(path) {
+		if path, err := proc.Executable(pid); err == nil && proc.RunsOwl(pid, path) {
 			return true
 		}
 	}

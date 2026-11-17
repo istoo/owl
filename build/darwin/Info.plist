@@ -20,6 +20,10 @@
 			<key>CFBundleURLName</key><string>com.yetone.owl.import</string>
 			<key>CFBundleURLSchemes</key><array><string>owl</string></array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key><string>com.yetone.owl.ccswitch</string>
+			<key>CFBundleURLSchemes</key><array><string>ccswitch</string></array>
+		</dict>
 	</array>
 	<key>NSHumanReadableCopyright</key><string>yetone</string>
 </dict>

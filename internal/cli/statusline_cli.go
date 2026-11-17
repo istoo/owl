@@ -20,8 +20,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/istoo/owl/internal/gateway"
 	"github.com/istoo/owl/internal/provider"
-	"github.com/istoo/owl/internal/settings"
 )
 
 const statuslineUsage = `usage: owl statusline [<provider|account>…]
@@ -44,7 +44,7 @@ const statuslineWait = time.Second
 
 // statuslineCmd: owl statusline [<provider|account>…]
 func statuslineCmd(args []string) error {
-	fmt.Println(statusline(os.Stdin, args[1:], "http://"+settings.GatewayAddr(), time.Now()))
+	fmt.Println(statusline(os.Stdin, args[1:], gateway.ClientURL(), time.Now()))
 	return nil
 }
 
