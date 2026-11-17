@@ -5,9 +5,11 @@
 // 44-unit grid.
 // owl.svg is the full drawing, its belly, shoulder and the slits in its
 // tail cut out of the black; the app tile uses it from 64px up.
-// owl-small.svg drops the eye, which would only be a speck; the tray and
-// the smaller tiles use it, and so does the header in
-// internal/gui/assets/index.html.
+// owl-small.svg drops the eye, which would only be a speck; the smaller
+// tiles use it, and so does the header in internal/gui/assets/index.html.
+// owl-tray.svg is the same bird drawn as a line, not a solid shape: the
+// menu bar's own glyphs are thin, and the filled bird read as a block
+// beside them. Only the tray and its flap use it.
 //
 //	go run build/icon/gen.go tray internal/gui/tray.png     # 44px black template icon (macOS menu bar)
 //	go run build/icon/gen.go tray-flap internal/gui/trayflap # its frames when clicked (a size after the folder for a bigger look)
@@ -37,6 +39,8 @@ var (
 	fullSVG string
 	//go:embed owl-small.svg
 	smallSVG string
+	//go:embed owl-tray.svg
+	traySVG string
 )
 
 func main() {
@@ -93,11 +97,11 @@ func main() {
 // 感觉这只鸟有些大); at .8 it is about 18pt by 14pt, centred.
 const trayK = 0.8
 
-// tray draws the silhouette as a macOS template image (black + alpha).
+// tray draws the line-drawn owl as a macOS template image (black + alpha).
 func tray() image.Image {
 	const S = 44
 	off := S / 2 * (1 - trayK)
-	cov := coverage(parse(smallSVG), S, 8, trayK, off, off)
+	cov := coverage(parse(traySVG), S, 8, trayK, off, off)
 	img := image.NewNRGBA(image.Rect(0, 0, S, S))
 	for i, a := range cov {
 		img.SetNRGBA(i%S, i/S, color.NRGBA{0, 0, 0, uint8(a*255 + 0.5)})
@@ -136,7 +140,7 @@ var (
 // flap-01.png on, one every flapEvery of the animation, the still bird at
 // both ends left out.
 func trayFlap(dir string, S int) error {
-	bird := parse(smallSVG)
+	bird := parse(traySVG)
 	body, tail, wing := parse(`d="`+clipBody+`"`), parse(`d="`+clipTail+`"`), parse(`d="`+clipWing+`"`)
 	n := int(math.Round(flapSecs / flapEvery))
 	const ss = 8
