@@ -58,43 +58,44 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.goto("http://owl.test/?view=plugins");
         const view = page.locator("#view-plugins");
         await view.locator(".lib-tabs .opt").nth(1).click();
-        const kinds = view.locator(".pm-mkbar .pm-mkkinds .opt");
-        const sorts = view.locator(".pm-mkbar .pm-mksort .opt");
+        // the strip and the Sort menu are the page's own now (browseBar),
+        // not pmorder.js's
+        const kinds = view.locator(".pm-bar .pm-kinds .opt");
+        const sortBtn = view.locator(".pm-bar .pm-pop").last();
         await kinds.first().waitFor();
-        const names = (i) => view.locator(".pm-sec:not(.pm-ghsec)").nth(i).locator(".pm-card .pm-name b").allInnerTexts();
-        const sections = () => view.locator(".pm-sec:not(.pm-ghsec)").count();
+        const names = (i) => view.locator(".pm-sec:not(.pm-ghsec):not(.pm-recs)").nth(i).locator(".pm-card .pm-name b").allInnerTexts();
+        const sections = () => view.locator(".pm-sec:not(.pm-ghsec):not(.pm-recs)").count();
 
         // every kind the market lists, each with its count, All first
-        const counts = (await kinds.allInnerTexts()).map((s) => s.replace(/\s+/g, " ").trim().split(" · ")[1]);
+        const counts = await kinds.evaluateAll((bs) => bs.map((b) => b.querySelector("em")?.textContent));
         assert.deepEqual(counts, ["6", "3", "1", "1", "1"]);
         assert.equal(await kinds.first().evaluate((b) => b.classList.contains("on")), true, "All, at first");
         assert.equal(await sections(), 4);
 
-        // the market's own order, then npm's downloads, most first, the
-        // uncounted last
-        assert.deepEqual(await names(0), ["Alpha", "Beta", "Gamma"]);
-        await sorts.nth(1).click();
-        await page.waitForFunction(() => document.querySelector(".pm-sec .pm-card .pm-name b")?.textContent === "Beta");
+        // Most popular first (npm's weekly), the uncounted last; then by name
         assert.deepEqual(await names(0), ["Beta", "Alpha", "Gamma"]);
-        assert.equal(await sorts.nth(1).evaluate((b) => b.classList.contains("on")), true);
+        await sortBtn.click();
+        await page.locator(".pm-sortmenu .pm-item").nth(2).click();
+        await page.waitForFunction(() => document.querySelector(".pm-sec .pm-card .pm-name b")?.textContent === "Alpha");
+        assert.deepEqual(await names(0), ["Alpha", "Beta", "Gamma"]);
 
         // a kind alone
         await kinds.nth(3).click();
-        await page.waitForFunction(() => document.querySelectorAll(".pm-sec:not(.pm-ghsec)").length === 1);
+        await page.waitForFunction(() => document.querySelectorAll(".pm-sec:not(.pm-ghsec):not(.pm-recs)").length === 1);
         assert.deepEqual(await names(0), ["Calc tools"]);
 
         // kept for the next visit
         await page.reload();
         await view.locator(".lib-tabs .opt").nth(1).waitFor();
-        await page.locator(".pm-mkbar .pm-mkkinds .opt.on").waitFor();
+        await page.locator(".pm-bar .pm-kinds .opt.on").waitFor();
         assert.equal(await kinds.nth(3).evaluate((b) => b.classList.contains("on")), true, "the kind kept");
-        assert.equal(await sorts.nth(1).evaluate((b) => b.classList.contains("on")), true, "the order kept");
+        assert.match(await sortBtn.innerText(), new RegExp(await page.evaluate(() => t("Name"))), "the order kept");
         assert.deepEqual(await names(0), ["Calc tools"]);
 
-        // all again, still by downloads
+        // all again, still by name
         await kinds.first().click();
-        await page.waitForFunction(() => document.querySelectorAll(".pm-sec:not(.pm-ghsec)").length === 4);
-        assert.deepEqual(await names(0), ["Beta", "Alpha", "Gamma"]);
+        await page.waitForFunction(() => document.querySelectorAll(".pm-sec:not(.pm-ghsec):not(.pm-recs)").length === 4);
+        assert.deepEqual(await names(0), ["Alpha", "Beta", "Gamma"]);
 
         const over = await page.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
         assert.ok(over <= 0, "page scrolls sideways by " + over);

@@ -668,7 +668,12 @@
   const SHELF_N = { pv: 6 };
   const SOURCES = [["", "All sources"], ["ours", "owl community"], ["third", "Other authors"], ["gh", "Unofficial, on GitHub"]];
   const SORTS = [["hot", "Most popular"], ["liked", "Most liked"], ["name", "Name"]];
-  let kindPick = "", srcPick = "", onlyNew = false, sortPick = "hot";
+  // owl keeps Discover's kind and order for the next visit
+  const keptPick = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+  const keepPick = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  let kindPick = keptPick("owl.pluginKind"), srcPick = "", onlyNew = false;
+  const keptSort = keptPick("owl.pluginSort");
+  let sortPick = SORTS.some(([v]) => v === keptSort) ? keptSort : "hot";
   const srcOf = (l) => l.github ? "gh" : l.community ? "ours" : "third";
   const hotOf = (l) => l.npm?.weekly || 0;
   const nameOrder = (a, b) => a.name.localeCompare(b.name, intlLang());
@@ -823,11 +828,11 @@
     const bar = el("div", "pm-bar");
     const kinds = ORDER.filter((k) => all.some((l) => kindOf(l) === k));
     if (kindPick && !kinds.includes(kindPick)) kindPick = "";
-    bar.append(kindStrip(kinds, (k) => base.filter((l) => !k || kindOf(l) === k).length, kindPick, (k) => { kindPick = k; drawBody(); }), el("span", "grow"));
+    bar.append(kindStrip(kinds, (k) => base.filter((l) => !k || kindOf(l) === k).length, kindPick, (k) => { kindPick = k; keepPick("owl.pluginKind", k); drawBody(); }), el("span", "grow"));
     if (ghLooking()) bar.append(ghLook());
     bar.append(originButton(srcPick, { ticked: onlyNew }, (v) => { if (v === "\x01") onlyNew = !onlyNew; else srcPick = v; drawBody(); }));
     bar.append(popButton(t("Sort"), t(SORTS.find(([v]) => v === sortPick)[1]), (b) => openProtoMenu(b,
-      SORTS.map(([v, name]) => ({ v, name, note: "" })), sortPick, (v) => { sortPick = v; drawBody(); }, "Sort", "pm-sortmenu", "right")));
+      SORTS.map(([v, name]) => ({ v, name, note: "" })), sortPick, (v) => { sortPick = v; keepPick("owl.pluginSort", v); drawBody(); }, "Sort", "pm-sortmenu", "right")));
     return bar;
   }
 
