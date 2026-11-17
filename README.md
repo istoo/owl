@@ -333,14 +333,3 @@ If owl spared you one more config file, **a ⭐ helps others find it.**
     <img src="https://api.star-history.com/svg?repos=istoo/owl&type=Date" width="600" alt="Star history">
   </picture>
 </a>
-
-## License
-
-[MIT](LICENSE)
-
-owl began from [yetone/magpie](https://github.com/yetone/magpie), keeps its
-copyright notice and MIT license, and stays compatible with the magpie plugin
-contracts (`magpie` plugin key, `@magpie-community/*`, `X-Magpie-*` headers).
-The product, its updates and its network dependencies are owl's own.
-
-owl is not affiliated with [Apache Owl](https://owl.apache.org) or the [Apache Software Foundation](https://apache.org).

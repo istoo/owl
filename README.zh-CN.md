@@ -256,11 +256,3 @@ Claude Code · Claude Desktop · Claude Science · Codex · Gemini CLI · Antigr
     <img src="https://api.star-history.com/svg?repos=istoo/owl&type=Date" width="600" alt="Star 历史">
   </picture>
 </a>
-
-## 许可证
-
-[MIT](LICENSE)
-
-owl 从 [yetone/magpie](https://github.com/yetone/magpie) 起步，保留它的版权声明和 MIT 许可证，并保持 magpie 插件契约兼容（`magpie` 插件 key、`@magpie-community/*`、`X-Magpie-*` 头）。产品本身、它的更新和网络依赖都是 owl 自己的。
-
-owl 与 [Apache Owl](https://owl.apache.org) 或 [Apache Software Foundation](https://apache.org) 无关。
