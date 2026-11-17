@@ -587,8 +587,12 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       WebKit 行尾溢出 3px），窄屏按 owl 设计允许两行地址+尾行。两文件 6/6，另 4 个同类文件 22/22。
       `5b4b5b708` Agents 定位——owl 把页头留在页面内，宽屏时 `#view-plugins` 的顶比正文高 40px；测试改以「视图与 .pm-body
       中较低者为顶」，agent-plugin-agents 两引擎 22/22。`1ba876e1a` 添加框提示——宽屏浮动进标题栏时按「栏给的长提示实际宽度」
-      决定长短，不再按 1300px 窗口猜，add-sheet-hint 两引擎 52/52（U' 也 52/52）。TestCoreScriptBudget 绿。
+      决定长短，不再按 1300px 窗口猜，add-sheet-hint 两引擎 52/52（U' 也 52/52）。`f60d5dece` 把 account-weight 恢复为
+      owl main 的适配版（合流取了上游版，丢了按位置比较滚动、重开菜单、WebKit 取整容差等 owl 自测改进），两引擎 2/2。
+      TestCoreScriptBudget 绿。
       另发现 account-refresh-holds 的第二条（a sheet pressed while short rises into the room）在上游 U' 上同样红，走 issue 记录。
+      合流还把 owl main 里 166 个 GUI 测试文件换成了上游版；抽查 account-arrange 是 owl 的 route-pick-btn 适配版被上游
+      segs 版覆盖（与 key-weight/account-weight 同类），其余未逐个判定。account-arrange 按用户指示只记录（#30），未恢复。
 - [x] 上游自有红已开 issue（均附 U' 输出）：#28 agent-details-ready（16/18）、#29 agent-switch-accounts（10/12）、
       #30 account-arrange（fixture 在 POST /api/update/using 崩溃；owl 侧另因测试要分段按钮而超时）、
       #31 account-refresh-holds 的 sheet 子测试。add-sheet-hint 复跑 U' 绿，未开 issue（是 owl 侧，已修）。
