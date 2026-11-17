@@ -48,7 +48,7 @@ func TestClaudeDesktopInstalledNotOpened(t *testing.T) {
 }
 
 // alien_jambob on X (Windows 11): Claude Desktop uninstalled leaves
-// %APPDATA%\Claude behind with its claude_desktop_config.json, and magpie
+// %APPDATA%\Claude behind with its claude_desktop_config.json, and owl
 // still listed Desktop. On Windows only its program says it is here: the
 // Squirrel claude.exe, the MSIX's package folder, or the package in the
 // AppX registry. One still on owl stays listed, to be turned off.
@@ -71,7 +71,7 @@ func TestClaudeDesktopUninstalledLeftover(t *testing.T) {
 		{"the Store's package registered", []string{"AnthropicPBC.Claude_1.0.3218.0_x64__fnn82j28hfe8t"}, false, false, true},
 		{"a resource package alone", []string{"Claude_1.0.3218.0_neutral_split.scale-125_pzs8sxrjxfjjc"}, false, false, false},
 		{"another app's package", []string{"ClaudeLike_1.0.0.0_x64__abc"}, false, false, false},
-		{"still on magpie", nil, true, false, true},
+		{"still on owl", nil, true, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pkgs := tc.pkgs
@@ -87,7 +87,7 @@ func TestClaudeDesktopUninstalledLeftover(t *testing.T) {
 			}
 			if tc.wired {
 				desktopWrite(t, filepath.Join(local, "Claude-3p", "configLibrary", "_meta.json"),
-					`{"appliedId":"`+desktopProfileID+`","entries":[{"id":"`+desktopProfileID+`","name":"magpie"}]}`)
+					`{"appliedId":"`+desktopProfileID+`","entries":[{"id":"`+desktopProfileID+`","name":"owl"}]}`)
 			}
 			if got := claudeDesktop(home).Detected(); got != tc.want {
 				t.Fatalf("Claude Desktop listed: %v, want %v", got, tc.want)

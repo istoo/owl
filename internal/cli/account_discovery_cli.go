@@ -26,7 +26,7 @@ func accountsDiscoveryCmd(args []string) error {
 	switch {
 	case !settings.AccountDiscoveryOff():
 		fmt.Println("account discovery is on: owl reads your agents' sign-ins and serves them as subscriptions")
-	case settings.Load().NoAccountDiscovery:
+	case settings.Shared().NoAccountDiscovery:
 		fmt.Println("account discovery is off: owl reads none of your agents' sign-ins and serves no subscription; API-key providers work as before")
 	default:
 		fmt.Println("account discovery is off for this run: OWL_NO_ACCOUNTS is set (saved: on)")

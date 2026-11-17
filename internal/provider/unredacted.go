@@ -13,10 +13,13 @@ import (
 // provider never had the switch): the editor cautions while it is on for
 // one not on this computer or the local network, which a signed-in
 // account's or a plugin's vendor never is, and nothing here looks one up.
-// Another owl is always masked: it masks on its own side, and what it
-// is sent goes on to its vendors.
+// Another owl (a Remote owl) set so is sent the request as written,
+// with no X-Magpie-Masked-As, so it masks by its own Settings › Privacy
+// and its own providers' switches before anything reaches a vendor
+// (CrazyMouse_TT on X: a model of the user's own behind that owl);
+// left off, it is sent the request masked here, as before.
 func (p Provider) SkipsRedaction() bool {
-	if !p.Unredacted || p.IsRemoteOwl() {
+	if !p.Unredacted {
 		return false
 	}
 	if p.Account != nil {

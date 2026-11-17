@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/istoo/owl/internal/settings"
-	"github.com/istoo/owl/internal/steady"
 )
 
 // The two times an account the user lets spend its resets by itself
@@ -341,8 +340,8 @@ func (a *autoResets) save() {
 		}
 	}
 	b, _ := json.MarshalIndent(a.spent, "", "  ")
-	_ = os.MkdirAll(settings.Dir(), 0o700)
-	if err := steady.WriteFile(a.path, append(b, '\n'), 0o644); err != nil {
+	_ = os.MkdirAll(settings.Dir(), 0o755)
+	if err := writeChanged(a.path, append(b, '\n'), 0o644); err != nil {
 		log.Printf("writing what a week's auto-use spent to %s: %v", a.path, err)
 	}
 }

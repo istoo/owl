@@ -25,13 +25,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
 	"github.com/istoo/owl/internal/appdir"
+	"github.com/istoo/owl/internal/lazyre"
 )
 
 const (
@@ -214,28 +214,15 @@ func (q quiet) Write(p []byte) (int, error) {
 // keeps its first characters, for telling which it was, and masks the
 // rest.
 var secrets = []struct {
-	re   *regexp.Regexp
+	re   *lazyre.RE
 	keep string
 }{
-	{regexp.MustCompile(`(?i)\b((?:bearer|basic)\s+)[A-Za-z0-9._~+/=-]{8,}`), "${1}…"},
-	{regexp.MustCompile(`(?i)([?&](?:key|api[_-]?key|apikey|access_token|refresh_token|id_token|token|auth|sig|signature|code)=)[^&\s"'<>]+`), "${1}…"},
-	{regexp.MustCompile(`\b(sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{12,}`), "${1}…"},
-	{regexp.MustCompile(`\b(AIza)[0-9A-Za-z_-]{20,}`), "${1}…"},
-	{regexp.MustCompile(`\b(gh[opsur]_)[A-Za-z0-9]{20,}`), "${1}…"},
-	{regexp.MustCompile(`\b(eyJ)[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), "${1}…"},
-	// the rest of the shapes masking knows (redact's rules), so a vendor's
-	// error that quotes a key doesn't put it in app.log
-	{regexp.MustCompile(`\b(xox[abposr]-)[0-9A-Za-z-]{10,}`), "${1}…"},
-	{regexp.MustCompile(`\b(glpat-)[A-Za-z0-9_-]{20,}`), "${1}…"},
-	{regexp.MustCompile(`\b(github_pat_)[A-Za-z0-9_]{40,}`), "${1}…"},
-	{regexp.MustCompile(`\b((?:AKIA|ASIA))[0-9A-Z]{16}`), "${1}…"},
-	{regexp.MustCompile(`\b(hf_)[A-Za-z0-9]{30,}`), "${1}…"},
-	{regexp.MustCompile(`\b(gsk_)[A-Za-z0-9]{40,}`), "${1}…"},
-	{regexp.MustCompile(`\b(xai-)[A-Za-z0-9]{40,}`), "${1}…"},
-	{regexp.MustCompile(`\b(npm_)[A-Za-z0-9]{36}`), "${1}…"},
-	{regexp.MustCompile(`\b(pypi-)[A-Za-z0-9_-]{50,}`), "${1}…"},
-	{regexp.MustCompile(`\b(dop_v1_)[a-f0-9]{64}`), "${1}…"},
-	{regexp.MustCompile(`\b(SG\.)[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}`), "${1}…"},
+	{lazyre.New(`(?i)\b((?:bearer|basic)\s+)[A-Za-z0-9._~+/=-]{8,}`), "${1}…"},
+	{lazyre.New(`(?i)([?&](?:key|api[_-]?key|apikey|access_token|refresh_token|id_token|token|auth|sig|signature|code)=)[^&\s"'<>]+`), "${1}…"},
+	{lazyre.New(`\b(sk-(?:ant-|proj-)?)[A-Za-z0-9_-]{12,}`), "${1}…"},
+	{lazyre.New(`\b(AIza)[0-9A-Za-z_-]{20,}`), "${1}…"},
+	{lazyre.New(`\b(gh[opsur]_)[A-Za-z0-9]{20,}`), "${1}…"},
+	{lazyre.New(`\b(eyJ)[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), "${1}…"},
 }
 
 // scrub is p with whatever looks like a key or token masked.

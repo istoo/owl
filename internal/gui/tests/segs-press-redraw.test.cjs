@@ -9,18 +9,21 @@
 // is saved once. Pressed, redrawn, let go and redrawn again before its
 // click comes, as a draw that asks for its state draws once more with the
 // answer (Browser access, #3922), the newest On is saved once. Every segs
-// control on every Settings tab is pressed the same way and its new self
-// clicked once. Chromium and WebKit, in English,
+// control on every Settings tab, and each subscription's warm-up and
+// check-in in its provider's editor, is pressed the same way and its new
+// self clicked once. Chromium and WebKit, in English,
 // Chinese, Japanese and German, in a wide and a narrow window, the API faked.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, provPrefsProviders, openProvPrefs, inEditor } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
-const words = { en: { on: "On", off: "Off", display: "Screen on too" }, zh: { on: "开启", off: "关闭", display: "屏幕也常亮" }, ja: { on: "オン", off: "オフ", display: "画面もオン" }, de: { on: "An", off: "Aus", display: "Bildschirm auch an" } };
+// the subscriptions signed in, each editor holding its warm-up or check-in
+const SUBS = ["codex", "claude", "workbuddy", "trae-cn", "minimax-code", "qoder", "one", "two"];
+const words = { en: { on: "On", off: "Off" }, zh: { on: "开启", off: "关闭" }, ja: { on: "オン", off: "オフ" }, de: { on: "An", off: "Aus" } };
 
 function serve(lang, posted, st) {
   const settings = () => ({ lang, theme: "light", searchVendors: [], searchAPIs: [], ...st });
@@ -38,7 +41,7 @@ function serve(lang, posted, st) {
       }
       return json(settings());
     }
-    if (url.pathname === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, window: true, url: "http://127.0.0.1:3999" } });
+    if (url.pathname === "/api/providers") return json({ ...provPrefsProviders(SUBS), gateway: { running: true, window: true, url: "http://127.0.0.1:3999" } });
     if (url.pathname === "/api/groups") return json({ models: [], groups: [], pools: [] });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
     if (url.pathname === "/api/usage/quotas") return json([]);
@@ -58,7 +61,7 @@ async function open(engine, lang, width, tab, posted, st, t, touch = false) {
   page.setDefaultTimeout(5000);
   page.setDefaultNavigationTimeout(60000);
   const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => { if (engine === "webkit" && /due to access control checks/.test(e.message)) return; errors.push(e.message); }); // a goto in WebKit can cut off a fetch (#1350)
   await page.route("**/*", serve(lang, posted, st));
   await watchSettingsReads(page);
   await page.goto("http://owl.test/?view=settings&tab=" + tab);
@@ -106,19 +109,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const w = words[lang];
       test(`${engine} ${lang} ${width}px: an option pressed while Settings is redrawn is picked once, and nothing when dragged off`, async (t) => {
         // Lightweight mode turned off by the user, so On is a pick away
-        const posted = [], st = { keepAwake: false };
+        const posted = [], st = { lightweight: false };
         const { page, errors } = await open(engine, lang, width, "general", posted, st, t);
         const opt = (id, name) => page.locator(`#${id} .opt`, { hasText: new RegExp(`^${name}$`) });
-        const on = () => page.locator("#keepAwakeSegs .opt.on").innerText();
-        const saves = () => posted.filter((b) => "keepAwake" in b).map((b) => b.keepAwake);
+        const on = () => page.locator("#lightweightSegs .opt.on").innerText();
+        const saves = () => posted.filter((b) => "lightweight" in b).map((b) => b.lightweight);
         assert.equal(await on(), w.off, "off by default");
 
         // pressed, the page redrawn as a save's answer does, let go on the same spot
-        const b = await reveal(page, opt("keepAwakeSegs", w.on));
+        const b = await reveal(page, opt("lightweightSegs", w.on));
         await page.mouse.move(...mid(b));
         await page.mouse.down();
         const swapped = await page.evaluate(() => {
-          const was = document.querySelector("#keepAwakeSegs .opt:nth-of-type(2)");
+          const was = document.querySelector("#lightweightSegs .opt:nth-of-type(2)");
           renderSettings();
           return !was.isConnected;
         });
@@ -127,7 +130,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         for (let i = 0; i < 40 && !saves().length; i++) await page.waitForTimeout(50);
         await settle(page);
         assert.deepEqual(saves(), [true], `posted ${JSON.stringify(posted)}`);
-        assert.equal(st.keepAwake, true);
+        assert.equal(st.lightweight, true);
         assert.equal(await on(), w.on);
 
         // which control's option, and which of its options, the pointer is on
@@ -139,31 +142,31 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // dragged off to the other option: nothing, as for any button
         const n = posted.length;
-        const off = await reveal(page, opt("keepAwakeSegs", w.off));
+        const off = await reveal(page, opt("lightweightSegs", w.off));
         await page.mouse.move(...mid(off));
         await page.mouse.down();
         await page.evaluate(() => renderSettings());
-        await page.mouse.move(...mid(await opt("keepAwakeSegs", w.on).boundingBox()), { steps: 4 });
-        assert.equal(await under(), "keepAwakeSegs " + w.on);
+        await page.mouse.move(...mid(await opt("lightweightSegs", w.on).boundingBox()), { steps: 4 });
+        assert.equal(await under(), "lightweightSegs " + w.on);
         await page.mouse.up();
         await page.waitForTimeout(400);
         assert.equal(posted.length, n, `dragged off, posted ${JSON.stringify(posted.slice(n))}`);
         assert.equal(await on(), w.on);
 
-        // dragged to another option of the same control (Keep awake's Screen on too): nothing
-        await reveal(page, opt("keepAwakeSegs", w.display));
-        await page.mouse.move(...mid(await reveal(page, opt("keepAwakeSegs", w.off))));
+        // dragged to the same option of another control (Keep awake's Off): nothing
+        await reveal(page, opt("keepAwakeSegs", w.off));
+        await page.mouse.move(...mid(await reveal(page, opt("lightweightSegs", w.off))));
         await page.mouse.down();
         await page.evaluate(() => renderSettings());
-        await page.mouse.move(...mid(await opt("keepAwakeSegs", w.display).boundingBox()), { steps: 4 });
-        assert.equal(await under(), "keepAwakeSegs " + w.display);
+        await page.mouse.move(...mid(await opt("keepAwakeSegs", w.off).boundingBox()), { steps: 4 });
+        assert.equal(await under(), "keepAwakeSegs " + w.off);
         await page.mouse.up();
         await page.waitForTimeout(400);
         assert.equal(posted.length, n, `dragged to another control, posted ${JSON.stringify(posted.slice(n))}`);
         assert.equal(await on(), w.on);
 
         // a plain click with no redraw is saved once, not twice
-        await page.mouse.click(...mid(await reveal(page, opt("keepAwakeSegs", w.off))));
+        await page.mouse.click(...mid(await reveal(page, opt("lightweightSegs", w.off))));
         for (let i = 0; i < 40 && saves().length < 2; i++) await page.waitForTimeout(50);
         await page.waitForTimeout(300);
         assert.deepEqual(saves(), [true, false], `posted ${JSON.stringify(posted)}`);
@@ -172,7 +175,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // pressed, redrawn, let go, and redrawn again before the click it
         // set off comes, as Browser access is when its state's answer lands
         // then (#3922): the newest On is clicked, once
-        await page.mouse.move(...mid(await reveal(page, opt("keepAwakeSegs", w.on))));
+        await page.mouse.move(...mid(await reveal(page, opt("lightweightSegs", w.on))));
         await page.mouse.down();
         await page.evaluate(() => {
           renderSettings();
@@ -190,14 +193,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // as it lifts, the new On, and that is the only pick. Playwright can't
       // hold a tap in WebKit, so it is Chromium's, through its DevTools.
       if (engine === "chromium") test(`${engine} ${lang} ${width}px: an option tapped while Settings is redrawn is picked once, not twice`, async (t) => {
-        const posted = [], st = { keepAwake: false };
+        const posted = [], st = { lightweight: false };
         const { page, errors } = await open(engine, lang, width, "general", posted, st, t, true);
-        const opt = page.locator("#keepAwakeSegs .opt", { hasText: new RegExp(`^${w.on}$`) });
+        const opt = page.locator("#lightweightSegs .opt", { hasText: new RegExp(`^${w.on}$`) });
         const [x, y] = mid(await reveal(page, opt));
         const cdp = await page.context().newCDPSession(page);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
         const swapped = await page.evaluate(() => {
-          const was = document.querySelector("#keepAwakeSegs .opt:nth-of-type(2)");
+          const was = document.querySelector("#lightweightSegs .opt:nth-of-type(2)");
           renderSettings();
           return !was.isConnected;
         });
@@ -205,19 +208,18 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
         for (let i = 0; i < 40 && !posted.length; i++) await page.waitForTimeout(50);
         await page.waitForTimeout(500);
-        assert.deepEqual(posted.filter((b) => "keepAwake" in b).map((b) => b.keepAwake), [true]);
-        assert.equal(await page.locator("#keepAwakeSegs .opt.on").innerText(), w.on);
+        assert.deepEqual(posted.filter((b) => "lightweight" in b).map((b) => b.lightweight), [true]);
+        assert.equal(await page.locator("#lightweightSegs .opt.on").innerText(), w.on);
         assert.deepEqual(errors, []);
       });
 
       test(`${engine} ${lang} ${width}px: every Settings option pressed through a redraw clicks its new self once`, async (t) => {
         const posted = [];
-        // the warm-up and check-in tabs, two Codex accounts' own warm-up
+        // the warm-up and check-in lists, two Codex accounts' own warm-up
         // times, a card beside the tray icon and the local network's address
         // shown, so their controls are drawn. Not here: Gateway mode (a
         // browser's page only) and the Omarchy bar icon (Omarchy only).
-        // a provider that searches, so the models tab's search row is on
-        const st = { searchProvider: "exa", workbuddy: true, trae: true, minimax: true, qoder: true, codexUsers: ["a@example.test", "b@example.test"],
+        const st = { workbuddy: true, trae: true, minimax: true, qoder: true, codexUsers: ["a@example.test", "b@example.test"],
           checkinPlugins: [{ id: "one", name: "One", on: false }, { id: "two", name: "Two", on: true }],
           trayUsages: ["codex|a@example.test"], lan: true, lanURLs: ["http://192.168.1.2:3999"] };
         const { page, errors } = await open(engine, lang, width, "general", posted, st, t);
@@ -225,7 +227,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // saved and the page stays as it is from one control to the next
         // a control is known by its place, as segs() knows it: the nearest
         // element with an id, and which of the same options it is there
-        await page.evaluate(() => {
+        const instrument = () => page.evaluate(() => {
           window.placeOf = (box) => {
             const home = box.parentElement.closest("[id]"), kind = box.dataset.kind;
             return kind + "@" + home.id + ":" + [...home.querySelectorAll(".segs")].filter((x) => x.dataset.kind === kind).indexOf(box);
@@ -238,9 +240,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             optClicks.push({ place: placeOf(b.parentElement), i: [...b.parentElement.querySelectorAll(":scope > .opt")].indexOf(b), live: b.isConnected });
           }, true);
         });
+        await instrument();
         const done = new Set(), missed = [];
-        const sweep = async (tab) => {
-          const boxes = page.locator(`#setPage-${tab} .segs`);
+        // inside: the boxes' container; in an editor the option is brought
+        // into sight there, where the app lets a scroll stand
+        const sweep = async (tab, inside = `#setPage-${tab}`) => {
+          const boxes = page.locator(`${inside} .segs`);
           for (let k = 0; k < await boxes.count(); k++) {
             const box = boxes.nth(k);
             if (!await box.isVisible()) continue;
@@ -250,7 +255,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             const opts = box.locator(":scope > .opt");
             const now = await opts.evaluateAll((os) => os.findIndex((o) => o.classList.contains("on")));
             const i = (now + 1) % await opts.count();
-            await page.mouse.move(...mid(await reveal(page, opts.nth(i))));
+            // a dimmed control (Models that search by themselves, with
+            // nothing to search with) takes no press: nothing to click
+            if (await opts.nth(i).isDisabled()) continue;
+            if (inside.startsWith(".editor")) await inEditor(page, opts.nth(i));
+            await page.mouse.move(...mid(inside.startsWith(".editor") ? await opts.nth(i).boundingBox() : await reveal(page, opts.nth(i))));
             await page.evaluate(() => { optClicks.length = 0; });
             await page.mouse.down();
             const swapped = await box.evaluate((x) => { renderSettings(); return !x.isConnected; });
@@ -264,25 +273,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.evaluate((tab) => document.querySelector("#setTab-" + tab).click(), tab);
           await page.locator(`#setPage-${tab}`).waitFor();
           await settle(page);
-          if (tab === "usage") {
-            for (const id of ["codex", "claude", "wb", "trae", "minimax", "qoder", "plugins"]) {
-              // the last sweep can leave the tabs above or below the view (a
-              // narrow window scrolls them sideways, which the click does)
-              const warm = page.locator("#warmTab-" + id);
-              const away = await warm.evaluate((e) => {
-                const b = e.getBoundingClientRect(), v = e.closest(".view").getBoundingClientRect();
-                return b.top < v.top || b.bottom > v.bottom;
-              });
-              if (away) await reach(page, page.locator("#warmTabs"));
-              await warm.click();
-              await sweep(tab);
-            }
-          } else if (tab === "sync") {
+          if (tab === "sync") {
             // its form opened, for the kind of server it syncs to
             await page.locator("#syncList .row.pref").first().locator(".val button").nth(1).click();
             await page.locator("#syncList .sync-form .segs").waitFor();
             await sweep(tab);
           } else await sweep(tab);
+        }
+        // each subscription's own, in its provider's editor
+        for (const id of SUBS) {
+          await openProvPrefs(page, id);
+          await settingsDrawn(page);
+          await instrument();
+          await sweep(id, ".editor .prov-prefs");
         }
         assert.deepEqual(missed, [], "controls the redraw left in place");
         // Theme, Language, Text size, … each warm-up's and check-in's, Proxy, the local network's, Privacy's, OTel's, Sync's, About's

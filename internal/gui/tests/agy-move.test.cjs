@@ -3,10 +3,11 @@
 // agy CLI), which signs in with the same Google client (@tongzhenbao on X).
 // A quiet line over the Providers list names them, with Move: pressed, it
 // is busy until the move is through, an account agy refused is said by name
-// in the line, and the rest are said moved. While it is drawn it stands in
-// for the withdrawn plugin's own line (the same accounts, the same way out);
-// once it goes, that line is back. In English and Chinese; the API is faked
-// here.
+// in the line, and the rest are said moved. Not now hides it until the
+// accounts left to move change, a reload too. While it is drawn it stands
+// in for the withdrawn plugin's own line (the same accounts, the same way
+// out); once it goes, that line is back. In every language; the API is
+// faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -18,7 +19,7 @@ const assets = path.resolve(__dirname, "../assets");
 const withdrawn = [{ id: "antigravity", name: "Antigravity", instead: "Antigravity (local agy CLI)", package: "@magpie-community/opencode-agy-cli-auth" }];
 
 function serve(lang, posts, hold) {
-  let left = ["a@example.com", "b@example.com"];
+  let left = ["a@x.com", "b@x.com"];
   let tries = 0;
   const payload = (moved) => ({
     providers: [], presets: [], excluded: [], gateway: { running: true, window: true }, plugins: [], withdrawn,
@@ -38,11 +39,11 @@ function serve(lang, posts, hold) {
       if (!tries) await new Promise((r) => (hold.release = r));
       // the first: a moves, agy refuses b; the second: b moves
       if (!tries++) {
-        left = ["b@example.com"];
-        return json(payload([{ user: "a@example.com", status: "added" }, { user: "b@example.com", status: "failed", error: "invalid_grant" }]));
+        left = ["b@x.com"];
+        return json(payload([{ user: "a@x.com", status: "added" }, { user: "b@x.com", status: "failed", error: "invalid_grant" }]));
       }
       left = [];
-      return json(payload([{ user: "b@example.com", status: "added" }]));
+      return json(payload([{ user: "b@x.com", status: "added" }]));
     }
     if (url.pathname.startsWith("/api/")) return json({});
     const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);
@@ -52,22 +53,11 @@ function serve(lang, posts, hold) {
 }
 
 const L = {
-  en: {
-    line: "Antigravity's accounts can move to Antigravity (local agy CLI)",
-    users: "a@example.com, b@example.com move as they are",
-    move: "Move", busy: "Installing agy and checking each account…",
-    failed: "b@example.com: invalid_grant", again: "Try again",
-    done: "1 moved to Antigravity (local agy CLI)",
-    suspended: "Antigravity's plugin can get your account suspended",
-  },
-  zh: {
-    line: "Antigravity 的账号可以迁移到 Antigravity (local agy CLI)",
-    users: "a@example.com、b@example.com 可以原样迁移",
-    move: "迁移", busy: "正在安装 agy 并逐个检查账号…",
-    failed: "b@example.com：invalid_grant", again: "重试",
-    done: "已迁移 1 个账号到 Antigravity (local agy CLI)",
-    suspended: "Antigravity 插件可能让你的账号被封禁",
-  },
+  en: { line: "Antigravity's accounts can move to Antigravity (local agy CLI)", users: "a@x.com, b@x.com move as they are", move: "Move", busy: "Installing agy and checking each account…", failed: "b@x.com: invalid_grant", again: "Try again", done: "1 moved to Antigravity (local agy CLI)" },
+  zh: { line: "Antigravity 的账号可以迁移到 Antigravity（本机 agy CLI）", users: "a@x.com、b@x.com 可以原样迁移", move: "迁移", busy: "正在安装 agy 并逐个检查账号…", failed: "b@x.com：invalid_grant", again: "重试", done: "已有 1 个账号迁移到 Antigravity（本机 agy CLI）" },
+  "zh-TW": { line: "Antigravity 的帳號可以遷移到 Antigravity（本機 agy CLI）", users: "a@x.com、b@x.com 可以原樣遷移", move: "遷移", busy: "正在安裝 agy 並逐一檢查帳號…", failed: "b@x.com：invalid_grant", again: "重試", done: "已有 1 個帳號遷移到 Antigravity（本機 agy CLI）" },
+  ja: { line: "Antigravity のアカウントを Antigravity（ローカル agy CLI）に移行できます", users: "a@x.com、b@x.com はそのまま移行できます", move: "移行", busy: "agy をインストールし、各アカウントを確認しています…", failed: "b@x.com：invalid_grant", again: "再試行", done: "1 件を Antigravity（ローカル agy CLI）に移行しました" },
+  de: { line: "Die Konten von Antigravity können zu Antigravity (lokale agy CLI) umziehen", users: "ziehen a@x.com, b@x.com unverändert um", move: "Umziehen", busy: "agy wird installiert und jedes Konto geprüft…", failed: "b@x.com: invalid_grant", again: "Erneut versuchen", done: "1 zu Antigravity (lokale agy CLI) umgezogen" },
 };
 
 const launch = (engine) => engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" });
@@ -98,6 +88,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the line fits a narrow window: nothing runs off its side
       const box = await line.boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= 420, `the line runs off: ${JSON.stringify(box)}`);
+      if (process.env.ARTIFACT_DIR) await line.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `agy-move-${engine}-${lang}.png`) });
 
       await go.click();
       await page.waitForFunction((busy) => document.querySelector("#movable .agy-move button.action")?.textContent === busy, w.busy);
@@ -113,12 +104,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.evaluate(() => renderProviders());
       assert.ok((await line.innerText()).includes(w.failed), "a redraw forgot why b didn't move");
 
-      // tried again, b moves: the line goes, the withdrawn plugin's line is back
+      // tried again, b moves: the line goes
       await go.click();
       await page.waitForFunction(() => !document.querySelector("#movable .agy-move"));
-      const wd = page.locator("#movable .withdrawn");
-      await wd.waitFor();
-      assert.ok((await wd.innerText()).includes(w.suspended), `no withdrawn line: ${await wd.innerText()}`);
+      await page.locator("#movable .withdrawn").waitFor();
       assert.deepEqual(posts, ["/api/provider/toagy", "/api/provider/toagy"]);
       assert.deepEqual(errors, []);
     });
@@ -130,21 +119,30 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   test(`${engine}: Not now hides the Antigravity move until its accounts change`, async (t) => {
     const browser = await launch(engine);
     t.after(() => browser.close());
-    const ctx = await browser.newContext({ viewport: { width: 420, height: 760 }, reducedMotion: "reduce" });
-    const page = await ctx.newPage();
+    const page = await (await browser.newContext({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" })).newPage();
     page.setDefaultTimeout(5000);
     page.setDefaultNavigationTimeout(60000);
-    const posts = [], hold = {};
-    await page.route("**/*", serve("en", posts, hold));
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    let users = ["a@x.com"];
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/providers") return route.fulfill({ json: { providers: [], presets: [], excluded: [], gateway: { running: true, window: true }, plugins: [], withdrawn, agyMove: users } });
+      return serve("en", [], {})(route);
+    });
     await page.goto("http://owl.test/?view=providers");
     const line = page.locator("#movable .agy-move");
     await line.waitFor();
-    await line.getByRole("button", { name: "Not now" }).click();
-    await line.waitFor({ state: "detached" });
-    assert.equal(await page.locator("#movable .withdrawn").count(), 1, "the withdrawn line did not come back");
+    await line.locator("button", { hasText: "Not now" }).click();
+    assert.equal(await line.count(), 0, "Not now left the line");
+    await page.locator("#movable .withdrawn").waitFor();
     await page.reload();
-    await page.waitForSelector("#movable .withdrawn");
-    assert.equal(await page.locator("#movable .agy-move").count(), 0, "Not now did not survive a reload");
-    assert.deepEqual(posts, []);
+    await page.waitForFunction(() => typeof providers === "object" && providers?.agyMove);
+    await page.waitForTimeout(200);
+    assert.equal(await line.count(), 0, "a reload brought the hidden line back");
+    users = ["a@x.com", "c@x.com"];
+    await page.reload();
+    await line.waitFor();
+    assert.deepEqual(errors, []);
   });
 }

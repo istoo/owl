@@ -15,7 +15,6 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { navTo, footTop } = require("./reader.cjs");
 const { strings } = require("./strings.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -86,16 +85,27 @@ function server(lang, state, posts) {
 const reach = async (page, loc) => {
   for (let i = 0; i < 20; i++) {
     const b = await loc.boundingBox();
-    if (b && await loc.evaluate((e, [x, y]) => e.contains(document.elementFromPoint(x, y)), [b.x + b.width / 2, b.y + b.height / 2])) return;
-    // inside the page: a row below the fold puts b.y - 40 past its foot,
-    // where a wheel scrolls nothing, and on a phone the tab bar covers the
-    // page's last 50px (footTop)
-    const foot = await footTop(page);
-    await page.mouse.move(b.x + b.width / 2, Math.min(Math.max(b.y - 40, 10), foot - 30));
-    await page.mouse.wheel(0, 120);
+    if (b && await loc.evaluate((e, [x, y]) => e.contains(document.elementFromPoint(x, y)), [b.x + b.width / 2, b.y + b.height / 2])) {
+      // the wheel's scroll has come to rest before the reader clicks
+      await page.evaluate(() => new Promise((done) => {
+        const at = () => [...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop).join(" ");
+        let last = at(), still = 0;
+        const tick = () => { const now = at(); still = now === last ? still + 1 : 0; last = now; still >= 5 ? done() : requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }));
+      return;
+    }
+    // the wheel over the list beside the thing, inside the window: up to
+    // one under the tabs at the top, down to one below the fold or under
+    // the bar or a note at the foot
+    const vh = page.viewportSize().height, up = b.y + b.height / 2 < vh / 2;
+    await page.mouse.move(b.x + b.width / 2, Math.min(Math.max(up ? b.y + b.height + 20 : b.y - 40, 10), vh - 10));
+    await page.mouse.wheel(0, up ? -120 : 120);
     await page.waitForTimeout(80);
   }
-  assert.fail(`${loc} is never out from under the bar`);
+  const b = await loc.boundingBox();
+  const over = b && await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.outerHTML.slice(0, 160) : "nothing"; }, [b.x + b.width / 2, b.y + b.height / 2]);
+  assert.fail(`${loc} is never out from under the bar: ${JSON.stringify(b)} ${over}`);
 };
 // a click where the thing is; nothing scrolls, and what was clicked stays put
 const press = async (page, loc) => {
@@ -144,7 +154,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("dialog", (d) => { errors.push("a browser dialog: " + d.message()); d.dismiss(); });
         await page.route("**/*", server(lang, state, posts));
         await page.goto("http://owl.test/");
-        await navTo(page, "library");
+        await page.locator('button[data-view="library"]').click();
         const v = page.locator("#view-library");
         const row = (name) => v.locator(".lib-found").filter({ has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
         const shown = async () => (await v.locator(".lib-found .who > .name").allTextContents()).sort();

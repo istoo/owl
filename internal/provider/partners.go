@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/istoo/owl/internal/appdir"
 	"github.com/istoo/owl/internal/lastgood"
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/source"
 )
 
@@ -99,7 +99,7 @@ var partnerEvery = time.Hour
 
 const partnerRetry = 10 * time.Minute
 
-var partnerID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,40}$`)
+var partnerID = lazyre.New(`^[a-z0-9][a-z0-9-]{1,40}$`)
 
 func partnerCacheFile() string { return filepath.Join(appdir.Cache(), "partners.json") }
 

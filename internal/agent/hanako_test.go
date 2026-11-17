@@ -730,8 +730,8 @@ func TestHanakoLiveBackNeedsProviderID(t *testing.T) {
 }
 
 // OpenHanako uninstalled with its catalog sealed can't be opened to take
-// owl out (aooo_han on X, of Alma): turning it off puts its agent's model
-// back in its plain config and leaves the sealed catalog as it is.
+// owl out (aooo_han on X, of Alma): turning it off puts its agent's
+// model back in its plain config and leaves the sealed catalog as it is.
 func TestHanakoSealedUninstalled(t *testing.T) {
 	home, dir := hanakoTestHome(t)
 	catalogPath := filepath.Join(dir, "provider-catalog.json")

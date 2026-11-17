@@ -14,7 +14,8 @@ function fixture() {
     { ...base, id: "antigravity", name: "Antigravity", keyList: [], account: { agent: "antigravity", agentName: "Antigravity", user: logins[0].user, logins } },
     { ...base, id: "relay", name: "Relay", keyList: Array.from({ length: 5 }, (_, i) => ({ id: `key-${i + 1}`, name: `Key ${i + 1}`, masked: `test-key-${i + 1}`, active: i === 0, on: i !== 2 })) },
   ], presets: [], excluded: [], gateway: { running: false, window: true } };
-  const state = { agents: ["alpha", "beta", "gamma"].map(id => ({ id, name: id, icon: "generic", path: "/fixture", fields: [] })), profiles: [], settings: { lang: "en", theme: "light" } };
+  // Get started put away: under it a new user's agents are folded
+  const state = { agents: ["alpha", "beta", "gamma"].map(id => ({ id, name: id, icon: "generic", path: "/fixture", fields: [] })), profiles: [], settings: { lang: "en", theme: "light", guideHidden: true } };
   const f = { providers, state, posted: [], failNext: false };
   const items = p => p.account ? p.account.logins : p.keyList;
   const id = (p, item) => p.account ? item.user : item.id;
@@ -125,11 +126,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // picked, then made with the editor's Save, which closes it
         const saveResponse = page.waitForResponse(response =>
           new URL(response.url()).pathname === "/api/provider/save" && response.request().method() === "POST");
-        const pick = page.locator(".editor .route-pick-btn");
-        if ((await pick.textContent()).trim() !== label) {
-          await pick.click();
-          await page.locator(".route-menu .pm-item", { hasText: new RegExp(`^${label}$`) }).click();
-        }
+        // Routing is under Advanced, open already when it isn't Smart
+        { const adv = page.locator(".editor details.advanced"); await adv.waitFor({ state: "attached" }); if (!(await adv.evaluate(d => d.open))) await adv.locator(":scope > summary").click(); }
+        await page.locator(".editor .segs button", { hasText: new RegExp(`^${label}$`) }).click();
         await page.locator(".editor .bar button", { hasText: /^Save$/ }).click();
         assert.equal((await saveResponse).status(), 200);
         await page.waitForFunction(() => !document.querySelector(".editor"));
@@ -143,7 +142,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.reload(); await drawn(page);
         await checkFirst(page, f, id);
         const wanted = (await ids(page))[1];
-        await rows(page).nth(1).getByRole("button", { name: "Make first", exact: true }).click();
+        // Smart and Least used first go by a subscription's quota, so Make
+        // first says the order only settles ties there; a relay's keys keep
+        // their order under Smart, never that the gateway uses it
+        // first (CryptoSarom on X)
+        const make = rows(page).nth(1).getByRole("button", { name: "Make first", exact: true });
+        const title = await make.getAttribute("title") || "";
+        assert.equal(/still goes by each account's quota/.test(title), id !== "relay" && (mode === "" || mode === "usage"), `${id} ${mode || "smart"}: ${title}`);
+        await make.click();
         await page.waitForFunction(ref => document.querySelector(".accts [data-account-id]").dataset.accountId === ref, wanted);
         await checkFirst(page, f, id);
       }
@@ -189,20 +195,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.deepEqual(await ids(page), prior); assert.equal(f.posted.length, count);
     // Background quota refresh cannot replace a captured row; edge scroll
     // reaches rows below the fold without rebuilding during the drag.
-    // No frame is painted while the pointer crosses into the foot's edge, as
-    // on a busy machine: the edge still scrolls, its pointer seen on each
-    // move and not only when a frame is painted (red on CI under load).
     const a = await point(rows(page).first());
     const bounds = await page.locator(".ebody").boundingBox();
-    await page.evaluate(() => {
-      const raf = window.requestAnimationFrame;
-      window.__raf = raf;
-      window.requestAnimationFrame = (f) => raf.call(window, () => setTimeout(() => f(performance.now()), 400));
-    });
     await page.mouse.move(a.x, a.y); await page.mouse.down();
     await page.mouse.move(a.x, bounds.y + bounds.height - 5, { steps: 20 });
     await page.locator(".acc.dragging").waitFor();
-    await page.evaluate(() => { window.requestAnimationFrame = window.__raf; });
     await page.waitForFunction(() => document.querySelector(".ebody").scrollTop > 100);
     assert(await page.evaluate(() => { const row = document.querySelector(".acc.dragging"); renderProviders(); return row === document.querySelector(".acc.dragging") && accountRenderPending; }));
     await page.mouse.up(); await settled(page); await checkFirst(page, f, "antigravity");

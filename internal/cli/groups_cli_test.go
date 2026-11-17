@@ -76,7 +76,7 @@ func storedGroups(t *testing.T) []map[string]any {
 }
 
 func TestParseRoutingStays(t *testing.T) {
-	for in, want := range map[string]string{"smart": "", "": "", "order": "order", "In-Order": "order", "rotate": "rotate", "usage": "usage", "least-used": "usage", "fast": "fast", "Fastest": "fast", "speed": "fast", "speed-first": "fast", "cheap": "cheap", "Cheapest": "cheap", "cheapest-first": "cheap", "price": "cheap"} {
+	for in, want := range map[string]string{"smart": "", "": "", "order": "order", "In-Order": "order", "rotate": "rotate", "usage": "usage", "least-used": "usage", "fast": "fast", "Fastest": "fast", "speed": "fast", "speed-first": "fast", "cheap": "cheap", "Cheapest": "cheap", "cheapest-first": "cheap", "price": "cheap", "expiring": "expiring", "free-expiry": "expiring", "Soonest-Free": "expiring"} {
 		if got, err := parseRouting(in); err != nil || got != want {
 			t.Errorf("routing %q: %q %v, want %q", in, got, err, want)
 		}
@@ -136,6 +136,18 @@ func TestApplyGroupPairs(t *testing.T) {
 		if err := applyGroupPairs(&g, []string{"context=" + c.v}, resolve, false); err != nil || g.Context != c.want {
 			t.Errorf("context=%s: %d %v", c.v, g.Context, err)
 		}
+	}
+	// compact=: where agents compact on the group (NovaStudiosss on X)
+	for _, c := range []struct {
+		v    string
+		want int
+	}{{"160k", 160000}, {"1m", 1000000}, {"off", 0}, {"", 0}} {
+		if err := applyGroupPairs(&g, []string{"compact=" + c.v}, resolve, false); err != nil || g.Compact != c.want {
+			t.Errorf("compact=%s: %d %v", c.v, g.Compact, err)
+		}
+	}
+	if err := applyGroupPairs(&g, []string{"compact=lots"}, resolve, false); err == nil {
+		t.Error("compact=lots was accepted")
 	}
 	// listed=no: its models offered through the group alone (#1783)
 	if err := applyGroupPairs(&g, []string{"listed=no"}, resolve, false); err != nil || !g.Unlists {
@@ -264,8 +276,22 @@ func TestGroupAddSetRemove(t *testing.T) {
 	}
 }
 
-// owl group set <id> id=<new>: a found group loses its auto- prefix and
-// stays removed under the old id.
+func TestCloseMatches(t *testing.T) {
+	ids := []string{"claude/claude-opus-5-5", "copilot/claude-opus-5.5", "deepseek/deepseek-chat", "b/gpt-5.5"}
+	got := closeMatches("claude-opus", ids, 5)
+	if len(got) != 2 || got[0] != "claude/claude-opus-5-5" {
+		t.Errorf("%v", got)
+	}
+	if got := closeMatches("x/deepseek-chta", ids, 5); len(got) != 1 || got[0] != "deepseek/deepseek-chat" {
+		t.Errorf("%v", got)
+	}
+	if got := closeMatches("zzz", ids, 5); len(got) != 0 {
+		t.Errorf("%v", got)
+	}
+}
+
+// owl group set <id> id=<new>: a found group loses its auto- prefix,
+// and its old id finds it under the new one, never as a second group.
 func TestGroupSetID(t *testing.T) {
 	groupsHome(t)
 	if _, err := setGroup("auto-m", []string{"id=Not Slug!"}); err == nil {
@@ -281,8 +307,10 @@ func TestGroupSetID(t *testing.T) {
 	if _, _, ok := provider.Resolve("group/m"); !ok {
 		t.Fatal("group/m not in the catalog")
 	}
-	if _, _, ok := provider.FindGroup("group/auto-m"); ok {
-		t.Fatal("auto-m is back beside m")
+	// the old id still answers, with the renamed group (00af08e7b), never
+	// a found auto-m of its own beside it
+	if old, _, ok := provider.FindGroup("group/auto-m"); !ok || old.ID != "m" {
+		t.Fatalf("group/auto-m: %v %+v", ok, old)
 	}
 	if _, err := addGroup("Other", []string{"models=a/only-a"}); err != nil {
 		t.Fatal(err)

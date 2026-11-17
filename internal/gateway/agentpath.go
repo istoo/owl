@@ -26,7 +26,7 @@ type agentPathCtx struct{}
 
 // takeAgentPath is r without the AgentPath its path begins with, the agent
 // it names kept for agentOf: /agent/openbot/v1/chat/completions is
-// /v1/chat/completions from OpenBot. A path naming no agent magpie knows is
+// /v1/chat/completions from OpenBot. A path naming no agent owl knows is
 // left as it is.
 func takeAgentPath(r *http.Request) *http.Request {
 	rest, ok := strings.CutPrefix(r.URL.Path, AgentPath)

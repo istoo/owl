@@ -223,7 +223,7 @@ func TestPluginPageServiceProxied(t *testing.T) {
 	t.Setenv("OWL_ADDR", "127.0.0.1:3425")
 	page := serviceMux(true)
 	p := listed(t, page)
-	srv := httptest.NewServer(webHandler("3430", onePortWebKey, 0, page))
+	srv := httptest.NewServer(webHandler("3430", onePortWebKey, 0, nil, page))
 	t.Cleanup(srv.Close)
 	base := srv.URL + strings.TrimSuffix(p.URL, "index.html") + pageServicePath
 	get := func(target string, hdr ...string) *http.Response {
@@ -353,7 +353,7 @@ func TestPluginPageServiceStreamsWhileTheBodyComes(t *testing.T) {
 	t.Setenv("OWL_ADDR", "127.0.0.1:3425")
 	page := serviceMux(true)
 	p := listed(t, page)
-	srv := httptest.NewServer(webHandler("3430", onePortWebKey, 0, page))
+	srv := httptest.NewServer(webHandler("3430", onePortWebKey, 0, nil, page))
 	t.Cleanup(srv.Close)
 	pr, pw := io.Pipe()
 	// on a red, the service's stream and the request's body end with the

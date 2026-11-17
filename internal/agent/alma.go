@@ -14,7 +14,10 @@ package agent
 //	                                 imageGen.model the same ("" for Auto)
 //
 // owl is one provider there, named owl, of type openai at the
-// gateway's /v1; choosing one of its models makes it Alma's default model,
+// gateway's /v1, under the id of Alma's own Owl preset (almaPresetID);
+// a Owl the user set up in Alma first is used in its place, and kept
+// when owl is switched off (almaMade). Choosing one of its models
+// makes it Alma's default model,
 // and the model owl draws with Alma's image generation model when Alma
 // has none picked (almaSetImage).
 // Alma not running is no error: there is nothing to read or keep current.
@@ -63,10 +66,10 @@ var errAlmaDown = errors.New("Alma isn't running — open Alma and try again")
 // %LOCALAPPDATA%\Programs on Windows, or the folder its installer
 // registered under the guid electron-builder makes of the appId; on
 // Linux /opt/alma (the native deb and rpm) or /opt/Alma (the Electron
-// ones).
+// ones), or a desktop entry named Alma for alma:// links (an AppImage's).
 var almaApp = desktopApp{id: "com.yetone.alma", names: []string{"Alma.app"},
 	win: filepath.Join("Alma", "Alma.exe"), guid: "53efb302-dbc3-52a1-8bb5-041beae96976",
-	linux: "/opt/alma"}
+	onLinux: &linuxApp{dirs: []string{"/opt/alma", "/opt/Alma"}, exe: "alma", name: "Alma", scheme: "alma"}}
 
 // almaInstalled reports whether Alma is installed here: its desktop app,
 // or on Linux alma-server, Alma without a desktop, on PATH. A var so a
@@ -77,13 +80,6 @@ var almaInstalled = func() bool {
 	}
 	if almaOS == "darwin" || almaOS == "windows" {
 		return false
-	}
-	// owl's desktopApp reads one Linux folder; Alma's Electron build puts
-	// its executable in /opt/Alma as well
-	for _, d := range []string{"/opt/alma", "/opt/Alma"} {
-		if isFile(filepath.Join(proc.SystemDirs(d)[0], "alma")) {
-			return true
-		}
 	}
 	_, err := proc.LookPath("alma-server")
 	return err == nil
@@ -266,7 +262,10 @@ func almaProvidersSeen() ([]almaProvider, error) {
 	}
 	almaSeen.Lock()
 	defer almaSeen.Unlock()
-	if len(b) > 0 && len(b) == len(almaSeen.body) && &b[0] == &almaSeen.body[0] {
+	// the same bytes asked again (past almaReadFor, each poll of the
+	// Agents page) are the same providers: 4 MB a minute decoded again on
+	// a live owl with Alma's 227 KB answer
+	if len(b) > 0 && len(b) == len(almaSeen.body) && (&b[0] == &almaSeen.body[0] || bytes.Equal(b, almaSeen.body)) {
 		return almaSeen.ps, nil
 	}
 	var ps []almaProvider
@@ -494,8 +493,16 @@ func almaWire() (string, error) {
 	p := almaOwl(ps)
 	if p == nil {
 		var made almaProvider
-		if err := almaDo("POST", "/api/providers", map[string]any{"name": owlID, "type": "openai",
-			"apiKey": almaKey(), "baseURL": gatewayV1(), "enabled": true}, &made); err != nil {
+		body := map[string]any{"name": owlID, "type": "openai",
+			"apiKey": almaKey(), "baseURL": gatewayV1(), "enabled": true, "icon": almaPresetID}
+		// under the id of Alma's own Owl preset, so Alma's Providers
+		// page shows it as that preset, set up, and offers no second one
+		// (realLemonawa on X); a provider of that id already there, at
+		// another address, is the user's, and keeps it
+		if !slices.ContainsFunc(ps, func(o almaProvider) bool { return o.ID == almaPresetID }) {
+			body["id"] = almaPresetID
+		}
+		if err := almaDo("POST", "/api/providers", body, &made); err != nil {
 			return "", err
 		}
 		if made.ID == "" {
@@ -510,6 +517,11 @@ func almaWire() (string, error) {
 		}
 		p = &made
 	} else if p.BaseURL != gatewayV1() || !p.Enabled {
+		if !p.Enabled && !almaMade(p) {
+			// a Owl of the user's own in Alma, turned off: off again
+			// when owl is (almaSet)
+			stash(map[string]string{almaWasOff: p.ID})
+		}
 		if err := almaDo("PUT", "/api/providers/"+p.ID, map[string]any{"baseURL": gatewayV1(),
 			"apiKey": almaKey(), "enabled": true}, nil); err != nil {
 			return "", err
@@ -519,6 +531,24 @@ func almaWire() (string, error) {
 	}
 	return p.ID, almaSyncModels(p)
 }
+
+// almaPresetID is the id of Alma's own Owl provider, its preset on
+// the Providers page and in its quick setup: {"id":"owl","name":"Owl",
+// "type":"custom","apiFormat":"openai-chat","icon":"owl","apiKey":
+// "owl-alma","baseURL":"http://127.0.0.1:3425/v1"} (provPredefBody in
+// Alma's desktop-native/internal/app/settings_providers_detail.go, and
+// NewProvidersSettings.tsx). Alma takes a provider of this id as that
+// preset set up, and offers it again while none has it.
+const almaPresetID = "owl"
+
+// almaWasOff, in the stash, is the id of the user's own Owl provider in
+// Alma that owl turned on to use it, for turning it off again.
+const almaWasOff = "alma.wasoff"
+
+// almaMade says p is the provider owl made in Alma: owl names its
+// own owl, and Alma's preset is Owl. One the user made, the preset or
+// one of their own pointed at the gateway, owl uses, and never removes.
+func almaMade(p *almaProvider) bool { return p.Name == owlID }
 
 // almaKey is the key owl's provider in Alma is given. Alma's requests
 // carry the AI SDK's User-Agent and nothing of Alma's, so the key is how
@@ -704,6 +734,18 @@ func almaSet(v string) (err error) {
 				return err
 			}
 		}
+		if !almaMade(p) {
+			// the user's own Owl in Alma (its preset, set up there
+			// first): Alma no longer starts on it, and it stays, as it
+			// was before owl used it
+			if stashShared()[almaWasOff] == p.ID {
+				if err := almaDo("PUT", "/api/providers/"+p.ID, map[string]any{"enabled": false}, nil); err != nil {
+					return err
+				}
+				forget(almaWasOff)
+			}
+			return nil
+		}
 		return almaDo("DELETE", "/api/providers/"+p.ID, nil, nil)
 	}
 	if ref, ok := strings.CutPrefix(v, owlID+"/"); ok {
@@ -835,6 +877,11 @@ func alma() *Agent {
 			}
 			p := almaOwl(ps)
 			if p == nil {
+				return nil
+			}
+			if !almaMade(p) && stashShared()["alma"+disconnectedKey] == "1" {
+				// the user's own Owl in Alma, with owl switched off
+				// for Alma: left as the user keeps it
 				return nil
 			}
 			if err := almaKeyed(p); err != nil {

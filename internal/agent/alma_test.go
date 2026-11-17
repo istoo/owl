@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -73,9 +74,17 @@ func (f *fakeAlma) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/providers" && r.Method == "GET":
 		reply(200, f.providers)
 	case r.URL.Path == "/api/providers" && r.Method == "POST":
+		// as Alma: the id given (its presets'), else one made up; an id
+		// taken fails the insert
+		if id, _ := body["id"].(string); id != "" && f.provider(id) != nil {
+			reply(500, map[string]any{"error": "Failed to create provider: UNIQUE constraint failed: providers.id"})
+			return
+		}
 		f.n++
 		f.keys = append(f.keys, fmt.Sprint(body["apiKey"]))
-		body["id"] = fmt.Sprintf("p%d", f.n)
+		if id, _ := body["id"].(string); id == "" {
+			body["id"] = fmt.Sprintf("p%d", f.n)
+		}
 		body["models"], body["availableModels"] = []any{}, []any{}
 		f.providers = append(f.providers, body)
 		reply(201, body)
@@ -628,10 +637,10 @@ func TestAlmaKey(t *testing.T) {
 }
 
 // aooo_han on X: Alma connected, then uninstalled, couldn't be turned off
-// in owl: it said to open Alma first. Uninstalled, turning it off forgets
-// owl's own record; installed and closed it still says to open it. Alma
-// installed again with its data has owl's provider taken out once it
-// answers.
+// in owl: it said to open Alma first. Uninstalled, turning it off
+// forgets owl's own record; installed and closed it still says to open
+// it. Alma installed again with its data has owl's provider taken out
+// once it answers.
 func TestAlmaOffUninstalled(t *testing.T) {
 	syncHome(t)
 	f := startAlma(t)
@@ -715,10 +724,11 @@ func TestAlmaOffUninstalled(t *testing.T) {
 // Alma is installed where its packages put it: Alma.app on a Mac.
 func TestAlmaInstalledApp(t *testing.T) {
 	apps := t.TempDir()
-	wasF, wasS := appFolders, spotlightApps
+	wasF, wasS, wasOS := appFolders, spotlightApps, linuxAppOS
 	appFolders = func() []string { return []string{apps} }
 	spotlightApps = func(string) []string { return nil }
-	t.Cleanup(func() { appFolders, spotlightApps = wasF, wasS })
+	linuxAppOS = "darwin"
+	t.Cleanup(func() { appFolders, spotlightApps, linuxAppOS = wasF, wasS, wasOS })
 	if almaApp.installed() {
 		t.Fatal("installed with no Alma.app")
 	}
@@ -745,4 +755,128 @@ func TestInTrash(t *testing.T) {
 			t.Errorf("inTrash(%q) = %v, want %v", p, got, want)
 		}
 	}
+}
+
+// almaPreset is Alma's own Owl provider as its Providers page or quick
+// setup makes it (provPredefBody in Alma's desktop-native), at this
+// gateway, with the one model its quick setup turned on.
+func almaPreset(enabled bool, ref string) map[string]any {
+	return map[string]any{"id": "owl", "name": "Owl", "type": "custom", "apiFormat": "openai-chat", "icon": "owl",
+		"apiKey": "owl-alma", "baseURL": gatewayV1(), "enabled": enabled, "models": []any{ref},
+		"availableModels": []any{map[string]any{"id": ref, "name": ref}}}
+}
+
+// Alma's own Owl and owl's Alma agent are one setup (realLemonawa on
+// X): owl switched on with the preset set up in Alma first uses it, and
+// adds no second; set up in Alma first, the agent reads as on; switched off,
+// the preset stays as the user had it; and owl's own provider takes the
+// preset's id, so Alma doesn't offer the preset again beside it.
+func TestAlmaOneOwl(t *testing.T) {
+	syncHome(t)
+	f := startAlma(t)
+	a := alma()
+	if err := os.MkdirAll(a.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fl := a.Field("model")
+	var ref string
+	for _, o := range fl.Options(a.Values()) {
+		if o.Ref != "" {
+			ref = o.Ref
+			break
+		}
+	}
+	if ref == "" {
+		t.Fatal("no owl model offered")
+	}
+
+	t.Run("set up in Alma first", func(t *testing.T) {
+		f.mu.Lock()
+		f.providers = append(f.providers, almaPreset(true, ref))
+		f.settings["chat"].(map[string]any)["defaultModel"] = "owl:" + ref
+		f.mu.Unlock()
+		if !a.Wired() || fl.Get() != "owl/"+ref || a.Check() != "" {
+			t.Fatalf("Alma on its Owl reads as off: wired %v, model %q, check %q", a.Wired(), fl.Get(), a.Check())
+		}
+		if err := a.Apply("model", "owl/"+ref); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.providers) != 2 || f.provider("owl") == nil {
+			t.Fatalf("a second owl in Alma: %v", f.providers)
+		}
+		f.takeWrites()
+		if err := a.Disconnect(); err != nil {
+			t.Fatal(err)
+		}
+		if w := f.takeWrites(); slices.Contains(w, "DELETE /api/providers/owl") {
+			t.Fatalf("the user's own Owl was removed: %v", w)
+		}
+		p := f.provider("owl")
+		if p == nil || p["name"] != "Owl" || p["enabled"] != true {
+			t.Fatalf("preset after off: %v", p)
+		}
+		if d := f.settings["chat"].(map[string]any)["defaultModel"]; d == "owl:"+ref {
+			t.Fatalf("still on owl after off: %v", d)
+		}
+		// switched off: owl keeps out of the user's provider
+		p["models"] = []any{"few"}
+		f.takeWrites()
+		if err := a.Sync(); err != nil {
+			t.Fatal(err)
+		}
+		if w := f.takeWrites(); len(w) != 0 {
+			t.Fatalf("sync after off wrote %v", w)
+		}
+	})
+
+	t.Run("turned off in Alma", func(t *testing.T) {
+		f.mu.Lock()
+		f.provider("owl")["enabled"] = false
+		f.mu.Unlock()
+		if err := a.Apply("model", "owl/"+ref); err != nil {
+			t.Fatal(err)
+		}
+		if p := f.provider("owl"); p["enabled"] != true || len(f.providers) != 2 {
+			t.Fatalf("providers: %v", f.providers)
+		}
+		if err := a.Disconnect(); err != nil {
+			t.Fatal(err)
+		}
+		if p := f.provider("owl"); p == nil || p["enabled"] != false {
+			t.Fatalf("the user's Owl, off before, after owl is off: %v", p)
+		}
+	})
+
+	t.Run("none in Alma", func(t *testing.T) {
+		f.mu.Lock()
+		f.providers = f.providers[:1]
+		f.mu.Unlock()
+		if err := a.Apply("model", "owl/"+ref); err != nil {
+			t.Fatal(err)
+		}
+		p := f.provider("owl")
+		if len(f.providers) != 2 || p == nil || p["name"] != "owl" || p["baseURL"] != gatewayV1() {
+			t.Fatalf("owl's provider not under the preset's id: %v", f.providers)
+		}
+		if err := a.Disconnect(); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.providers) != 1 || f.providers[0]["id"] != "own" {
+			t.Fatalf("owl's own provider stays after off: %v", f.providers)
+		}
+	})
+
+	t.Run("preset id taken elsewhere", func(t *testing.T) {
+		other := almaPreset(true, ref)
+		other["baseURL"] = "http://192.168.1.9:3425/v1"
+		f.mu.Lock()
+		f.providers = append(f.providers[:1], other)
+		f.mu.Unlock()
+		if err := a.Apply("model", "owl/"+ref); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.providers) != 3 || other["baseURL"] != "http://192.168.1.9:3425/v1" {
+			t.Fatalf("providers: %v", f.providers)
+		}
+	})
 }

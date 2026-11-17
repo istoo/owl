@@ -6,7 +6,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { navTo } = require("./reader.cjs");
+const reader = require("./reader.cjs");
 const assets = path.resolve(__dirname, "../assets");
 const now = new Date().toISOString();
 const rows = [
@@ -50,7 +50,7 @@ for (const engine of ["chromium", "webkit"]) {
           await route.fulfill({body:await fs.readFile(file),contentType:{".html":"text/html",".css":"text/css",".js":"text/javascript",".svg":"image/svg+xml"}[path.extname(file)]});
         });
         await page.goto("http://owl.test/");
-        await navTo(page, "usage");
+        await page.locator('[data-view="usage"]').first().click();
         await page.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
         await page.locator(".led-row").first().waitFor();
         const cells = page.locator(".led-row .where");
@@ -118,11 +118,11 @@ for (const engine of ["chromium", "webkit"]) {
         await page.mouse.move(700, 400);
         await page.mouse.wheel(0, rowTop - 400);
         await page.waitForFunction((y) => document.querySelectorAll(".led-row")[2].getBoundingClientRect().top < y - 100, rowTop);
-        await page.locator(".led-row").nth(2).click();
-        const detail = page.locator(".led-detail");
+        const detail = await reader.openRequest(page, page.locator(".led-row").nth(2));
         assert((await detail.textContent()).includes("relay"),"raw provider ID remains available in details");
         assert((await detail.textContent()).includes("creator@example.com"));
         assert((await detail.textContent()).includes(lang === "zh" ? "不推断供应商" : "no service provider is inferred"));
+        await reader.closeRequest(page);
         const review = page.locator(".led-row").nth(7);
         assert.equal(await review.locator("td").nth(5).textContent(),"—","an estimate must not claim a served model");
         assert.equal(await review.locator(".swap").count(),0,"price alias is not observed forwarding");
@@ -130,25 +130,21 @@ for (const engine of ["chromium", "webkit"]) {
         for (const width of [1200,440]) {
           await page.setViewportSize({width,height:900});
           // the table is fitted to the new width on a frame after the resize
-          // (ledFit, which may cut names shorter): wait for the layout the
-          // check is about, not a fixed moment — on a loaded runner the two
-          // frames and 100ms read it half fitted (issue #13)
-          const fitted = (i) => {
-            const cell = document.querySelectorAll(".led-row .where")[i];
-            if (!cell) return false;
-            const badges = [...cell.querySelectorAll(".source-badges .src")].map((n) => n.getBoundingClientRect());
+          // (ledFit, which may cut names shorter): look once it has been
+          await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 100)))));
+          const layout = await cells.nth(7).evaluate(cell => {
+            const badges = [...cell.querySelectorAll(".source-badges .src")].map(n => n.getBoundingClientRect());
             const bounds = cell.getBoundingClientRect();
             const name = cell.querySelector(".where-name").getBoundingClientRect();
-            return badges.length === 2 && Math.abs(badges[0].top - badges[1].top) < 1 && badges[0].right < badges[1].left && badges.every((b) => b.top >= name.bottom && b.left >= bounds.left && b.right <= bounds.right && b.bottom <= bounds.bottom);
-          };
-          await page.waitForFunction(fitted, 7, { timeout: 3000 }).catch(() => {});
-          const layout = await page.evaluate(fitted, 7);
+            return badges.length === 2 && Math.abs(badges[0].top - badges[1].top) < 1 && badges[0].right < badges[1].left && badges.every(b => b.top >= name.bottom && b.left >= bounds.left && b.right <= bounds.right && b.bottom <= bounds.bottom);
+          });
           assert(layout,"both badges share one row below the account at " + width);
         }
         await page.setViewportSize({width:1200,height:900});
         await review.focus();
         await page.keyboard.press("Enter");
-        const officialDetail = page.locator(".led-detail").last();
+        const officialDetail = page.locator("#ledReqPane .led-detail");
+        await officialDetail.waitFor();
         assert((await officialDetail.textContent()).includes(lang === "zh" ? "官方登录" : "Official login"));
         assert((await cells.nth(7).locator(".official").getAttribute("title")).includes(lang === "zh" ? "不代表已确认这次请求" : "does not establish the route"));
         assert.deepEqual(errors,[]);

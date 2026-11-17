@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/istoo/owl/internal/access"
 	"github.com/istoo/owl/internal/gwtool"
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/plugin"
 )
 
@@ -58,7 +58,7 @@ type mcpTool struct {
 	name string // <plugin>_<tool>
 }
 
-var unsafeToolChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+var unsafeToolChars = lazyre.New(`[^A-Za-z0-9_-]+`)
 
 // toolPrefix is the plugin's part of its tools' names: its short name
 // (opencode-weather-tools → weather-tools), in the characters MCP clients

@@ -55,8 +55,9 @@ const (
 // also after a new title and size and a new system appearance. The lights
 // are in place as AppKit draws that appearance, too. A first press while
 // another app is in front moves it from where it did with the toolbar. In
-// the earlier design, where a toolbar doesn't change the corners (an older
-// macOS, or a program linked against an earlier SDK than macOS 26's), the
+// the earlier design (an older macOS, or a program linked against an
+// earlier SDK than macOS 26's), and on macOS 27, which gives a window with a
+// toolbar a plain title bar's corners, a toolbar doesn't change them: the
 // window keeps its toolbar. The windows' program is run as linked against
 // each SDK, whatever the toolchain has, in a process of its own that runs
 // AppKit on its main thread.
@@ -90,12 +91,9 @@ func checkMainWindowCorners(t *testing.T, sdk uint32) {
 		if !near(s.Main.Titlebar, s.Toolbar.Titlebar) {
 			t.Errorf("%s: a title bar %.0fpt tall, the toolbar's was %.0fpt", s.Name, s.Main.Titlebar, s.Toolbar.Titlebar)
 		}
-		// Where the earlier design's program has no toolbar difference,
-		// the main window is left as it was. A later OS can draw the
-		// macOS 26 design without the difference too (macOS 27 does), and
-		// the program that asked for that design takes the toolbar off:
-		// the corners above are still the plain window's.
-		if sdk < sdkMacOS26 && near(s.Plain.Radius, s.Toolbar.Radius) && !s.Main.Toolbar {
+		// Where a toolbar doesn't change the corners (the earlier design,
+		// macOS 27), the main window is left as it was
+		if near(s.Plain.Radius, s.Toolbar.Radius) && !s.Main.Toolbar {
 			t.Errorf("%s: a toolbar doesn't change the corners in this design, yet the main window's was taken off", s.Name)
 		}
 	}
@@ -235,9 +233,8 @@ func init() {
 			run.Drawn.Main, run.Drawn.Toolbar = windowshape.Of(main.NativeWindow()), windowshape.Of(wins[2].NativeWindow())
 		})
 		measure("a new system appearance")
-		// Another app is in front, so none of these windows is the key one
+		// The app may not activate, so the windows are never the key one
 		for _, y := range []float64{20, 40, 60, 70} {
-			application.InvokeSync(func() { windowshape.Deactivate() })
 			var d [3]int
 			each(func(i int, w *application.WebviewWindow) { d[i] = windowshape.FirstPress(w.NativeWindow(), 200, y) })
 			run.Presses = append(run.Presses, struct {

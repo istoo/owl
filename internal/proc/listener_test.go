@@ -4,7 +4,10 @@ import (
 	"context"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"testing"
 )
@@ -76,9 +79,11 @@ func TestIsOwl(t *testing.T) {
 		"/home/u/owl.old-2":                          true,
 		"/home/u/dial.old-4":                         true,
 		// the numbered suffix is an update's, not another program's
-		`C:\Users\u\other-server.old-2`:   false,
-		`C:\Users\u\owl.old-backup`:       false,
-		"/home/u/.local/bin/dial":         true,
+		`C:\Users\u\other-server.old-2`: false,
+		`C:\Users\u\owl.old-backup`:     false,
+		"/home/u/.local/bin/dial":       true,
+		// the program a wrapper script named owl runs (acezan)
+		"/root/.local/bin/owl.real":       true,
 		"/opt/owl-dev":                    true,
 		"/usr/bin/python3":                false,
 		"/usr/bin/owls":                   false,
@@ -111,5 +116,70 @@ func TestIsForwarder(t *testing.T) {
 		if IsForwarder(path) != want {
 			t.Errorf("IsForwarder(%q) = %v", path, !want)
 		}
+	}
+}
+
+// A owl is told by what its program is, not only its name: Go's build
+// information names owl's main package. On Linux that is read from the
+// running process (/proc/<pid>/exe), so one whose file an update replaced
+// still reads as owl (acezan on Discord). Here the test binary, copied
+// under another name and its file removed once it runs, stands in, with
+// owlMain the test binary's own package.
+func TestRunsOwlByItsBuild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a running program's file can't be removed on Windows")
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Fatal("no build information in the test binary")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "server.real")
+	if err := os.WriteFile(bin, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-test.run=^$")
+	cmd.Env = append(os.Environ(), "OWL_PROC_SLEEP=1")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() })
+	pid := cmd.Process.Pid
+
+	was := owlMain
+	defer func() { owlMain = was }()
+	owlMain = bi.Path
+	if !RunsOwl(pid, bin) {
+		t.Fatalf("%s, built from %s, not told as owl", bin, bi.Path)
+	}
+	owlMain = "github.com/istoo/owl"
+	if RunsOwl(pid, bin) {
+		t.Fatal("another program's build told as owl")
+	}
+	if runtime.GOOS != "linux" {
+		return
+	}
+	// the update's rename: the file is gone, the process runs on
+	if err := os.Remove(bin); err != nil {
+		t.Fatal(err)
+	}
+	path, err := Executable(pid)
+	if err != nil || filepath.Base(path) != "server.real" {
+		t.Fatalf("Executable of a replaced program: %q, %v", path, err)
+	}
+	owlMain = bi.Path
+	if !RunsOwl(pid, path) {
+		t.Fatal("a owl whose file was replaced isn't told as owl")
 	}
 }

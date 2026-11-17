@@ -16,8 +16,8 @@ import (
 // (Target.Field: WorkBuddy's personalization.customPrompt in
 // app/app-config.json) is given them there. Everything else in the file is
 // the app's and stays as it is, key order and indentation included; what
-// is in the field is the user's own text and owl's part around it, as in
-// an instructions file.
+// is in the field is the user's own text and owl's part around it, as
+// in an instructions file.
 
 // instrRead is what the agent reads at t.Instructions: the file, or for a
 // Field target the text at its key path. A file that isn't JSON, or a
@@ -79,4 +79,14 @@ func instrSave(t *Target, next string) error {
 		}
 	}
 	return nil
+}
+
+// instrEmpty empties what the agent reads at t.Instructions without taking
+// the file away, as an apply does (#5709): an instructions file stays,
+// empty, and a field goes out of its JSON.
+func instrEmpty(t *Target) error {
+	if t.Field == "" {
+		return edit.WriteAtomic(t.Instructions, nil)
+	}
+	return instrSave(t, "")
 }

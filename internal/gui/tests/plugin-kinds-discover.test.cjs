@@ -46,11 +46,11 @@ function server(lang) {
 }
 
 const L = {
-  en: { installed: "Installed", subs: "Subscriptions", tls: "Tools for agents", pgs: "Pages", tool: "Tools", page: "Page", provider: "Provider", write: "Write a plugin", docs: "https://github.com/istoo/owl/blob/main/site/public/docs/plugins.html" },
-  zh: { installed: "已安装", subs: "订阅", tls: "给 Agent 的工具", pgs: "页面", tool: "工具", page: "页面", provider: "供应商", write: "编写插件", docs: "https://github.com/istoo/owl/blob/main/site/public/docs/zh/plugins.html" },
-  "zh-TW": { installed: "已安裝", subs: "訂閱", tls: "給 Agent 的工具", pgs: "頁面", tool: "工具", page: "頁面", write: "編寫外掛", docs: "https://github.com/istoo/owl/blob/main/site/public/docs/zh/plugins.html" },
-  ja: { installed: "インストール済み", subs: "サブスクリプション", tls: "エージェント向けツール", pgs: "ページ", tool: "ツール", page: "ページ", write: "プラグインを書く", docs: "https://github.com/istoo/owl/blob/main/site/public/docs/ja/plugins.html" },
-  de: { installed: "Installiert", subs: "Abos", tls: "Werkzeuge für Agenten", pgs: "Seiten", tool: "Tools", page: "Seite", write: "Eine Erweiterung schreiben", docs: "https://github.com/istoo/owl/blob/main/site/public/docs/plugins.html" },
+  en: { installed: "Installed", subs: "Subscriptions", tls: "Tools for agents", pgs: "Pages", tool: "Tools", page: "Page", provider: "Provider", write: "Write a plugin", docs: "https://usemagpie.ai/docs/plugins" },
+  zh: { installed: "已安装", subs: "订阅", tls: "给 Agent 的工具", pgs: "页面", tool: "工具", page: "页面", provider: "供应商", write: "编写插件", docs: "https://usemagpie.ai/docs/zh/plugins" },
+  "zh-TW": { installed: "已安裝", subs: "訂閱", tls: "給 Agent 的工具", pgs: "頁面", tool: "工具", page: "頁面", write: "編寫外掛", docs: "https://usemagpie.ai/docs/zh/plugins" },
+  ja: { installed: "インストール済み", subs: "サブスクリプション", tls: "エージェント向けツール", pgs: "ページ", tool: "ツール", page: "ページ", write: "プラグインを書く", docs: "https://usemagpie.ai/docs/ja/plugins" },
+  de: { installed: "Installiert", subs: "Abos", tls: "Werkzeuge für Agenten", pgs: "Seiten", tool: "Tools", page: "Seite", write: "Eine Erweiterung schreiben", docs: "https://usemagpie.ai/docs/plugins" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -86,10 +86,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.ok((await pg.innerText()).includes("Glance page"));
         assert.deepEqual(await kinds(pg), [w.page]);
 
-        // the way to write one: the docs in the window's language, opened
-        // outside, a click away in the folded intro (Show all)
-        await view.locator(".pm-intro .pm-intromore").click();
-        const how = view.locator(".pm-intro .pm-write");
+        // the way to write one: the docs in the window's language, opened outside
+        const how = view.locator(".pm-foot .pm-write");
         assert.equal((await how.innerText()).trim(), w.write);
         assert.equal(await how.getAttribute("href"), w.docs);
         opened.length = 0;

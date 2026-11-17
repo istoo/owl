@@ -133,7 +133,7 @@ var badText = []struct{ name, raw string }{
 	{"cut at the end", "\xe4\xbd"},
 }
 
-// inbound is each API an agent asks magpie on, with the text in the
+// inbound is each API an agent asks owl on, with the text in the
 // user's message and in a tool's result, where a file's bytes arrive.
 func inbound(text string, stream bool) []struct{ path, body string } {
 	s := "false"

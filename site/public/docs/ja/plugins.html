@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>プラグインの作り方 · owl ドキュメント</title>
+<title>プラグインの作り方：OpenCode プラグインや pi パッケージでプロバイダを追加 · owl ドキュメント</title>
 <meta name="description" content="owl プラグインの書き方：owl が呼び出す OpenCode プラグインのフック、owl が動かす pi パッケージ、それをアカウント・モデル・リクエスト・使用量を備えたプロバイダにする仕組み、そしてテスト・公開・掲載の方法。">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#fafafa">
@@ -27,18 +27,66 @@
 <script>try{if(/Linux/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)||localStorage.getItem("omarchy")||/[?&]omarchy=/.test(location.search))document.write('<script src="/omarchy.js"><\/script>')}catch(e){}</script>
 <link rel="icon" href="/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="/img/icon-256.png">
-<link rel="alternate" hreflang="en" href="https://github.com/istoo/owl/blob/main/docs/plugins">
-<link rel="alternate" hreflang="zh" href="https://github.com/istoo/owl/blob/main/docs/zh/plugins">
-<link rel="alternate" hreflang="ja" href="https://github.com/istoo/owl/blob/main/docs/ja/plugins">
-<link rel="alternate" hreflang="x-default" href="https://github.com/istoo/owl/blob/main/docs/plugins">
-<link rel="canonical" href="https://github.com/istoo/owl/blob/main/docs/ja/plugins">
+<link rel="alternate" hreflang="en" href="https://usemagpie.ai/docs/plugins">
+<link rel="alternate" hreflang="zh" href="https://usemagpie.ai/docs/zh/plugins">
+<link rel="alternate" hreflang="ja" href="https://usemagpie.ai/docs/ja/plugins">
+<link rel="alternate" hreflang="x-default" href="https://usemagpie.ai/docs/plugins">
+<link rel="canonical" href="https://usemagpie.ai/docs/ja/plugins">
 <link rel="stylesheet" href="/docs.css">
 <meta property="og:site_name" content="owl">
 <meta property="og:title" content="プラグインの作り方">
 <meta property="og:description" content="OpenCode プラグインか pi パッケージひとつで、どんなサービスも owl のプロバイダにできます。">
-<meta property="og:image" content="https://github.com/istoo/owl/img/og.png">
-<meta property="og:url" content="https://github.com/istoo/owl/blob/main/docs/ja/plugins">
+<meta property="og:image" content="https://usemagpie.ai/img/og.png">
+<meta property="og:url" content="https://usemagpie.ai/docs/ja/plugins">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "TechArticle",
+   "headline": "プラグインを書く",
+   "description": "owl プラグインの書き方：owl が呼び出す OpenCode プラグインのフック、owl が動かす pi パッケージ、それをアカウント・モデル・リクエスト・使用量を備えたプロバイダにする仕組み、そしてテスト・公開・掲載の方法。",
+   "inLanguage": "ja",
+   "url": "https://usemagpie.ai/docs/ja/plugins",
+   "about": {
+    "@type": "SoftwareApplication",
+    "name": "owl",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Windows, Linux"
+   },
+   "publisher": {
+    "@type": "Organization",
+    "name": "owl",
+    "url": "https://usemagpie.ai/"
+   }
+  },
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "owl",
+     "item": "https://usemagpie.ai/ja/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "ドキュメント",
+     "item": "https://usemagpie.ai/docs/ja/start"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "name": "プラグインを書く",
+     "item": "https://usemagpie.ai/docs/ja/plugins"
+    }
+   ]
+  }
+ ]
+}
+</script>
 </head>
 <body>
 
@@ -54,9 +102,17 @@
     <a class="toc-only" href="/docs/ja/privacy">プライバシー</a>
     <a class="toc-only" href="/docs/ja/masking">プライバシーマスキング</a>
     <a class="toc-only" href="/docs/ja/mcp-router">MCP ルーター</a>
+    <a class="toc-only" href="/docs/ja/library">ライブラリ</a>
+    <a class="toc-only" href="/docs/ja/claude-code-models">Claude Code で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/codex-models">Codex で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/gemini-cli-models">Gemini CLI で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/subscriptions">サブスクを任意のエージェントで</a>
+    <a class="toc-only" href="/docs/ja/local-models">ローカルモデル</a>
+    <a class="toc-only" href="/docs/ja/opencode-models">OpenCode で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/alternatives">CC Switch・CCR との比較</a>
     <a href="/docs/ja/import">owl に追加</a>
     <a href="/docs/integrate">アプリ連携</a>
-    <a href="https://github.com/istoo/owl/releases">リリース</a>
+    <a href="https://github.com/istoo/owl-releases/releases">リリース</a>
   </div>
   <div class="langs">
     <button class="icon-btn lang" type="button" aria-label="言語" title="言語" aria-haspopup="true" aria-expanded="false" aria-controls="langs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.55 3.83 2.55 6.25S9.7 12.5 8 14.25M8 1.75C6.3 3.5 5.45 5.58 5.45 8S6.3 12.5 8 14.25"/></svg></button>
@@ -66,6 +122,7 @@
       <a href="/docs/ja/plugins" hreflang="ja" lang="ja">日本語</a>
     </div>
   </div>
+  <a class="icon-btn" href="https://discord.gg/vGSnD3ZKQF" aria-label="owl on Discord" title="Join us on Discord"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
   <a class="icon-btn" href="https://github.com/istoo/owl" aria-label="owl on GitHub" title="Source on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
   <button class="icon-btn theme" type="button" aria-label="Theme" title="Theme: system"><svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.25V14"/></svg><svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg><svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg></button>
   <a class="btn small" href="/#get">ダウンロード</a>
@@ -267,7 +324,8 @@ owl quota                             <span class="c"># acme · Pro · 5h 37% �
     <div class="table-wrap"><table>
       <tr><th>フィールド</th><th>意味</th></tr>
       <tr><td><code>owl.icon</code></td><td>プラグイン自身の画像。「発見」のカード（npm から、GitHub のものはリポジトリから読み込み）と「インストール済み」の行に表示され、自分の画像を持たないプロバイダにも使われます：<code>https://</code> URL または <code>data:image/…</code> URI、最大 1 MB。SVG、PNG など。</td></tr>
-      <tr><td><code>owl.name</code></td><td>「インストール済み」の行に表示されるプラグインの名前。ページがタイトルを持たないときはサイドバーのタブ名にもなります。コミュニティのリストに載っていないプラグインだけに効きます（リストの名前が優先）。npm のパッケージ名は ASCII に限られるので、「华为云 HUAWEI」のような名前はここに書きます。1 行、最大 80 バイト。それ以外は無視されます。パッケージ自身の言葉として扱われ、レビュー済みとは表示されず、名前でプラグインを探すのにも使われません。</td></tr>
+      <tr><td><code>owl.name</code></td><td>「インストール済み」の行に表示されるプラグインの名前。ページがタイトルを持たないときはサイドバーのタブ名にもなります。コミュニティのリストに載っていないプラグインだけに効きます（リストの名前が優先）。npm のパッケージ名は ASCII に限られるので、「华为云 HUAWEI」のような名前はここに書きます。1 行、最大 80 バイト。それ以外は無視されます。パッケージ自身の言葉として扱われ、レビュー済みとは表示されず、名前でプラグインを探すのにも使われません。<code>owl-plugin</code> タグの付いたリポジトリでは、「発見 → 非公式 · GitHub」のカードでもリポジトリ名の代わりに表示されます。</td></tr>
+      <tr><td><code>owl.summary</code></td><td>「発見 → 非公式 · GitHub」のカードの説明文。言語ごとに <code>{ "en": "…", "zh": "…" }</code> と書きます。ウィンドウの言語で表示され（繁体字中国語は <code>zh</code>）、なければ英語、それもなければ GitHub の説明です。1 言語 1 行、最大 300 バイト。それ以外は無視されます。名前や説明がパッケージ自身のものであるカードには「パッケージ自身の言葉」と表示されます。誰も審査していません。</td></tr>
       <tr><td><code>owl.maxConcurrency</code></td><td>各アカウントが同時に受けるリクエスト数。1 から 1000 の整数。ユーザーがプロバイダに設定した上限が優先されます。</td></tr>
     </table></div>
     <p>同じフィールドは <code>auth</code> フックにも設定でき（<code>auth.icon</code>、<code>auth.maxConcurrency</code>）、そちらが <code>package.json</code> より優先されます。複数のプロバイダにサインインするプラグインは、プロバイダごとに <code>auth.icon</code> を設定し、<code>owl.icon</code> をプラグイン自身のものにできます。</p>
@@ -299,6 +357,9 @@ owl quota                             <span class="c"># acme · Pro · 5h 37% �
 }</pre>
     </div>
     <p>モデルには、プロバイダとは別の API やアドレスを使うための <code>provider: { npm, api }</code>、<code>headers</code>、<code>options</code>、そして非表示にするための <code>disabled: true</code> も指定できます。</p>
+
+        <h3 id="vendor">owl が知っているベンダーの前に立つ</h3>
+    <p>プロバイダの <code>api</code> が owl にプリセットのあるベンダーの API（<code>https://api.mistral.ai/v1</code>、<code>https://api.deepseek.com/v1</code>、<code>https://openrouter.ai/api/v1</code> など）なら、owl はそのベンダーと同じようにリクエストを整えてから <code>fetch</code> に渡します。<code>reasoning_content</code> の代わりに Mistral の thinking パーツ、DeepSeek や xAI のスキーマ規則、OpenRouter の無料枠などです。追加の設定は要りません。読むのはすでに渡している base URL で、loader の <code>baseURL</code> が別の場所を指していても同じです。どのプリセットのホストでもない、<code>localhost</code> やローカルネットワーク上のベースには、どのベンダーの処理も適用されません。</p>
 
         <h3 id="searches">自分でウェブ検索する上流</h3>
     <p>プラグインが Anthropic や OpenAI 自身の API（ホスト型のウェブ検索ツールを自分で実行する）の前に立つ場合は、<code>config</code> フックでプロバイダに <code>searches: true</code> を設定します。するとクライアントのウェブ検索（Claude Code の WebSearch、Codex の <code>web_search</code>）は、そのプロバイダの Anthropic または Responses のモデルでは送られたまま <code>fetch</code> に届き、owl 自身の検索を通りません。Chat のモデルは変わりません。owl が他のモデルのために自動でこれを使って検索することはありませんが、設定で検索モデルとして指定できます。</p>
@@ -541,6 +602,7 @@ owl quota                             <span class="c"># acme · Pro · 5h 37% �
     amount: 370, limit: 1000, unit: <span class="s">"credits"</span>, <span class="c">// its own count, when it counts amounts</span>
     model: <span class="s">"opus"</span>,              <span class="c">// counts only models whose ids hold this word</span>
     models: [], notModels: [],  <span class="c">// or exactly these ids, or all but these</span>
+    family: <span class="s">"Gemini"</span>, pool: <span class="s">"Gemini"</span>, <span class="c">// a model's family, and the group sharing its allowance: the card shows a pool's own windows (no model, no family) in place of its models'</span>
     aside: false,               <span class="c">// true: using it up doesn't stop the account</span>
     runsOutAt: <span class="s">"2026-10-05T00:00:00Z"</span>, runsOut: 120, <span class="c">// when the soonest credits left are lost, and how many</span>
     balance: 6291,              <span class="c">// a prepaid wallet: what is left, in unit; no used or limit</span>
@@ -596,7 +658,7 @@ owl quota                             <span class="c"># acme · Pro · 5h 37% �
       <li><b>値。</b>100 はベンダーが同時に処理できる満杯の状態で、待ち行列のあるベンダーはそれを超えて報告できます（200 はその 2 倍）。0 未満は 0、10000 超は 10000 として扱います（異常値の上限）。それ以外（文字列、<code>NaN</code>）は捨てられます。モデル id は大文字小文字を区別せず、<code>model@256k</code> は個別に報告がなければ元のモデルの負荷になります。1 回の呼び出しで最大 1000 モデルまで受け取り、受け取った数を返します。provider が文字列でない、または <code>loads</code> がオブジェクトでないと <code>TypeError</code> を投げます。</li>
       <li><b>鮮度。</b>各モデルの負荷は報告した呼び出しから 5 分間有効で、その後は不明になり、0 とはみなしません。報告をやめたプラグインのモデルは元の位置のままです。呼び出しで触れなかったモデルは、自分の 5 分が切れるまで前回の負荷を保ちます。</li>
       <li><b>表示。</b>プロバイダーの編集画面で、モデルの横に小さな灰色の数字で出ます。</li>
-      <li><b>ルーティング。</b>設定 › ネットワークと共有 › 混雑しているモデルを後回しに でしきい値を選ぶと（既定はオフ。50、70、80、90% 超、または「カスタム…」で 1〜9999 の任意の数。待ち行列のあるベンダーなら 150 など）、それより混雑していると報告されたモデルは、リクエストが行ける他の候補の後ろ、失敗後に休んでいる候補の前に回ります。そのモデルが答えた会話は次のターンで先頭の候補に移り、ターンの途中では移りません。負荷が分からないモデルは元の位置のままです。ルーティングのトレースには <code>busy</code> と負荷が出ます。</li>
+      <li><b>ルーティング。</b>設定 › モデル › ルーティング › 混雑しているモデルを後回しに でしきい値を選ぶと（既定はオフ。50、70、80、90% 超、または「カスタム…」で 1〜9999 の任意の数。待ち行列のあるベンダーなら 150 など）、それより混雑していると報告されたモデルは、リクエストが行ける他の候補の後ろ、失敗後に休んでいる候補の前に回ります。そのモデルが答えた会話は次のターンで先頭の候補に移り、ターンの途中では移りません。負荷が分からないモデルは元の位置のままです。ルーティングのトレースには <code>busy</code> と負荷が出ます。</li>
     </ul>
     <p>古いホスト向けのプラグインは、上の例のように先に <code>input.owl?.load</code> を確かめます。</p>
 
@@ -664,7 +726,7 @@ m plugin logout acme</pre>
   <span class="s">"summary"</span>: { <span class="s">"en"</span>: <span class="s">"Your Acme Coding Plan."</span>, <span class="s">"zh"</span>: <span class="s">"使用你的 Acme Coding Plan。"</span> } }</pre>
         </div>
         ミドルウェアのエントリには <code>"kind": "middleware"</code> を書き、<code>providers</code> は書きません。<span class="ui">ゲートウェイミドルウェア</span> の下に表示されます。ほかの種類も同じで、<code>"kind": "tools"</code> は <span class="ui">エージェント向けツール</span>、<code>"kind": "page"</code> は <span class="ui">ページ</span>、<code>"kind": "agent"</code> は <span class="ui">エージェント</span> の下に表示されます。これらのセクションに並ぶのはコミュニティ自身のパッケージで、エントリに <code>"community": true</code> があります。自分のリポジトリから公開したパッケージはこれを書きません。セクションには出ませんが、<span class="ui">プラグイン</span> の検索で名前・説明・公開者から見つかり、カードには owl コミュニティのバッジではなく npm の公開者が表示されます。<code>OWL_PLUGIN_MARKET=&lt;url&gt;</code> は owl に別の一覧を参照させます（自分の一覧の確認に便利です）。<code>off</code> にすると内蔵のコピーだけを使います。</li>
-      <li><b>GitHub のトピック。</b>GitHub で <code>owl-plugin</code> トピックを付けたリポジトリは、<span class="ui">プラグイン → 発見 → 非公式 · GitHub</span> に、スターの多い順に、誰もレビューしていないものとして表示されます。<code>package.json</code> はリポジトリのルートに置いてください。<code>repository</code> がそのリポジトリを指す形で npm に公開されていれば npm からインストールされ、そうでなければリポジトリの現在のコードがインストールされます。そのため読み込むファイルはコミットしておく必要があり、<code>dist</code> を公開時にしかビルドしないリポジトリは表示されません。フォーク、アーカイブ済みのリポジトリ、magpie-community 自身のものも表示されません。owl が GitHub に問い合わせるのは最大で 10 分に 1 回なので、トピックを付けたリポジトリは数分で表示されます。カードには <code>package.json</code> の <code>"owl": { "icon": "…" }</code> で指定したアイコンが表示され、ない場合はパズルのアイコンになります。ライセンスは GitHub がリポジトリの <code>LICENSE</code> ファイルから読み取ったものです。GitHub がどのライセンスか判定できない場合（<code>NOASSERTION</code>。MIT の本文に 1 行加えた場合など）やファイルがない場合は、<code>package.json</code> の <code>license</code> を表示します。npm からインストールされるプラグインは <code>package.json</code> のものを表示します。</li>
+      <li><b>GitHub のトピック。</b>GitHub で <code>owl-plugin</code> トピックを付けたリポジトリは、<span class="ui">プラグイン → 発見 → 非公式 · GitHub</span> に、スターの多い順に、誰もレビューしていないものとして表示されます。<code>package.json</code> はリポジトリのルートに置いてください。<code>repository</code> がそのリポジトリを指す形で npm に公開されていれば npm からインストールされ、そうでなければリポジトリの現在のコードがインストールされます。そのため読み込むファイルはコミットしておく必要があり、<code>dist</code> を公開時にしかビルドしないリポジトリは表示されません。フォーク、アーカイブ済みのリポジトリ、magpie-community 自身のものも表示されません。owl が GitHub に問い合わせるのは最大で 10 分に 1 回なので、トピックを付けたリポジトリは数分で表示されます。カードには <code>package.json</code> の <code>"magpie": { "icon": "…" }</code> で指定したアイコンが表示され、ない場合はパズルのアイコンになります。ライセンスは GitHub がリポジトリの <code>LICENSE</code> ファイルから読み取ったものです。GitHub がどのライセンスか判定できない場合（<code>NOASSERTION</code>。MIT の本文に 1 行加えた場合など）やファイルがない場合は、<code>package.json</code> の <code>license</code> を表示します。npm からインストールされるプラグインは <code>package.json</code> のものを表示します。</li>
       <li><b>コミュニティのパッケージ。</b><a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に貢献するには：
         <ul>
           <li><code>packages/&lt;name&gt;</code> に置き、名前はプロバイダなら <code>@magpie-community/opencode-&lt;name&gt;-auth</code>、ミドルウェアやルーティング戦略なら <code>@magpie-community/middleware-&lt;name&gt;</code>、ツールなら <code>@magpie-community/tools-&lt;name&gt;</code>、ページなら <code>@magpie-community/page-&lt;name&gt;</code>、エージェントなら <code>@magpie-community/agent-&lt;name&gt;</code> とします。本当に必要でない限り、ランタイムの依存は持たせないでください。</li>
@@ -674,10 +736,11 @@ m plugin logout acme</pre>
     </ul>
 
     <h2 id="gateway-request"><a class="anchor" href="#gateway-request">非同期ゲートウェイリクエストフック</a></h2>
-    <p>プラグインはエージェントのリクエストをルーティングする前に I/O を待てます。package.json に <code>"owl": { "hooks": "./hooks.js" }</code> を宣言するか、<code>*.hooks.js</code> / <code>.mjs</code> / <code>.ts</code> / <code>.mts</code> を追加し（Bun は TypeScript をビルドなしで実行します）、名前付きの非同期 <code>onRequest(body, ctx)</code> をエクスポートします。専用パッケージに OpenCode main/exports は不要です。</p>
+    <p>プラグインはエージェントのリクエストをルーティングする前に I/O を待てます。package.json に <code>"magpie": { "hooks": "./hooks.js" }</code> を宣言するか、<code>*.hooks.js</code> / <code>.mjs</code> / <code>.ts</code> / <code>.mts</code> を追加し（Bun は TypeScript をビルドなしで実行します）、名前付きの非同期 <code>onRequest(body, ctx)</code> をエクスポートします。専用パッケージに OpenCode main/exports は不要です。</p>
     <p>任意の非同期 <code>onResponse(reply, ctx)</code> は出力完了後にベストエフォートの通知を受け取ります。応答やライブストリームは変更せず、ツール宣言と実行ループはクライアントが担当します。</p>
+    <p>任意の非同期 <code>onSignIn(event, ctx)</code> は、サブスクリプションのアカウントにサインインし直す必要があるときに呼ばれます。<code>event</code> は <code>{provider, providerName, account, state, endsAt?}</code> で、<code>state</code> は <code>signed-out</code>、または Claude のサインインが 3 日以内に切れるときの <code>ending</code> です。アカウントが使えるようになるまで一度だけ通知され、トークンは含みません。フックファイルは <code>onSignIn</code> だけを書き出しても構いません。</p>
 <p>Bun でリクエストごとに一度、JS ゲートウェイミドルウェアの前に実行し、Codex 自身の ChatGPT サインインを含むすべてのプロバイダーに適用します。body はエージェント API のオブジェクトです。ctx は <code>protocol</code>、<code>model</code>、<code>stream</code>、<code>path</code>、<code>agent</code>、<code>session</code>、<code>cwd</code>、<code>query</code>、<code>options</code>、<code>signal</code> を持ちます。query は最後のユーザーテキストで、ツール結果と画像を除きます。ない識別情報は空で、Authorization は渡しません。</p>
-<p>オブジェクトを返すと置き換え、undefined は元を保ちます。モデル、ストリーミング、クライアントのツールやツール選択を変えたフックは取り消され、失敗として扱われ、そのリクエストでは <code>onResponse</code> が呼ばれません。コピーを渡すので失敗や undefined の直接変更は破棄します。成功した変更は有効な順に渡ります。各フックは既定で 1 秒です。<code>gatewayTimeoutMs</code> は 100〜10000 ミリ秒の整数です。全体は合計予算を 2〜10 秒に制限し、起動と RPC を含めて 11 秒です。設定 → プラグインでオプションと呼び出し回数、時間、失敗、最新の結果を確認できます。<code>ctx.report(code, bytes)</code> は ready/empty/unbound/unauthorized/unavailable/invalid/skipped とバイト数のみを受け付けます。私的なテキストは保存せず、再読み込みで統計をリセットします。fetch に <code>ctx.signal</code> を使ってください。例外、不正な戻り値、タイムアウト、起動中のホストは元を保ちます。Bun はホスト権限で動くので信頼できるコードを使ってください。</p>
+<p>オブジェクトを返すと置き換え、undefined は元を保ちます。モデル、ストリーミング、クライアントのツールやツール選択を変えたフックは取り消され、失敗として扱われ、そのリクエストでは <code>onResponse</code> が呼ばれません。コピーを渡すので失敗や undefined の直接変更は破棄します。成功した変更は有効な順に渡ります。各フックは既定で 1 秒です。<code>gatewayTimeoutMs</code> は 100〜30000 ミリ秒の整数で、範囲外の値は近い方の境界に丸めます。全体は合計予算を 2〜10 秒に制限し、最も長いフック自身のタイムアウトがそれより長ければそれを使います。ホストの起動は 11 秒まで、起動と RPC を合わせてチェーンの予算に 1 秒を足した時間（最低 11 秒）です。設定 → プラグインでオプションと呼び出し回数、時間、失敗、最新の結果を確認できます。<code>ctx.report(code, bytes)</code> は ready/empty/unbound/unauthorized/unavailable/invalid/skipped とバイト数のみを受け付けます。私的なテキストは保存せず、再読み込みで統計をリセットします。fetch に <code>ctx.signal</code> を使ってください。例外、不正な戻り値、タイムアウト、起動中のホストは元を保ちます。Bun はホスト権限で動くので信頼できるコードを使ってください。</p>
 <p><code>owl plugin add ./my-plugin</code> で追加し、<code>owl plugin options my-plugin '&lbrace;"serverUrl":"http://127.0.0.1:8000"&rbrace;'</code> で設定します。on/off と設定変更は再読み込みします。ソースだけの変更は設定の再読み込みが必要です。内部のタイトルや分類リクエストは対象外です。</p>
 
     <h2 id="middleware"><a class="anchor" href="#middleware">ゲートウェイミドルウェア</a></h2>
@@ -703,7 +766,7 @@ m plugin logout acme</pre>
     <div class="code">
       <span class="lang">shell</span>
       <button class="copy" data-copy="mw-cli">コピー</button>
-      <pre id="mw-cli">owl plugin add ./alias.middleware.js   <span class="c"># または package.json に "owl": { "middleware": "./mw.js" } を書いたパッケージ</span></pre>
+      <pre id="mw-cli">owl plugin add ./alias.middleware.js   <span class="c"># または package.json に "magpie": { "middleware": "./mw.js" } を書いたパッケージ</span></pre>
     </div>
     <h3 id="middleware-community"><a class="anchor" href="#middleware-community">すぐ使えるミドルウェア</a></h3>
     <p>コミュニティリポジトリには、そのまま追加できるミドルウェアがあります。多くは <a href="https://github.com/QuantumNous/new-api">New API</a> がチャネルに対して行うことで、同じ JSON を受け取ります。<span class="ui">プラグイン → 発見 → ゲートウェイミドルウェア</span> にあり、そこのカードにはプロバイダかミドルウェアかが表示されます。</p>
@@ -727,7 +790,7 @@ owl plugin options model-map '{"mapping": {"fast": "deepseek/deepseek-chat"}}'</
     <h3>動き方</h3>
     <p>ミドルウェアは Bun では動きません。ゲートウェイ自身のプロセスの中で、Go で書かれた JavaScript エンジン <a href="https://github.com/MoeForge/moejs">moejs</a> によって動きます。応答は数千のイベントとしてストリームされ、各イベントがミドルウェアの処理を待つからです。1 イベントでのフック呼び出しは約 1 マイクロ秒で済みますが、Bun との往復だと数十マイクロ秒かかります。各ミドルウェアのコンパイルは一度だけで、リクエストごとに専用のランタイムを使います。そのためリクエストは並行に処理され、同じリクエストのフック同士は <code>ctx.state</code> を共有します。</p>
     <ul>
-      <li><b>宣言のしかた。</b><code>package.json</code> に <code>"owl": { "middleware": "./mw.js" }</code> と書くか、<code>*.middleware.js</code>（または <code>.mjs</code>）という名前の単一ファイルにします。<code>main</code> も <code>exports</code> もないパッケージはミドルウェア専用で、プラグインホストは読み込みません。両方あるパッケージはプロバイダプラグインとミドルウェアを兼ねます。</li>
+      <li><b>宣言のしかた。</b><code>package.json</code> に <code>"magpie": { "middleware": "./mw.js" }</code> と書くか、<code>*.middleware.js</code>（または <code>.mjs</code>）という名前の単一ファイルにします。<code>main</code> も <code>exports</code> もないパッケージはミドルウェア専用で、プラグインホストは読み込みません。両方あるパッケージはプロバイダプラグインとミドルウェアを兼ねます。</li>
       <li><b>インポート。</b>プラグイン内のファイルだけを相対パスで読み込めます。ここに <code>node_modules</code> はないので、使う依存はファイルにバンドルしてください。</li>
       <li><b>使えるもの。</b>標準の JavaScript と <code>console.log</code>（owl のログに出ます。1 分あたり最大 60 行）。タイマー、<code>fetch</code>、Node の API はありません。フックは <code>async</code> にできますが、待つ対象はありません。</li>
       <li><b>変更の反映。</b>owl はファイルと <code>plugins.json</code> を 1 秒ごとに確認し、変わっていればミドルウェアを読み込み直します。</li>
@@ -748,7 +811,7 @@ owl plugin options model-map '{"mapping": {"fast": "deepseek/deepseek-chat"}}'</
     <p>フックの持ち時間は、リクエスト、プロバイダへの 1 回の試行、または応答全体で 250 ms、1 イベントで 50 ms、読み込みで 1 秒です。例外を投げたフック、時間切れになったフック、想定外の値を返したフックは、なかったものとして扱われます。つまりリクエストやイベントは元のまま送られます。設定 → プラグインには、ミドルウェアごとのフック、呼び出し回数、1 回あたりの平均時間、失敗回数と直近のエラーが表示されます。フックが見るのは、エージェントが送ったものと受け取るものそのものです。送信時は owl のマスキングより前、受信時はマスク解除の後です。owl 自身のリクエスト（スレッドのタイトル、ルーターの分類器、エージェントのリクエストのために行うウェブ検索と画像の説明）はミドルウェアを通りません。</p>
 
     <h3 id="gateway-points"><a class="anchor" href="#gateway-points">ルーティングと使用量の行</a></h3>
-    <p>同じモジュールは <code>strategies</code> と <code>onUsage</code> もエクスポートできます。そのファイルは <code>*.gateway.js</code> と名付けてもよく、パッケージなら <code>"owl": { "gateway": "./gw.js" }</code> と書けます。</p>
+    <p>同じモジュールは <code>strategies</code> と <code>onUsage</code> もエクスポートできます。そのファイルは <code>*.gateway.js</code> と名付けてもよく、パッケージなら <code>"magpie": { "gateway": "./gw.js" }</code> と書けます。</p>
     <ul>
       <li><b>ルーティング。</b><code>strategies[name]</code> はそれぞれ <code>&lt;プラグイン&gt;/&lt;name&gt;</code> という名前のルーティングになり（パッケージの短い名前、または <code>.gateway.js</code> を除いたファイル名）、プラグインがオンの間、プロバイダ・プール・グループのルーティング選択に並びます。関数 <code>(pool, seats, options)</code> か <code>order</code> を持つオブジェクトで、席を試す順番をインデックスで返します。各席には <code>key</code>、<code>account</code>、<code>known</code>、<code>learns</code>、<code>used</code>、<code>soon</code>（枠が更新される時刻、ms）、<code>pace</code>、<code>weight</code>、<code>resting</code>、<code>tokens</code>（最近送った量）があります。持ち時間は 20 ms で、例外・時間切れ・それ以外の値のときは一覧の順に試します。オフにすると、それでルーティングするプロバイダやグループも一覧の順になります。</li>
       <li><b>使用量。</b><code>onUsage(row, options)</code> は各リクエストの終了後に使用量の行を受け取ります：プロバイダ、アカウントとキー、モデル、トークン、<code>ms</code>、<code>ttftMs</code>、ステータス、エラーの種類、コスト。本文・プロンプト・エラーの文面は含みません。別に動くのでリクエストが待つことはなく、処理中にキューがあふれた行は破棄して数えます。持ち時間は 250 ms です。</li>
@@ -808,13 +871,14 @@ claude mcp add --transport http owl-tools http://127.0.0.1:3425/mcp/owl/tools   
     <p>設定 → プラグインには各プラグインのツールがこの名前で表示され、サーバーのアドレスをコピーできます。<code>args</code> は zod のフィールド定義（<code>tool.schema</code> は zod）、zod オブジェクト、または JSON Schema オブジェクトです。エージェントにはこれが示され、owl は <code>execute</code> の前に呼び出しの引数をこれで検証します。引数が正しくなければ、その引数を示すエラーを返します。<code>ctx</code> は OpenCode と同じで、<code>agent</code> は呼び出したエージェントです。ツールの実行時間は 55 秒までで、時間切れになると <code>ctx.abort</code> が発火します。</p>
     <p>このサーバーは組み込みプラグイン <span class="ui">プラグインのツール</span> が提供します。オンのプラグインがツールを提供している間はオンのままで、オフのときはツールが一覧に出ず、呼び出しにはオフであることが返ります。ゲートウェイキーでの呼び出しはそのキーの上限に数えられます。ツールはプロバイダープラグインと同じくあなたの権限でプラグインホスト内で動き、結果は呼び出したエージェントにだけ返ります。</p>
     <p>ツールを提供するプラグインは、ライブラリの MCP タブにもそれぞれ独立したサーバーとして現れ、プラグインの短い名前（<code>search1api</code>）が付きます。アドレスを手で追加する必要はありません。<a href="mcp-router.html">MCP ルーター</a>がオンなら、そのツールはルーターを使うすべてのエージェントに <code>search1api__search</code> として出ます。ほかのライブラリのサーバーと同じく、エージェントごとにオン・オフでき、ツールを一つずつ止めることもできます。削除すると、プラグインを外して追加し直すまで戻りません。</p>
+    <p>プロバイダーのためにプラグインは残し、ツールはどのエージェントにも渡したくないときは、<span class="ui">プラグイン</span> › <span class="ui">インストール済み</span>でそのツールの行の<span class="ui">エージェントに隠す</span>を押します。サーバーはどのエージェントにも、ルーターのアドレスにつなぐアプリにも渡されず、更新、オフとオン、再起動のあとも変わりません。<span class="ui">エージェントに渡す</span>で、元のエージェントに戻ります。</p>
 
     <h2 id="agents"><a class="anchor" href="#agents">エージェントプラグイン</a></h2>
     <p>プラグインは<em>エージェント</em>を追加することもできます。owl に組み込みの設定がないエージェントです。そのエージェントがモデルをどこに書くか、owl のゲートウェイを使うために他に何を書くかを伝えます。するとエージェントは owl 自身のものと同じように<span class="ui">エージェント</span>ページに並びます。その行で owl のモデルを選ぶと、owl はモデルをゲートウェイのアドレスとエージェント専用のキーと一緒に設定へ書き込み、スイッチを切るとすべてユーザーの元の状態に戻します。下の例は <a href="https://aider.chat">Aider</a> を追加します。</p>
     <div class="code">
       <span class="lang">agent.js</span>
       <button class="copy" data-copy="ag-ex">コピー</button>
-      <pre id="ag-ex"><span class="c">// agent.js（package.json の "owl": { "agent": "./agent.js" } で指定）</span>
+      <pre id="ag-ex"><span class="c">// agent.js（package.json の "magpie": { "agent": "./agent.js" } で指定）</span>
 <span class="k">export const</span> agent = {
   id: <span class="s">"aider"</span>, name: <span class="s">"Aider"</span>, bin: <span class="s">"aider"</span>,
   config: <span class="s">"~/.aider.conf.yml"</span>,  <span class="c">// owl が編集するファイル</span>
@@ -845,15 +909,21 @@ claude mcp add --transport http owl-tools http://127.0.0.1:3425/mcp/owl/tools   
       <tr><td><code>config</code></td><td>owl が編集するファイル。<code>~</code> と <code>$VAR</code> は展開されます。なければ作成します。</td></tr>
       <tr><td><code>format</code></td><td>ファイル名から分からないときの <code>json</code>、<code>yaml</code>、<code>env</code>（<code>.json</code>/<code>.jsonc</code>、<code>.yaml</code>/<code>.yml</code>、<code>.env</code>）。TOML はまだ対応していません。</td></tr>
       <tr><td><code>model</code></td><td>ファイル内のモデルのキー。JSON と YAML ではドット区切りのパス（<code>llm.model</code>）。モデルをエージェント自身で、<code>connect</code> が書くモデルの中から選ぶ場合（Raycast など）は省略します。その行は接続スイッチだけになってモデルの選択欄は出ず、<code>connect</code>（このプラグインには必須）は <code>model</code> なしで呼ばれます。</td></tr>
+      <tr><td><code>startup</code></td><td>新しいセッションが始まるモデルを、<code>connect</code> が書くファイルとは別のファイルに置くエージェント向けで、<code>model</code> の代わりに使います。そのファイルの <code>config</code> と <code>format</code>、<code>model</code> はその中のモデルのキー、<code>keys</code> はモデルの横にそのまま書くキーです。PiG はプロバイダーを <code>models.json</code> に、既定のモデルを <code>settings.json</code> に置きます：<code>startup: { config: "~/.pig/agent/settings.json", model: "defaultModel", keys: { defaultProvider: "owl" } }</code>。行でモデルを選べるようになり、切断すると両方のファイルが元に戻ります。v0.1.3008 より前の owl はこのプラグインを <code>model</code> のないものとして読みます。</td></tr>
       <tr><td><code>prefix</code></td><td>owl のモデル id の前に書くもの。LiteLLM 経由で OpenAI 互換エンドポイントを使うエージェントなら <code>openai/</code>。id 自体はゲートウェイが受け付ける <code>&lt;プロバイダー&gt;/&lt;モデル&gt;</code> です。</td></tr>
       <tr><td><code>bin</code>、<code>dir</code></td><td>エージェントがインストール済みかを示す <code>PATH</code> 上のコマンドとフォルダー。</td></tr>
       <tr><td><code>ua</code></td><td>キーなしで来たリクエストを使用量で名付けるための、エージェントの User-Agent に含まれる語。</td></tr>
       <tr><td><code>icon</code></td><td>行のアイコン。アイコン名、<code>https://</code> または <code>data:</code> URL。省略するとプラグインのアイコン、それもなければ汎用のもの。</td></tr>
       <tr><td><code>notice</code></td><td>モデルを変えた後に表示する案内。組み込みのエージェントと同じです。</td></tr>
       <tr><td><code>library</code></td><td><span class="ui">ライブラリ</span>が渡すものをエージェントがどこで読むか：<code>instructions</code>（毎回の会話の前に読む Markdown ファイル）、<code>mcp</code>（MCP サーバーのファイル）とその書き方を表す <code>mcpFormat</code>（どのエージェントのファイルと同じ形か：<code>alma</code>, <code>antigravity</code>, <code>claude</code>, <code>cline</code>, <code>codex</code>, <code>commandcode</code>, <code>copilot</code>, <code>crush</code>, <code>cursor</code>, <code>devin</code>, <code>gemini</code>, <code>goose</code>, <code>grok</code>, <code>hermes</code>, <code>kimi</code>, <code>omp</code>, <code>opencode</code>, <code>zed</code>。<code>claude</code> は <code>{"mcpServers": {…}}</code>）、<code>skills</code>（<code>SKILL.md</code> のフォルダを置くフォルダ）。どれも省略でき、<code>~</code> と <code>$VAR</code> は展開されます：<code>library: { instructions: "~/.toy/AGENTS.md", mcp: "~/.toy/mcp.json", mcpFormat: "claude", skills: "~/.toy/skills" }</code>。書かなければライブラリからは何も渡されず、渡そうとするとプラグインが書くべきキーを示して断られます。</td></tr>
+      <tr><td><code>launch</code></td><td>起動のされ方からしかゲートウェイを読まないエージェント向け：<code>env</code> は起動時に渡す環境変数で、値はそれぞれ <code>{key}</code>、<code>{url}</code>、<code>{v1}</code> のいずれか（アドレスの後にパスを一つまで）、<code>model</code> はモデルを指定するフラグです。owl のモデルを使っている間、owl はユーザーのシェル（zsh、bash、fish、PowerShell）に <code>bin</code> の名前の関数を置き、<code>owl &lt;id&gt; run</code> でゲートウェイ経由で起動します：<code>launch: { env: { GEMINI_API_KEY: "{key}", GOOGLE_GEMINI_BASE_URL: "{url}" }, model: "--model" }</code>。自分のモデルに戻すと関数は取り除かれます。<code>args</code> はユーザーの引数の前に置くフラグで、値はどれも <code>{config}</code>（設定ファイルのパス）です：<code>args: { "--settings": "{config}" }</code>。<code>plain</code> はエージェントをゲートウェイを通さずそのまま起動する引数（サブコマンドかフラグ）です：<code>plain: ["remote-control"]</code>。</td></tr>
+      <tr><td><code>base</code></td><td><code>launch.args</code> で <code>config</code> を渡す、つまり設定ファイルが owl 専用のファイルであるエージェント向け：エージェント自身の設定ファイルです。<code>connect</code> と <code>own</code> はそれをパース済みの <code>base</code> として受け取り、ユーザー自身のモデルはそこに書き込まれ、外すときは設定ファイルごと取り除かれます：<code>base: "~/.gemini/antigravity-cli/settings.json"</code>。</td></tr>
+      <tr><td><code>merge</code></td><td>json の <code>config</code> 用：<code>connect</code> が owl のメンバーを返すオブジェクトのキーパス。ユーザー自身のメンバーの横に書き込まれ、取り除くときは owl のものだけです：<code>merge: ["customModelsConfig.customModels"]</code>。</td></tr>
+      <tr><td><code>effort</code>, <code>wsl</code>, <code>aliases</code></td><td><code>effort: true</code> でエージェントに推論の強さの欄が付きます。<code>wsl: true</code> で WSL ディストリビューションにも表示されます。<code>aliases</code> は <code>owl &lt;名前&gt;</code> が受け付ける別名です。</td></tr>
     </table></div>
     <h3>connect</h3>
-    <p><code>connect(input)</code> はモデルの横に書き込む他のキーを、キーのパスと値で返します。<code>async</code> でも構いません。受け取るのは <code>gateway</code>（<code>url</code>、<code>/v1</code> で終わる URL の <code>v1</code>、エージェント専用のキー <code>key</code>。リクエストはその id で数えられます）、<code>model</code>（<code>id</code>、<code>name</code>、<code>context</code>、<code>output</code>、<code>images</code>、<code>efforts</code>、そして <code>/v1/models</code> と同じ名前の <code>native_endpoints</code>（リクエストが変換されずにそのまま通るゲートウェイのパス、例えば <code>["/v1/chat/completions"]</code>）と <code>pricing</code>（1 トークンあたりの USD、10 進の文字列：<code>prompt</code>、<code>completion</code>、<code>input_cache_read</code>、<code>input_cache_write</code>。分からないものは含まれず、空や 0 にはなりません））、<code>models</code>（owl がエージェントに出すすべてのモデル、同じ形）、<code>agent</code>（<code>id</code>、<code>config</code>）です。<code>connect</code> がないプラグインはモデルだけを書きます。owl のモデルが変わると <code>connect</code> がもう一度呼ばれるので、書いたモデル一覧は最新のまま保たれます。</p>
+    <p><code>connect(input)</code> はモデルの横に書き込む他のキーを、キーのパスと値で返します。<code>async</code> でも構いません。受け取るのは <code>gateway</code>（<code>url</code>、<code>/v1</code> で終わる URL の <code>v1</code>、エージェント専用のキー <code>key</code>。リクエストはその id で数えられます）、<code>model</code>（<code>id</code>、<code>name</code>、<code>context</code>、<code>output</code>、<code>images</code>、<code>efforts</code>、そして <code>/v1/models</code> と同じ名前の <code>native_endpoints</code>（リクエストが変換されずにそのまま通るゲートウェイのパス、例えば <code>["/v1/chat/completions"]</code>）と <code>pricing</code>（1 トークンあたりの USD、10 進の文字列：<code>prompt</code>、<code>completion</code>、<code>input_cache_read</code>、<code>input_cache_write</code>。分からないものは含まれず、空や 0 にはなりません））、<code>models</code>（owl がエージェントに出すすべてのモデル、同じ形）、<code>decisionModels</code>（owl の判断モデル——Jev、Clef、プラグインが <code>decides</code> を付けたモデル——とそれらのルーティンググループ。<code>models</code> にも <code>/v1/models</code> にも含まれません。それぞれ <code>id</code>、<code>name</code>、<code>provider</code> または <code>group: true</code>、呼び出すパスの <code>endpoints</code>：<code>["/v1/systemone", "/v1/decisions"]</code>。なければ <code>[]</code>）、<code>agent</code>（<code>id</code>、<code>config</code>）です。<code>connect</code> がないプラグインはモデルだけを書きます。owl のモデルが変わると <code>connect</code> がもう一度呼ばれるので、書いたモデル一覧は最新のまま保たれます。</p>
+    <p><code>own({ config, base, model })</code> をエクスポートすると、行のピッカーに出すエージェント自身のモデルを返せます。パース済みの設定ファイル（ないときは <code>{}</code>。<code>base</code> があればそれも）と今のモデルを受け取り、<code>{ value, model, direct }</code> のリストを返します。<code>value</code> はモデルとして書き込む値、<code>model</code> はベンダーでの名前、<code>direct</code> は直接つながるベンダー（<code>Google</code>、<code>OpenAI</code>、<code>Anthropic</code>）です。ない場合、ピッカーには今のモデルだけが出ます。</p>
     <h3>owl がすること</h3>
     <ul>
       <li><b>書き込み。</b>各キーをその場で書き換え、ユーザーのコメントや他のキーは残します。最初に書く前に、各キーの元の値を型ごと（数値は数値のまま）取っておきます。</li>
@@ -861,7 +931,8 @@ claude mcp add --transport http owl-tools http://127.0.0.1:3425/mcp/owl/tools   
       <li><b>接続の判定。</b>owl のキーを入れたキーがまだそのキーを持っている間、行は接続中と表示します。後から手で変えられたキーは、組み込みのエージェントと同じく行に表示されます。</li>
       <li><b>実行のされ方。</b><a href="#middleware">ミドルウェア</a>と同じく、owl 自身のプロセスの moejs で動きます。インポートはプラグイン内のファイルのみ、Node API はなく、<code>console.log</code> は owl のログに出ます。読み込みと <code>connect</code> はそれぞれ 1 秒まで。モジュールが読み込めない、または <code>connect</code> が例外を投げたプラグインは、プラグインページの行に理由を表示し、何も書き込みません。</li>
       <li><b>ライブラリ。</b><code>library</code> があれば、組み込みのエージェントと同じくライブラリの中身を受け取ります：指示はファイル内の owl の目印の行の間に、MCP サーバーはユーザー自身のものと同じファイルに（ユーザーが足したフィールドは残ります）、スキルはリンクかコピーでフォルダに入ります。外すときは owl が書いた分だけを取り除き、元の内容は owl のバックアップに残ります。<code>mcpFormat</code> がリストにない、または <code>mcp</code> に <code>mcpFormat</code> がないと、プラグインは読み込まれません。</li>
-      <li><b>宣言。</b><code>package.json</code> の <code>"owl": { "agent": "./agent.js" }</code>、または <code>*.agent.js</code>（または <code>.mjs</code>）という単一ファイル。1 つのパッケージがプロバイダー、ミドルウェア、エージェントを兼ねられます。プラグインマーケットではエージェントのエントリーに <code>"kind": "agent"</code> を付け、<span class="ui">エージェント</span>の下に並びます。コミュニティのものは <code>@magpie-community/agent-&lt;name&gt;</code> と名付けます。</li>
+      <li><b>宣言。</b><code>package.json</code> の <code>"magpie": { "agent": "./agent.js" }</code>、または <code>*.agent.js</code>（または <code>.mjs</code>）という単一ファイル。1 つのパッケージがプロバイダー、ミドルウェア、エージェントを兼ねられます。プラグインマーケットではエージェントのエントリーに <code>"kind": "agent"</code> を付け、<span class="ui">エージェント</span>の下に並びます。コミュニティのものは <code>@magpie-community/agent-&lt;name&gt;</code> と名付けます。</li>
+      <li><b>ランタイムが必要なエージェント。</b>エージェントのファイルは moejs のモジュールのままで、タイマーもプラグイン外からの import もありません。エージェントにそれ以上（タイマー、ファイルの監視、アプリ自身の設定への値の反映）が必要なときは、パッケージに Bun のモジュールを <code>main</code> として加えられ、プロバイダープラグインのものと同じように動きます。それでもエージェントプラグインです。<code>owl.agent</code> を宣言したパッケージは、<code>main</code> の有無にかかわらず、GitHub のものも <span class="ui">エージェント</span> の下に並び、<span class="ui">インストール済み</span> の行にはエージェントのチップが付きます。プロバイダーのチップが付くのは、そのモジュールがプロバイダーを提供するときだけです。</li>
     </ul>
 
     <h2 id="pages"><a class="anchor" href="#pages">ウィンドウのページ</a></h2>
@@ -970,7 +1041,7 @@ document.getElementById(<span class="s">"calls"</span>).textContent = `${s.calls
     </div>
     <p><code>menu</code> は <code>provider</code> か <code>agent</code> です。<code>id</code> は小文字、数字、ハイフンで、40 文字まで。項目はプラグインごとに最大 8 個で、<code>title</code> のない項目はページのタイトルを使います。ページのないプラグインは項目を加えません。「プラグイン」ページには、プラグインがどのメニューに項目を加えるかが表示されます。</p>
     <h2 id="pi"><a class="anchor" href="#pi">pi パッケージ</a></h2>
-    <p>owl は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように owl で動き、ほかのプラグインと同じ方法で追加できます。</p>
+    <p>owl は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように owl で動き、ほかのプラグインと同じ方法で追加できます（<code>owl plugin add pi-antigravity</code>）。</p>
     <ul>
       <li><b>pi のパッケージとみなす条件。</b><code>package.json</code> に <code>pi</code> マニフェスト（<code>"pi": { "extensions": [...] }</code>）があるか、<code>pi-package</code> キーワードがあるか、<code>dependencies</code> か <code>peerDependencies</code> に <code>@earendil-works/pi-coding-agent</code>（または旧名の <code>@mariozechner/pi-coding-agent</code>）があること。単体のファイルは pi を import していれば該当します。</li>
       <li><b>読み込み。</b>owl はパッケージの隣に pi をインストールし、pi 自身のローダーで同じプラグインホストに読み込みます。登録されたプロバイダは owl のプロバイダになり、モデルは pi がそれぞれに挙げるもの（pi がアカウントごとの一覧を取得できるときはその一覧）です。コマンド、ツール、レンダラー、イベントハンドラは使いません。</li>
@@ -1013,7 +1084,7 @@ document.getElementById(<span class="s">"calls"</span>).textContent = `${s.calls
     <h3>編集内容を owl に反映させるには？</h3>
     <p>ターミナルの <code>owl</code> コマンドは、フォルダをその時点の内容で読み込みます。アプリでは、<span class="ui">プラグイン</span> でプラグインをオフにしてからオンにしてください。</p>
 
-    <p style="margin-top:48px">質問や、共有したいプラグインがありますか？ <a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に issue を立ててください。</p>
+    <p style="margin-top:48px">質問や、共有したいプラグインがありますか？ <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> で聞くか、<a href="https://github.com/magpie-community/plugins">magpie-community/plugins</a> に issue を立ててください。</p>
   </article>
 </main>
 
@@ -1028,11 +1099,20 @@ document.getElementById(<span class="s">"calls"</span>).textContent = `${s.calls
     <a href="/docs/ja/privacy">プライバシー</a>
     <a href="/docs/ja/masking">プライバシーマスキング</a>
     <a href="/docs/ja/mcp-router">MCP ルーター</a>
+    <a href="/docs/ja/library">ライブラリ</a>
+    <a href="/docs/ja/claude-code-models">Claude Code で他のモデル</a>
+    <a href="/docs/ja/codex-models">Codex で他のモデル</a>
+    <a href="/docs/ja/gemini-cli-models">Gemini CLI で他のモデル</a>
+    <a href="/docs/ja/subscriptions">サブスクを任意のエージェントで</a>
+    <a href="/docs/ja/local-models">ローカルモデル</a>
+    <a href="/docs/ja/opencode-models">OpenCode で他のモデル</a>
+    <a href="/docs/ja/alternatives">CC Switch・CCR との比較</a>
     <a href="/docs/ja/import">owl に追加</a>
     <a href="/docs/integrate">アプリ連携</a>
     <a href="https://github.com/istoo/owl">GitHub</a>
+    <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
     <a href="/docs/ja/contributors">コントリビューター</a>
-    <a href="https://github.com/istoo/owl/releases">リリース</a>
+    <a href="https://github.com/istoo/owl-releases/releases">リリース</a>
   </div>
 </div></footer>
 

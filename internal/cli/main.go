@@ -25,14 +25,17 @@ import (
 	"github.com/istoo/owl/internal/davsync"
 	"github.com/istoo/owl/internal/gateway"
 	"github.com/istoo/owl/internal/imagemcp"
+	"github.com/istoo/owl/internal/library"
 	"github.com/istoo/owl/internal/netproxy"
 	"github.com/istoo/owl/internal/notices"
+	"github.com/istoo/owl/internal/plugin"
 	"github.com/istoo/owl/internal/pluginrt"
 	"github.com/istoo/owl/internal/proc"
 	"github.com/istoo/owl/internal/profile"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/sessions"
 	"github.com/istoo/owl/internal/settings"
+	"github.com/istoo/owl/internal/shortcut"
 	"github.com/istoo/owl/internal/tui"
 	"github.com/istoo/owl/internal/update"
 )
@@ -73,6 +76,8 @@ const usage = `owl — one place to pick every agent's model
   owl restore [--no-agents] [--no-library] <file> put a backup in on this machine
                                                      --sign-ins on backup: the subscriptions' and plugins' sign-ins too, sealed (off unless given); --no-sign-ins on restore leaves them out
   owl uninstall [--yes]                           disconnect every agent, putting back what each had, then remove owl's service and files
+                                                     --keep-data: all but deleting owl's settings, providers and usage
+  owl data [move <folder>|move --home]            where owl keeps its files and cache, and moving them to another disk (a link is left where they were)
   owl webdav [on <address>|set k=v…|now|off]      the same, kept the same on every computer through a WebDAV folder (owl webdav help)
   owl s3 [on s3://<bucket>[/<prefix>]|set k=v…|now|off]   the same through an S3-compatible bucket: AWS, R2, B2, MinIO… (owl s3 help)
   owl github [on github://<owner>/<repo>[/<folder>]|set k=v…|now|off]   the same in an encrypted GitHub repository (owl github help)
@@ -89,18 +94,22 @@ const usage = `owl — one place to pick every agent's model
   owl models [<agent>]         every model agents can pick, as provider/model; an agent's, and why others aren't
   owl model name <provider/model> <name>|--reset       the name a model goes by, everywhere
   owl model efforts <provider/model> <l>,<l>|--reset   the reasoning levels a model offers (owl model help)
+  owl model api <provider/model> chat|responses|anthropic|gemini|auto   the API a model is asked on
   owl visible [<agent> <family|provider|group>,… | all | --only-picked | --show-new]
                                   which models an agent is shown: families (owl provider/group set <id> family=…),
                                   or only the models ticked for it, a new one off until it is ticked
-  owl search [add <api> <key>|rm <api>]   Tavily, Brave, Exa, Firecrawl, You.com, DeepSeek, Doubao Search (Volcengine), Yuanbao Search (Tencent Cloud) or SearXNG for web search when no provider can search
+  owl search [add <api> <key>|rm <api>]   Tavily, Brave, Exa, Firecrawl, You.com, DeepSeek, Doubao Search (Volcengine), Yuanbao Search (Tencent Cloud), TinyFish or SearXNG for web search when no provider can search
   owl groups                   routing groups: several models agents pick as one, group/<id>
-  owl group add <name> models=<m1>,<m2> [routing=smart|order|rotate|usage|pace|weight|free|fast|cheap|drain] [stays=auto|session|turn|off]
+  owl group add <name> models=<m1>,<m2> [routing=smart|order|rotate|usage|pace|weight|free|fast|cheap|drain|expiring] [stays=auto|session|turn|off]
   owl group <id> | set <id> k=v… | rm <id>   show, change or remove one (owl group help for more)
   owl accounts [agent] [--json]  every subscription owl knows, with each one's allowance used and when it resets
   owl accounts add <agent>     sign in to one more Claude, ChatGPT or Google (Gemini CLI, Antigravity) subscription
   owl accounts add copilot [--host <name>.ghe.com]   one more Copilot account, on github.com or an enterprise's GHE.com
   owl accounts discovery [on|off]   read agents' sign-ins (default on; OWL_NO_ACCOUNTS=1 disables too)
-  owl accounts import <codex|claude|antigravity|factory> <file>... [--yes]   bring in accounts from other tools' files (Codex's auth.json, Cockpit Tools, CLIProxyAPI, Sub2API, claude-swap); the tool a ChatGPT or Claude file came from is signed out of it
+  owl accounts import <codex|claude|antigravity|factory|<plugin>> <file>... [--yes]   bring in accounts from other tools' files (Codex's auth.json, Cockpit Tools, CLIProxyAPI, Sub2API, claude-swap, a plugin's own); the tool a ChatGPT or Claude file came from is signed out of it
+  owl accounts export <codex|claude> [<email>...] [--format sub2api|cliproxyapi] [--to <folder>] [--yes]   write accounts as a file Sub2API, CLIProxyAPI or owl imports (0600; holds live sign-ins)
+  owl accounts import codex <file>... --access-only   keep each ChatGPT account with its access token only: never renewed, so the tool it came from stays signed in
+  owl accounts access-only codex <email> [on|off]   keep a ChatGPT account access token only, or let owl renew its sign-in again
   owl accounts switch <agent> <email|name>   sign the agent in to another of them, by its email or the name you gave it
   owl accounts switch <claude|codex> next   to the next account in order with room, or the one with the most left
   owl accounts refresh         renew the saved ChatGPT and Claude sign-ins now (the gateway does it every 8 days)
@@ -123,16 +132,31 @@ const usage = `owl — one place to pick every agent's model
                                   --web: the service serves owl web's page too, with a key kept across restarts; installed again, it keeps what it served
   owl daemon web [on|off] [--lan] [--addr host:port]
                                   the service's page: its link, or turn it on or off
-  owl healthcheck              exit 0 when the gateway answers (a container's HEALTHCHECK)
+  owl healthcheck [--addr host:port]
+                                  exit 0 when the gateway answers (a container's HEALTHCHECK). It looks where
+                                  --addr says, else at OWL_ADDR, else where the running owl wrote down
+                                  that it listens, else at the port in Settings' Gateway address
+  owl status [--json] [--addr host:port]
+                                  which owl serves the gateway: its role (app, tray, web, serve), pid,
+                                  version and listen address, also in <config folder>/gateway.json
+  owl mtls [on|off|issue <device>|list|revoke <device>]
+                                  require a client certificate owl issued from other computers (mTLS)
+  owl https [on|off|import <files>|remove|ca]
+                                  other computers call owl at https://, with your certificate or one owl's own CA signs
   owl heap [<file>]            a Go heap profile of the running owl, with its memory numbers, for a report of it using too much memory
   owl cpu [<file>] [--seconds N]   a Go CPU profile of the running owl over 30s (5..120) while you use it, for a report of it using too much CPU
   owl goroutines [<file>]      every goroutine of the running owl, its stack and how long it waited, for a report of it stuck at something
   owl log [--path] [-n N] [-f]  where owl's logs are, to send with a report: the app's (app.log), the service's; -n prints the app log's last N lines, -f follows it
-  owl gateway-key list|add <name> [--read-only]|rotate <id>|remove <id>   manage the keys clients use to call a shared gateway
-  owl gateway-key limit <id> [list|off|reset [n]|remove <n>|[add] day|week|month|<N>d|<N>h --tokens N --cost USD --cache-reads]   a key's own limits, and what it used
+  owl gateway-key list|add <name> [--read-only]|rotate <id> [--key -]|remove <id>   manage the keys clients use to call a shared gateway
+  owl gateway-key limit <id> [list|off|reset [n]|remove <n>|[add] day|week|month|<N>d|<N>h --tokens N --cost USD --cache-reads --model openai/*]   a key's own limits, and what it used; --model counts only those models
   owl gateway-key models <id> [all|<provider>/<model>|<provider>/* ...]   the models a key may use, every one unless it names some
+  owl gateway-key accounts <id> [all|<provider>/<account>|<provider>/!<account>|@<group>|!@<group> ...]   the accounts a key may use, or keeps out
+  owl gateway-key groups [add <name> <account>...|set <group> <account>...|rename <group> <name>|remove <group>]   named account groups a key's accounts can name
   owl gateway-key quotas <id> [on|off]   whether a key held to a budget, models or accounts is told the quotas of what it may use
+  owl gateway-key concurrency <id> [<n>|off]   at most n of a key's requests at once; the rest wait their turn
+  owl gateway-key mcp <id> [all|none|<server>|<server>/<tool> ...]   the MCP servers and tools a key may use
   owl gateway-key access <id> [read-only|full]   read-only: the key reads quotas and usage (GET /, /v1/owl/quotas, /v1/owl/usage) and uses no model, MCP server or write
+  owl gateway-key admin <id> [off|local|any]   let the key manage providers, accounts and gateway keys through /v1/owl/admin/ (local: from this computer only)
   owl gateway-key move <id> <place>   put a key at a place in the list (from 1), the order list and the app show them in
   owl gateway-key issue --ttl 1h [--name n] [--models a,b] [--accounts a,b] [--tokens N] [--cost USD] [--read-only] [--from <id>] [--json]
                                          a short-lived key (1m to 30 days) that stops working by itself; --from holds it to a key that issues keys; prints the key
@@ -149,6 +173,10 @@ const usage = `owl — one place to pick every agent's model
   owl sessions --days N|today|all [--model <m>] [--folder <f>] [--json]
                                   what every session spent, day by day, with the top models and folders (7 days)
   owl sessions read [on|off all|<agent>…]   which agents' session history owl may read (none until allowed)
+  owl sessions search <words…> [--agent <a>] [--days N|today|all] [--limit N] [--json]
+                                  every agent's sessions that said those words, newest first, with where
+  owl sessions show <agent:id> [--find <words>] [--from N] [--max-chars N] [--json]
+                                  one session's conversation as text, from where the words were said
   owl quota [<provider>] [--json]  what is left of every subscription, plan and key balance
   owl quota wait <provider|account> [--timeout <d>] [--quiet]
                                   block until that subscription (any of its accounts) or account has allowance again
@@ -159,13 +187,17 @@ const usage = `owl — one place to pick every agent's model
   owl agents                   list every supported agent
   owl settings [list|get <key>|set <key> <value>|reset <key>] [--json]
                                   every setting the window's Settings page saves, read and set as it saves them (owl settings help)
-  owl update [check] [--proxy <url>] [--mirror <prefix>]
-                                  install the newest release (check: only say if there is one); --proxy: an
+  owl update [check] [--proxy <url>] [--mirror <prefix>] [--addr host:port] [--force]
+                                  install the newest release (check: only say if there is one); the running
+                                  owl is restarted into it, found by --addr, OWL_ADDR or the address it
+                                  wrote down (a service started with OWL_ADDR needs none of them); a restart waits at most 10
+                                  minutes for requests in flight, --force restarts at once; --proxy: an
                                   http(s):// or socks5:// proxy for it; --mirror: a GitHub download mirror put
                                   before the github.com URL (none unless given; still checked against github.com/istoo/owl's SHA-256)
   owl update mirror [<prefix>|off]  the mirror every update, the app's own too, is downloaded through
-  owl update channel [stable|every]  which versions updates offer: stable (one a week, an urgent one at
-                                  once) or every version as it comes out (the default)
+  owl update channel [stable|daily|every]  which versions updates offer: stable (one a week), daily (one
+                                  a day that passed its tests), an urgent one at once on both, or every
+                                  version as it comes out (the default)
   owl update auto [on|off] [download|notify] [30m|1h|6h|24h]
                                   whether the app looks for updates by itself, how often (6h), and whether
                                   it downloads one at once or only says it is out (notify: for metered networks)
@@ -206,6 +238,8 @@ func Main(v string) {
 		fmt.Fprintln(os.Stderr, "owl:", err)
 		os.Exit(1)
 	}
+	// moved to a disk that isn't connected: never an empty owl in its place
+	unreachableStop(os.Args[1:])
 	slices.Sort(ignored)
 	for _, v := range ignored {
 		fmt.Fprintf(os.Stderr, "owl: ignoring %s: not an absolute path (the programs owl starts still get it)\n", v)
@@ -231,8 +265,9 @@ func Main(v string) {
 		if msg := err.Error(); msg != "" {
 			fmt.Fprintln(os.Stderr, "owl:", msg)
 		}
-		os.Exit(code)
+		endProcess(code)
 	}
+	endProcess(0)
 }
 
 // runTUI runs the TUI, which quits on Ctrl+C and SIGTERM itself once it
@@ -282,6 +317,24 @@ var startUp = func() {
 	release()
 }
 
+// servesPages is whether owl run with args serves plugins' pages,
+// and so runs the services they talk to (plugin.ServePages): the app,
+// tray, web, serve and the TUI do; a command that does its work and
+// ends doesn't.
+func servesPages(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(args[0]), "owl:") {
+		return hasGUI
+	}
+	switch args[0] {
+	case "tui", "web", "serve", "tray", "app", "gui", "panel", "-Embedding":
+		return true
+	}
+	return false
+}
+
 func run(args []string) error {
 	// a command that saved a provider or a group ends with the agents'
 	// files written, which its save no longer waits for; and a test's run
@@ -291,9 +344,19 @@ func run(args []string) error {
 		agent.SyncCatalogSettled()
 		catalog.Changed = was
 	}()
-	// what a shell's agy runs (agy_cli.go): every argument after run is
-	// agy's, --help too, and nothing is moved or started first
-	if ok, err := agyCmd(args); ok {
+	// claude-owl (claude_launch_cli.go): every argument after run is
+	// claude's, --help too
+	if ok, err := claudeLaunchCmd(args); ok {
+		return err
+	}
+	// what a shell's agy, or another agent's function, runs
+	// (start_cli.go): every argument after run is the agent's, --help
+	// too, and nothing is moved or started first
+	if ok, err := startCmd(args); ok {
+		return err
+	}
+	// Claude Owl.app (claude_desktop_launch_cli.go), --help too
+	if ok, err := claudeDesktopLaunchCmd(args); ok {
 		return err
 	}
 	// before anything is read, moved or started: --help on any command
@@ -303,11 +366,21 @@ func run(args []string) error {
 		return nil
 	}
 	if len(args) > 0 && args[0] == "healthcheck" {
-		return healthcheck() // every few seconds in a container: nothing else
+		return healthcheck(args[1:]) // every few seconds in a container: nothing else
 	}
 	if len(args) > 0 && args[0] == "heap" {
 		// the running owl's heap profile: asks it, and moves nothing here
 		return heapCmd(args[1:])
+	}
+	if len(args) > 0 && args[0] == "mtls" {
+		// owl's CA and the client certificates it issued: nothing
+		// else is read or moved
+		return mtlsCmd(args[1:])
+	}
+	if len(args) > 0 && args[0] == "https" {
+		// HTTPS for other computers: the setting, the certificate and
+		// owl's CA, nothing else
+		return httpsCmd(args[1:])
 	}
 	if len(args) > 0 && args[0] == "cpu" {
 		// the running owl's CPU profile: asks it, and moves nothing here
@@ -348,6 +421,12 @@ func run(args []string) error {
 			if len(args) > 1 && args[1] == "vision" {
 				return browsermcp.RunVision(args[2:])
 			}
+			if len(args) > 1 && args[1] == "memory" {
+				return browsermcp.RunMemory(args[2:])
+			}
+			if len(args) > 1 && args[1] == "sessions" {
+				return browsermcp.RunSessions(args[2:])
+			}
 			return imagemcp.Run(args[1:])
 		case "claude-mcp-helper": // internal: stdio MCP subprocess spawned by Claude Code
 			return claudebridge.RunMCP(args[1:])
@@ -365,6 +444,8 @@ func run(args []string) error {
 			return toolCmd(args[1:])
 		case codexrelay.Command: // internal: what a quitting owl leaves for Codex's open threads
 			return codexrelay.Main(args[1:], gateway.CodexRelay())
+		case "data": // where owl's files are, and moving them: before anything is made in them
+			return dataCmd(args[1:])
 		case "uninstall":
 			// what the app starts as it quits from Settings › Uninstall
 			// owl: nothing is made again before its folders go
@@ -379,6 +460,13 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "serve" && plainServe(args[1:]) {
 		awaitGatewayFree(gatewayFreeEvery)
 	}
+	// a command that serves no pages starts a plugin host beside the
+	// app's, whose page services it leaves to the app (#5187)
+	plugin.ServePages(servesPages(args))
+	// the app started again to move owl's folders (Settings › General)
+	if servesPages(args) {
+		movePending()
+	}
 	startUp()
 	// a provider added, edited or removed, or a list fetched anew, reaches
 	// the model lists agents keep in files of their own, behind the save
@@ -387,6 +475,9 @@ func run(args []string) error {
 	// a model Claude Code names that owl doesn't serve goes to the one
 	// it is set to use for that tier
 	gateway.StandIn = agent.StandIn
+	// a bare name an agent asks for goes to its own subscription, unless
+	// owl set the agent to the group owl found by that name
+	gateway.SetToGroup = agent.SetToGroup
 	// and its auto mode classifier, on a sonnet tier that follows a main
 	// model /model has moved, to the model it moved to
 	gateway.ClassifierStandIn = agent.ClassifierStandIn
@@ -400,6 +491,7 @@ func run(args []string) error {
 	// for on a model of its own, on the model of owl's picked beside
 	// its ChatGPT sign-in rather than on that account (atom_Ray on X)
 	gateway.CodexSideModel = agent.CodexSideModel
+	gateway.CodexModelNow = agent.CodexModelNow
 	gateway.CodexSideSet = agent.CodexSideSet
 	// the list the Codex app reads from a file beside the ChatGPT sign-in,
 	// its picker showing owl's models only so (laddieyao on Discord),
@@ -417,13 +509,22 @@ func run(args []string) error {
 	// and Cursor Private Inference's variables, which the Mac's launchd
 	// forgets at a restart, for the gateway's address now
 	gateway.WhileServing = append(gateway.WhileServing, agent.KeepCursorLocalEnv)
+	// and owl's models in OpenMausBot's engine, which OpenMausBot
+	// writes back as it held them when an engine is changed in it
+	gateway.WhileServing = append(gateway.WhileServing, agent.KeepOpenMausBotListed)
 	// and Claude Science's daemon, which a restart of the computer ends,
 	// started on the gateway again while it is connected
 	gateway.WhileServing = append(gateway.WhileServing, agent.KeepClaudeScience)
+	// and every agent's own telemetry off while Settings › Privacy says so,
+	// an agent found since too
+	gateway.WhileServing = append(gateway.WhileServing, agent.KeepTelemetryAllOff)
 	// and the Claude Code owl downloaded for a machine with none (a
 	// server's, a container's), at Claude Code's newest release: its runs
 	// turn its own updater off
 	gateway.WhileServing = append(gateway.WhileServing, claudecode.KeepCurrent)
+	// and the library's skills from GitHub and git repositories, fetched
+	// again by themselves when that is switched on (0xYaCo on X)
+	gateway.WhileServing = append(gateway.WhileServing, library.KeepSkillsCurrent)
 	// and the request archive, when it is on, goes to the bucket sync is to
 	gateway.ArchiveBucket = func() (gateway.Putter, bool) {
 		if b, ok := davsync.S3Bucket(); ok {
@@ -431,6 +532,9 @@ func run(args []string) error {
 		}
 		return nil, false
 	}
+	// and kept there under its size, a bucket grown before that brought
+	// under it once the gateway starts
+	gateway.WhileServing = append(gateway.WhileServing, gateway.KeepBucketArchiveBounded)
 	if len(args) == 0 {
 		if hasGUI {
 			return runGUI(true, "")
@@ -537,6 +641,8 @@ func run(args []string) error {
 		return sessionsCmd(args)
 	case "quota", "quotas":
 		return quotaCmd(args)
+	case "status":
+		return statusCmd(args[1:])
 	case "update":
 		return updateCmd(args)
 	case "library", "lib":
@@ -546,6 +652,11 @@ func run(args []string) error {
 	case "restore":
 		return restoreCmd(args[1:])
 	case "uninstall":
+		// Windows' Installed apps: the app's window asks (shortcut.UninstallArgs)
+		if hasGUI && slices.Equal(args, shortcut.UninstallArgs) {
+			gateway.Serves = "app"
+			return runUninstallWindow()
+		}
 		return uninstallCmd(args[1:])
 	case "webdav", "dav":
 		return webdavCmd(args[1:])
@@ -881,7 +992,12 @@ func list(agents []*agent.Agent, detectedOnly bool, dimFrom int) error {
 	return nil
 }
 
-func tilde(p string) string { return appdir.Tilde(p) }
+func tilde(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, home) {
+		return "~" + p[len(home):]
+	}
+	return p
+}
 
 func profiles(args []string) error {
 	switch args[0] {

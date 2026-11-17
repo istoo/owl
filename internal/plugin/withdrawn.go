@@ -6,9 +6,9 @@ import (
 	"slices"
 )
 
-// Withdrawal is an official package owl gives to nobody new: a user who
-// has it keeps it, updated as before, and is told the risk and what to use
-// instead; everyone else is turned away at Add.
+// Withdrawal is an official package owl gives to nobody new: a user
+// who has it keeps it, updated as before, and is told the risk and what
+// to use instead; everyone else is turned away at Add.
 type Withdrawal struct {
 	// ID and Name are the provider the package serves
 	ID   string `json:"id"`
@@ -32,8 +32,8 @@ func WithdrawnOf(name string) (Withdrawal, bool) {
 	return w, ok
 }
 
-// WithdrawnKept are the withdrawn packages this owl still has listed, on
-// or off: their users, who are told the risk.
+// WithdrawnKept are the withdrawn packages this owl still has listed,
+// on or off: their users, who are told the risk.
 func WithdrawnKept() []Withdrawal {
 	var out []Withdrawal
 	for _, e := range Load().Plugins {
@@ -53,8 +53,8 @@ func KeepWithdrawn(ctx context.Context) context.Context {
 	return context.WithValue(ctx, keepWithdrawnKey{}, true)
 }
 
-// RefuseWithdrawn turns away an add of a withdrawn package that this owl
-// doesn't have listed already.
+// RefuseWithdrawn turns away an add of a withdrawn package that this
+// owl doesn't have listed already.
 func RefuseWithdrawn(ctx context.Context, spec string) error {
 	if IsPath(spec) || ctx.Value(keepWithdrawnKey{}) != nil {
 		return nil

@@ -7,27 +7,63 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/istoo/owl/internal/access"
 	"github.com/istoo/owl/internal/gwmw"
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/masking"
 	"github.com/istoo/owl/internal/maskrec"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/settings"
 )
 
-// redactedHits masks a request's secrets, as the settings say, before it
-// goes to a vendor, and wraps w so what the vendor answers has them back;
-// done writes what the wrapper still holds. Nothing masked, nothing
-// wrapped. It fails closed: masking wanted with no masker serving, or a
-// masker that fails, is an error, and the request goes nowhere
-// (gwmw.Masking). hits is what it swapped, for the record of it
+// maskingFor is the masker for a request whose caller is ctx's, and the
+// ctx to mask on. A key's own setting (access.Key.Redact, y0ngb1n on X)
+// holds where Settings › Privacy says otherwise: off sends the key's
+// requests as they are, on masks them with the settings' own rules, or the
+// default ones (masking.WithForced) where the settings mask nothing. A
+// request with no key follows the settings. Every place that masks what
+// goes to a vendor asks here. Fail closed: a forced pass needs a masker
+// that reads ctx, and one that doesn't is an error.
+func maskingFor(ctx context.Context) (context.Context, gwmw.Masker, error) {
+	switch access.Caller(ctx).Redact {
+	case access.RedactOff:
+		return ctx, nil, nil
+	case access.RedactOn:
+		if !redactionWanted() {
+			m, err := gwmw.Masking(true)
+			if err != nil {
+				return ctx, nil, err
+			}
+			if _, ok := m.(gwmw.ContextTeller); !ok {
+				return ctx, nil, gwmw.ErrUnmasked
+			}
+			return masking.WithForced(ctx), m, nil
+		}
+	}
+	m, err := gwmw.Masking(redactionWanted())
+	return ctx, m, err
+}
+
+// redacted masks a request's secrets, as the settings say, before it goes
+// to a vendor, and wraps w so what the vendor answers has them back; done
+// writes what the wrapper still holds. Nothing masked, nothing wrapped. It
+// fails closed: masking wanted with no masker serving, or a masker that
+// fails, is an error, and the request goes nowhere (gwmw.Masking).
+func redacted(ctx context.Context, w http.ResponseWriter, body []byte) (http.ResponseWriter, []byte, func(), error) {
+	w, body, done, _, err := redactedHits(ctx, w, body)
+	return w, body, done, err
+}
+
+// redactedHits is redacted with what it swapped, for the record of it
 // (noteMasked). A masker that waits (for the local model's turn) stops
 // waiting when ctx ends, and the request goes nowhere.
 func redactedHits(ctx context.Context, w http.ResponseWriter, body []byte) (http.ResponseWriter, []byte, func(), maskHits, error) {
-	m, err := gwmw.Masking(redactionWanted())
+	ctx, m, err := maskingFor(ctx)
 	if m == nil {
 		return w, body, func() {}, maskHits{}, err
 	}
@@ -84,9 +120,15 @@ func toldBack(rw http.ResponseWriter, done func(), h *maskHits) func() {
 	}
 }
 
-// redactedPromptHits masks a parsed image or video prompt before any vendor
+// redactedPrompt masks a parsed image or video prompt before any vendor
 // body is built, including multipart forms, and restores the reply's text.
-// It fails closed as redactedHits does, and gives what it swapped.
+// It fails closed as redacted does.
+func redactedPrompt(ctx context.Context, w http.ResponseWriter, prompt string) (http.ResponseWriter, string, func(), error) {
+	w, masked, done, _, err := redactedPromptHits(ctx, w, prompt)
+	return w, masked, done, err
+}
+
+// redactedPromptHits is redactedPrompt with what it swapped.
 func redactedPromptHits(ctx context.Context, w http.ResponseWriter, prompt string) (http.ResponseWriter, string, func(), maskHits, error) {
 	m, masked, h, err := maskTextHits(ctx, prompt)
 	if err != nil || m == nil { // masking off: nothing to put back
@@ -101,11 +143,18 @@ func redactedPromptHits(ctx context.Context, w http.ResponseWriter, prompt strin
 	return rw, masked, done, h, nil
 }
 
-// maskTextHits is s masked as the settings say, with the masker that
-// masked it and how many values it swapped. Its wait for the local model
-// ends with ctx, as redactedHits' does.
+// maskedText is s masked as the settings say, and how many values it
+// swapped; an error when it can't be (fail closed).
+func maskedText(ctx context.Context, s string) (string, int, error) {
+	_, masked, h, err := maskTextHits(ctx, s)
+	return masked, h.n, err
+}
+
+// maskTextHits is maskedText with the masker that masked it and what it
+// swapped. Its wait for the local model ends with ctx, as redactedHits'
+// does.
 func maskTextHits(ctx context.Context, s string) (gwmw.Masker, string, maskHits, error) {
-	m, err := gwmw.Masking(redactionWanted())
+	ctx, m, err := maskingFor(ctx)
 	if m == nil {
 		return nil, s, maskHits{}, err
 	}
@@ -202,20 +251,125 @@ func restoring(w http.ResponseWriter) (http.ResponseWriter, func()) {
 	return w, func() {}
 }
 
+// maskedAsKey holds, on a request masked here or by the owl that
+// passed it on, what it was masked by (ownMaskedAs).
+type maskedAsKey struct{}
+
+// withMaskedAs is r noted as masked by the settings fp names, which a
+// remote owl it is passed on to is told (passOnCaller); r as it is
+// for "".
+func withMaskedAs(r *http.Request, fp string) *http.Request {
+	if fp == "" {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), maskedAsKey{}, fp))
+}
+
+// maskedAsOf is the fingerprint ctx's request was masked by, "" for one
+// not masked.
+func maskedAsOf(ctx context.Context) string {
+	fp, _ := ctx.Value(maskedAsKey{}).(string)
+	return fp
+}
+
+// maskedBefore says r came from another owl that masked it already by
+// the settings this one masks by (MaskedAsHeader): masking it again here
+// finds nothing the first pass left, and costs the request another run of
+// the rules and the local model (YeYaka88 on X). It goes on masked as it
+// came, and that owl puts its values back in the answer. A owl
+// whose settings differ masks it again by its own, and one that masks
+// nothing never says so. A client can send the header only with a key
+// this owl takes, and only for its own request: what it leaves
+// unmasked is its own.
+//
+// A owl that sends a request masked by its own model as written
+// (Settings › Privacy's route, maskRouteFor) needs its own pass to know
+// there was something to mask, so it masks again.
+func maskedBefore(r *http.Request) (string, bool) {
+	c := callerOf(r)
+	if c.maskedAs == "" || MaskRoute(strings.TrimSpace(settings.Shared().RedactRouteTo)) {
+		return "", false
+	}
+	fp := ownMaskedAs(r.Context())
+	if fp == "" {
+		return "", false
+	}
+	// goes on as told: the build that masked it is the one a further
+	// owl judges by
+	return c.maskedAs, sameMasking(fp, c.maskedAs)
+}
+
+// maskerSince is the first build whose masker finds what this one does: a
+// request masked by the same settings (masking.Fingerprint) by a build
+// from it on needs no second pass, whichever of the two is newer (Luxzinw
+// on X: 0.1.3771 into 0.1.3638 masked twice, the version being part of
+// what had to match). Raise it with the commit that makes the masker find
+// something more, so a request from an older build is masked again.
+const maskerSince = 3584
+
+// sameMasking says a request masked as told (maskedAs, a sender's
+// ownMaskedAs) needs no pass by own's settings: the same settings
+// (masking.Fingerprint) and a masker of the sender's build no older than
+// maskerSince. A build that isn't a release's, or one older than it, or a
+// header of another form, masks again.
+func sameMasking(own, told string) bool {
+	_, ownFP, ok1 := strings.Cut(own, "/")
+	ver, fp, ok2 := strings.Cut(told, "/")
+	if !ok1 || !ok2 || fp == "" || fp != ownFP {
+		return false
+	}
+	if told == own {
+		return true
+	}
+	return buildOf(ver) >= maskerSince
+}
+
+// buildOf is the release number of a version as 0.1.3771, v0.1.3771 or
+// v0.1.3771-dirty names it, 0 for any other.
+func buildOf(v string) int {
+	m := buildRe.FindStringSubmatch(v)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+var buildRe = lazyre.New(`^v?0\.1\.(\d{1,7})(?:$|[-+])`)
+
+// ownMaskedAs names what this owl masks a request by: its masking
+// settings (masking.Fingerprint) and the masker's code, this build's
+// version, since a newer one can find what an older one let by. "" when
+// it masks nothing.
+func ownMaskedAs(ctx context.Context) string {
+	if access.Caller(ctx).Redact != "" {
+		// a key's own setting: the settings' fingerprint isn't what masked
+		// it (off masked nothing, on may have masked by the defaults)
+		return ""
+	}
+	fp := masking.Fingerprint(settings.Shared())
+	if fp == "" {
+		return ""
+	}
+	return Version + "/" + fp
+}
+
 // redactionWanted: the settings ask for something to be masked. The
 // masking itself is served by the redact plugin (plugins/redact); this is
 // the core's own reading, so a request isn't sent unmasked when the plugin
 // isn't there to mask it.
-func redactionWanted() bool {
-	s, err := settings.LoadChecked()
-	if err != nil {
-		// a failed read is unknown, never "off": the settings say masking,
-		// and sending the user's text as written is the worse error
-		// (LESSONS: a failed read means unknown; gwmw.Masking then fails
-		// closed when no masker serves)
+func redactionWantedFor(ctx context.Context) bool {
+	switch access.Caller(ctx).Redact {
+	case access.RedactOff:
+		return false
+	case access.RedactOn:
 		return true
 	}
-	return masking.Wanted(s)
+	return redactionWanted()
+}
+
+func redactionWanted() bool {
+	return masking.Wanted(settings.Shared())
 }
 
 // maskedQuery masks a web search's query, as the settings say, before it
@@ -282,34 +436,51 @@ func (l *laterMasked) body() []byte {
 	return l.b
 }
 
-// unredactedRoute says a request resolved to p, or to the group whose
-// models are ms, goes only where the user set requests to go unmasked
-// (provider.SkipsRedaction): p and each of its fallbacks, or every model of
-// the group (a member's own fallbacks are not the group's, see planGroup).
-// One that may go on to anyone else stays masked for all of them.
-func unredactedRoute(p provider.Provider, isGroup bool, ms []provider.Member) bool {
+// unredactedRoute says a request resolved to model of p, or to the group
+// whose models are ms, goes only where the user set requests to go
+// unmasked (provider.SkipsRedaction, or a group's Redact): p and each of
+// its fallbacks, the groups built around the model that it goes on to when
+// it can't take the request (provider.GroupsAfter, for a model named), or
+// every model of the group (a member's own fallbacks are not the group's,
+// see planGroup). One that may go on to anyone else stays masked for all
+// of them. model is "" for a route with none to name.
+func unredactedRoute(p provider.Provider, model string, isGroup bool, ms []provider.Member) bool {
 	if isGroup {
-		if len(ms) == 0 {
-			return false
-		}
-		for _, m := range ms {
-			if !m.Provider.SkipsRedaction() {
-				return false
-			}
-		}
-		return true
+		return unmaskedMembers(ms)
 	}
 	if !p.SkipsRedaction() {
 		return false
 	}
-	// one that resolves to nothing isn't tried (plan); a routing group
-	// among them is each of its members
-	for _, m := range provider.FallbackModels(p) {
-		if !m.Provider.SkipsRedaction() {
-			return false
+	after := afterMembers(p, model)
+	return len(after) == 0 || unmaskedMembers(after)
+}
+
+// afterMembers are the models a request to model of p may go on to: its
+// fallbacks (a routing group among them is each of its members; one that
+// resolves to nothing isn't tried, see plan) and the members of the groups
+// built around it (provider.GroupsAfter), each as its groups' Redact has
+// it.
+func afterMembers(p provider.Provider, model string) []provider.Member {
+	ms := provider.FallbackModels(p)
+	if model == "" {
+		return ms
+	}
+	for _, gid := range provider.GroupsAfter(p.ID + "/" + model) {
+		if !slices.Contains(p.Fallback, gid) {
+			_, gms, _ := provider.FallbackGroup(gid)
+			ms = append(ms, gms...)
 		}
 	}
-	return true
+	return ms
+}
+
+// unmaskedMembers says every model in ms, the ones a picture, a video, a
+// group or a vendor's own route may go to, goes as written: its provider
+// is one the user set to go unmasked (provider.SkipsRedaction), or its
+// group says so (Group.Redact), so the request goes as written, as a
+// chat's does on such a route (unredactedRoute). None is masked.
+func unmaskedMembers(ms []provider.Member) bool {
+	return len(ms) > 0 && !slices.ContainsFunc(ms, func(m provider.Member) bool { return !m.Unmasked() })
 }
 
 // maskedFor is ctx for masking a request resolved to p, or to the group
@@ -318,11 +489,11 @@ func unredactedRoute(p provider.Provider, isGroup bool, ms []provider.Member) bo
 // on that route before goes on it again as it went (masking.WithRoute),
 // so a prefix a vendor cached isn't rewritten by what was found in it
 // since; another route masks it afresh.
-func maskedFor(ctx context.Context, p provider.Provider, isGroup bool, ms []provider.Member) context.Context {
+func maskedFor(ctx context.Context, p provider.Provider, model string, isGroup bool, ms []provider.Member) context.Context {
 	var ids []string
 	if !isGroup {
 		ids = append(ids, p.ID)
-		ms = provider.FallbackModels(p)
+		ms = afterMembers(p, model)
 	}
 	for _, m := range ms {
 		ids = append(ids, m.Provider.ID)
@@ -364,7 +535,7 @@ func MaskRoute(id string) bool {
 		return false
 	}
 	_, ms, isGroup := provider.FindGroup(id)
-	return unredactedRoute(p, isGroup, ms)
+	return unredactedRoute(p, model, isGroup, ms)
 }
 
 // maskRouteFor is the model the user set for an agent's request that
@@ -383,10 +554,10 @@ func maskRouteFor(r *http.Request, h maskHits) string {
 	if !MaskRoute(to) {
 		return ""
 	}
-	if who, held := keyHolds(r); held {
+	if who, held := keyHolds(r); held || withGatewayKey(r) {
 		p, model, _ := provider.Resolve(to)
 		g, ms, isGroup := provider.FindGroup(to)
-		if isGroup && !groupAllowed(who, g, ms) || !isGroup && !modelAllowed(who, p, model) {
+		if isGroup && !groupGiven(r, who, held, g, ms) || held && !isGroup && !modelAllowed(who, p, model) {
 			return ""
 		}
 	}

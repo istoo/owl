@@ -88,13 +88,11 @@ func (p *Provider) remoteOwlEndpoints() {
 	if root == "" {
 		return
 	}
-	if !strings.Contains(root, "://") {
-		root = "http://" + root
-	}
+	root = strings.TrimRight(WithScheme(root, "http"), "/")
 	for _, suf := range []string{
 		"/v1/messages/count_tokens", "/v1/messages",
 		"/v1/chat/completions", "/v1/responses", "/v1/systemone",
-		"/v1/embeddings", "/v1/rerank",
+		"/v1/embeddings", "/v1/rerank", "/v1/decisions",
 		"/v1/audio/transcriptions", "/v1/audio/translations", "/v1/audio/speech",
 		"/v1/images/generations", "/v1/images/edits",
 		"/v1/videos", "/v1",
@@ -182,4 +180,19 @@ func (p Provider) remotePrice(model string) (catalog.Price, bool) {
 func (p Provider) RemotePriced(model string) bool {
 	_, ok := p.remotePrice(model)
 	return ok
+}
+
+// RemoteVia is the owls a remote owl's model passes through to its
+// vendor, as its list said, that owl last (catalog's magpie_via.go);
+// nil for another provider's, or a list from a owl from before.
+func (p Provider) RemoteVia(model string) []string {
+	if !p.IsRemoteOwl() {
+		return nil
+	}
+	for _, m := range p.liveByID(model) {
+		if len(m.Via) > 0 {
+			return m.Via
+		}
+	}
+	return nil
 }

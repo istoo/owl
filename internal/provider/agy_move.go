@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/istoo/owl/internal/plugin"
-	"github.com/istoo/owl/internal/proc"
 	"github.com/istoo/owl/internal/settings"
 )
 
@@ -27,15 +25,6 @@ const (
 	// 0.1.68: auth.import takes the old plugin's sign-ins
 	agyCLIMin = "0.1.68"
 )
-
-// agyManual is how a person installs the agy CLI, from its vendor's
-// installer page as the plugin's install.mjs names it.
-func agyManual() string {
-	if runtime.GOOS == "windows" {
-		return "irm https://antigravity.google/cli/install.ps1 | iex"
-	}
-	return "curl -fsSL https://antigravity.google/cli/install.sh | bash"
-}
 
 // agyMoving are the Antigravity accounts agy-cli doesn't have yet, as the
 // withdrawn plugin keeps them: its own sign-ins, then the built-in's that
@@ -118,11 +107,9 @@ func AgyMoveUsers() []string {
 }
 
 // MoveToAgy brings Antigravity's accounts into agy-cli: the plugin
-// installed (or brought up to the version that takes them), then each
-// account handed to its import, which keeps one agy refuses as failed by
-// name. The old sign-ins are left as they are. agy itself is the user's
-// own CLI, installed and signed in already: owl's plugin host is where a
-// plugin installs it, and the move says so when it is missing.
+// installed (or brought up to the version that takes them) and agy with
+// it, then each account checked with agy and kept as agy-cli's. The old
+// sign-ins are left as they are; one agy refuses is said, not moved.
 func MoveToAgy(ctx context.Context) ([]ImportedAccount, error) {
 	accts := agyMoving()
 	if len(accts) == 0 {
@@ -145,31 +132,21 @@ func MoveToAgy(ctx context.Context) ([]ImportedAccount, error) {
 		return nil, fmt.Errorf("%s takes no Antigravity accounts", agyCLIPackage)
 	}
 	forgetAccountCaches()
-	if _, err := agyPath("agy"); err != nil {
-		return nil, fmt.Errorf("Antigravity CLI (agy) isn't installed: install it first (`%s`), sign in, and move the accounts again", agyManual())
+	if PluginCLIMissing(agyCLIID) != "" {
+		if err := installAgy(ctx, agyCLIID); err != nil {
+			return nil, err
+		}
 	}
 	text, err := json.Marshal(accts)
 	if err != nil {
 		return nil, err
 	}
-	got, err := importPlugin(ctx, PluginID(agyCLIID), []string{string(text)})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ImportedAccount, 0, len(got))
-	for i, r := range got {
-		user := r.User
-		if user == "" {
-			user = fmt.Sprintf("#%d", i+1)
-		}
-		out = append(out, ImportedAccount{User: user, Status: r.Status, Error: r.Error})
-	}
-	return out, nil
+	return importPlugin(ctx, PluginID(agyCLIID), []string{string(text)})
 }
 
-// importPlugin and agyPath are plugin.ImportFiles and proc.LookPath, for
-// tests to stand in for.
+// installAgy and importPlugin are InstallPluginCLI and ImportPluginFiles,
+// for tests to stand in for.
 var (
-	importPlugin = plugin.ImportFiles
-	agyPath      = proc.LookPath
+	installAgy   = InstallPluginCLI
+	importPlugin = ImportPluginFiles
 )

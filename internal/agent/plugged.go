@@ -7,13 +7,16 @@ package agent
 // returns (where the gateway is, its key). What the user had under every
 // key owl writes is stashed first and put back when owl steps out,
 // so a plugin needs no code for that. The plugin says only where things
-// go; owl does every write, to the one file the plugin names.
+// go; owl does every write, to the one file the plugin names, and to
+// the file of its startup model when it keeps that apart (PiG's
+// settings.json beside its models.json, agentplug.Startup).
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -23,6 +26,7 @@ import (
 	"github.com/istoo/owl/internal/gateway"
 	"github.com/istoo/owl/internal/plugin"
 	"github.com/istoo/owl/internal/provider"
+	"github.com/istoo/owl/internal/update"
 	"github.com/istoo/owl/internal/usage"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/jsonc"
@@ -58,6 +62,10 @@ type pluggedStash struct {
 	// before them has neither, and its file's name says its format
 	Spec   string `json:"spec,omitempty"`
 	Format string `json:"format,omitempty"`
+	// Made are the objects a merge key sits in (and the key itself) that
+	// the file didn't have before owl's first write, shallowest
+	// first: each is taken out again when it is left empty
+	Made []string `json:"made,omitempty"`
 }
 
 // PluginErrors is why an agent a plugin adds isn't listed, by plugin
@@ -96,7 +104,7 @@ func pluggedAgents(home string, builtin []*Agent, errs map[string]string) []*Age
 			}
 			continue
 		}
-		out = append(out, plugged(home, p))
+		out = append(out, plugged(here(home), p))
 	}
 	return out
 }
@@ -110,12 +118,16 @@ func PluginPath(p string) string {
 
 // pluggedPath is the file a plugin names, with ~ and $VAR as a shell
 // reads them.
-func pluggedPath(home, p string) string {
+func pluggedPath(home, p string) string { return pluggedPathEnv(home, p, os.Getenv) }
+
+// pluggedPathEnv is pluggedPath with the variables getenv gives: none in
+// a WSL distro, whose variables owl can't read.
+func pluggedPathEnv(home, p string, getenv func(string) string) string {
 	p = os.Expand(p, func(k string) string {
 		if k == "HOME" {
 			return home
 		}
-		return os.Getenv(k)
+		return getenv(k)
 	})
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		p = filepath.Join(home, p[1:])
@@ -202,6 +214,40 @@ func (f pluggedFile) del(keys []string) error {
 	return edit.DelEnvFile(f.path, keys...)
 }
 
+// put writes kvs into f, keeping in st.Had what each key held before
+// owl's first write, and puts back what the user had under a key
+// owl wrote before and kvs no longer has.
+func (f pluggedFile) put(st *pluggedStash, kvs []edit.KV) error {
+	wrote := map[string]bool{}
+	for _, kv := range kvs {
+		wrote[kv.Path] = true
+		if _, ok := st.Had[kv.Path]; ok {
+			continue
+		}
+		if v, ok := f.raw(kv.Path); ok {
+			st.Had[kv.Path] = v
+		} else {
+			st.Had[kv.Path] = "\x00"
+		}
+	}
+	var del []string
+	for _, k := range sortedKeys(st.Had) {
+		if wrote[k] {
+			continue
+		}
+		if v := st.Had[k]; v == "\x00" {
+			del = append(del, k)
+		} else {
+			kvs = append(kvs, edit.KV{Path: k, Value: f.back(v)})
+		}
+		delete(st.Had, k)
+	}
+	if err := f.del(del); err != nil {
+		return err
+	}
+	return f.set(kvs)
+}
+
 // wired says the agent id's file is still as owl wired it, by st: the
 // gateway's key owl wrote is there.
 func (f pluggedFile) wired(id string, st pluggedStash) bool {
@@ -230,21 +276,94 @@ func (f pluggedFile) restore(key string, st pluggedStash) error {
 	if err := f.set(kvs); err != nil {
 		return err
 	}
+	for i := len(st.Made) - 1; i >= 0; i-- {
+		if v, ok := f.raw(st.Made[i]); ok && emptyObject(v) {
+			if err := f.del(st.Made[i : i+1]); err != nil {
+				return err
+			}
+		}
+	}
 	forget(key)
 	return nil
 }
 
-// plugged is the Agent of a plugin's agent at home.
-func plugged(home string, p *agentplug.Agent) *Agent {
+// emptyObject says raw JSON v is {}.
+func emptyObject(v string) bool {
+	var m map[string]json.RawMessage
+	return json.Unmarshal([]byte(v), &m) == nil && m != nil && len(m) == 0
+}
+
+// merged writes each object out has under one of merge's keys member by
+// member, beside what the user has there; the rest of out as it is.
+func merged(out map[string]any, merge []string) []edit.KV {
+	var kvs []edit.KV
+	for _, m := range merge {
+		// connect's objects come as their JSON text (agentplug.keys)
+		var obj map[string]json.RawMessage
+		switch v := out[m].(type) {
+		case json.RawMessage:
+			if json.Unmarshal(v, &obj) != nil || obj == nil {
+				continue
+			}
+		case map[string]any:
+			obj = map[string]json.RawMessage{}
+			for k, x := range v {
+				b, _ := json.Marshal(x)
+				obj[k] = b
+			}
+		default:
+			continue
+		}
+		delete(out, m)
+		for _, k := range sortedKeys(obj) {
+			kvs = append(kvs, edit.KV{Path: m + "." + gjson.Escape(k), Value: obj[k]})
+		}
+	}
+	return kvs
+}
+
+// made are the objects of merge's keys, and those they sit in, that f
+// doesn't have, shallowest first.
+func (f pluggedFile) made(merge []string) []string {
+	var out []string
+	for _, m := range merge {
+		parts := strings.Split(m, ".")
+		for i := range parts {
+			k := strings.Join(parts[:i+1], ".")
+			if _, ok := f.raw(k); !ok && !slices.Contains(out, k) {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
+// plugged is the Agent of a plugin's agent at a place: this machine's
+// home, or a WSL distro's for one that says wsl.
+func plugged(at place, p *agentplug.Agent) *Agent {
 	d := p.Desc
 	id := d.ID
-	f := pluggedFile{pluggedPath(home, d.Config), d.Format}
+	home := at.home
+	distro := at.sys != nil
+	ppath := func(s string) string { return pluggedPath(home, s) }
+	if distro {
+		ppath = func(s string) string { return at.open(pluggedPathEnv(home, s, func(string) string { return "" })) }
+	}
+	f := pluggedFile{ppath(d.Config), d.Format}
 	key := "plugin:" + id + ":" + f.path
-	at := here(home)
+	// bf: the agent's own settings file, where config is owl's alone
+	// (agentplug.Desc.Base): the user's model is there off owl
+	var bf *pluggedFile
+	if d.Base != "" {
+		bf = &pluggedFile{ppath(d.Base), d.Format}
+	}
 	saved := func() (pluggedStash, bool) {
 		var st pluggedStash
 		v := stashShared()[key]
-		return st, v != "" && json.Unmarshal([]byte(v), &st) == nil
+		if v == "" {
+			return handedOver(id, at, f, p.Spec, key)
+		}
+		return st, json.Unmarshal([]byte(v), &st) == nil
 	}
 	save := func(st pluggedStash) {
 		b, _ := json.Marshal(st)
@@ -256,10 +375,97 @@ func plugged(home string, p *agentplug.Agent) *Agent {
 		st, ok := saved()
 		return st, ok && f.wired(id, st)
 	}
-	restore := func(st pluggedStash) error { return f.restore(key, st) }
+	// restore puts back what the user had; owl's own file (with a
+	// base) goes as a whole
+	restore := func(st pluggedStash) error {
+		if err := f.restore(key, st); err != nil || bf == nil {
+			return err
+		}
+		if err := os.Remove(f.path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	// l: one that takes the gateway only from how it is started, config
+	// as the agent names it
+	l := newLaunch(d, at.native(f.path))
+	gkey := func() string { return agentKeyAt(id, at.gw()) }
 	// only: the agent picks its model itself among those connect writes
-	// (#2374), so owl writes no model, and the switch is its one field
+	// (#2374), so owl writes no model, and the switch is its one field;
+	// or it keeps its startup model in a file apart (sf), which its model
+	// field writes, and config holds connect's keys alone
 	only := d.Model == ""
+	var sf *pluggedFile
+	var skey string
+	if d.Startup != nil {
+		sf = &pluggedFile{ppath(d.Startup.Config), d.Startup.Format}
+		skey = "plugin:" + id + ":" + sf.path
+	}
+	// startSaved is what owl keeps of the startup file
+	startSaved := func() (pluggedStash, bool) {
+		var st pluggedStash
+		v := stashShared()[skey]
+		return st, sf != nil && v != "" && json.Unmarshal([]byte(v), &st) == nil
+	}
+	// startOn: the startup file starts on owl's provider still, as
+	// startup's first key of a string says (PiG's defaultProvider), else
+	// on the model owl wrote. A model picked in the agent since among
+	// owl's (PiG's /model, saved) is still owl's.
+	startOn := func() (pluggedStash, bool) {
+		st, ok := startSaved()
+		return st, ok && sf.wired(id, st)
+	}
+	// startWire writes the startup model ref and startup's keys beside it
+	startWire := func(ref string) error {
+		kvs := []edit.KV{{Path: d.Startup.Model, Value: d.Prefix + ref}}
+		mark, value := d.Startup.Model, d.Prefix+ref
+		first := true
+		for _, k := range sortedKeys(d.Startup.Keys) {
+			v := d.Startup.Keys[k]
+			kvs = append(kvs, edit.KV{Path: k, Value: v})
+			if s, ok := v.(string); ok && first {
+				mark, value, first = k, s, false
+			}
+		}
+		st, was := startOn()
+		if !was {
+			st = pluggedStash{Had: map[string]string{}}
+		}
+		if err := sf.put(&st, kvs); err != nil {
+			return err
+		}
+		st.Ref, st.Mark, st.Value, st.Wrote = ref, mark, value, nil
+		st.Spec, st.Format = p.Spec, sf.format
+		b, _ := json.Marshal(st)
+		stash(map[string]string{skey: string(b)})
+		return nil
+	}
+	// startModel is the startup model as the field shows it: owl's
+	// when the file starts on owl still and the model is one of its
+	startModel := func() string {
+		v, _ := sf.get(d.Startup.Model)
+		if _, ok := onOwl(); ok {
+			if st, ok := startOn(); ok {
+				if r, has := strings.CutPrefix(v, d.Prefix); has && (r == st.Ref || isOwl(r)) {
+					return owlID + "/" + r
+				}
+			}
+		}
+		return v
+	}
+	// startRestore puts back what the user had in the startup file, where
+	// it starts on owl still; a model of their own picked in the agent
+	// since is theirs, and the stash is dropped
+	startRestore := func() error {
+		if sf == nil {
+			return nil
+		}
+		if st, ok := startOn(); ok {
+			return sf.restore(skey, st)
+		}
+		forget(skey)
+		return nil
+	}
 	// wire writes ref and connect's keys, stashing what each key had; a
 	// connect-only agent's ref is ""
 	wire := func(ref string) error {
@@ -288,23 +494,31 @@ func plugged(home string, p *agentplug.Agent) *Agent {
 		if model == nil {
 			model = map[string]any{"id": ref, "name": ref, "context": 0, "output": 0, "images": false, "efforts": []string{}}
 		}
-		gk := agentKeyAt(id, at.gw())
+		gk := gkey()
 		in := map[string]any{
 			"gateway": map[string]any{"url": at.gw(), "v1": at.v1(), "key": gk},
 			"models":  models,
-			"agent":   map[string]any{"id": id, "config": f.path},
+			// owl's decision models, apart from the chat models agents
+			// offer for a conversation (pluggedDecisionModels)
+			"decisionModels": pluggedDecisionModels(id),
+			"agent":          map[string]any{"id": id, "config": f.path},
 		}
-		if !only {
+		if bf != nil {
+			in["agent"].(map[string]any)["base"] = bf.path
+			in["base"] = bf.parsed()
+		}
+		if !only || ref != "" {
 			in["model"] = model
 		}
 		out, err := p.Connect(in)
 		if err != nil {
 			return fmt.Errorf("%s: %w", plugin.Name(p.Spec), err)
 		}
-		var kvs []edit.KV
+		kvs := merged(out, d.Merge)
 		if only {
-			// nothing written would read as connected all the same
-			if len(out) == 0 {
+			// nothing written would read as connected all the same; a key
+			// connect returned under merge is written too (kvs)
+			if len(out) == 0 && len(kvs) == 0 {
 				return fmt.Errorf("%s: connect returned no keys to write", plugin.Name(p.Spec))
 			}
 		} else {
@@ -323,59 +537,100 @@ func plugged(home string, p *agentplug.Agent) *Agent {
 		}
 		st, was := onOwl()
 		if !was {
-			st = pluggedStash{Had: map[string]string{}}
-		}
-		wrote := map[string]bool{}
-		for _, kv := range kvs {
-			wrote[kv.Path] = true
-			if _, ok := st.Had[kv.Path]; ok {
-				continue
-			}
-			if v, ok := f.raw(kv.Path); ok {
-				st.Had[kv.Path] = v
-			} else {
-				st.Had[kv.Path] = "\x00"
-			}
+			st = pluggedStash{Had: map[string]string{}, Made: f.made(d.Merge)}
 		}
 		// a key owl wrote before that connect no longer returns gets
 		// what the user had back
-		var del []string
-		for _, k := range sortedKeys(st.Had) {
-			if wrote[k] {
-				continue
-			}
-			if v := st.Had[k]; v == "\x00" {
-				del = append(del, k)
-			} else {
-				kvs = append(kvs, edit.KV{Path: k, Value: f.back(v)})
-			}
-			delete(st.Had, k)
+		if err := f.put(&st, kvs); err != nil {
+			return err
 		}
 		st.Ref, st.Mark, st.Value, st.Wrote = ref, mark, gk, strs
+		if mark == "" && l != nil && ref != "" {
+			// nothing written is the key, which goes in the environment:
+			// the model says it is owl's file still (holds)
+			st.Value = d.Prefix + ref
+		}
 		st.Spec, st.Format = p.Spec, f.format
-		if err := f.del(del); err != nil {
-			return err
-		}
-		if err := f.set(kvs); err != nil {
-			return err
-		}
 		save(st)
+		if sf != nil && ref != "" {
+			return startWire(ref)
+		}
 		return nil
 	}
 	get := func() string {
+		if sf != nil {
+			return startModel()
+		}
+		st, ok := onOwl()
+		if !ok && bf != nil {
+			v, _ := bf.get(d.Model)
+			return v
+		}
 		v, _ := f.get(d.Model)
-		if st, ok := onOwl(); ok && v == d.Prefix+st.Ref {
-			return owlID + "/" + st.Ref
+		if ok {
+			// one of owl's models picked in the agent since is owl's
+			// still, for one started on it (its picker lists them all)
+			if r, has := strings.CutPrefix(v, d.Prefix); has && (r == st.Ref || l != nil && isOwl(r)) {
+				return owlID + "/" + r
+			}
 		}
 		return v
+	}
+	// owlModel is the model as the agent names it while it is one of
+	// owl's, "" otherwise
+	owlModel := func() string {
+		if r, ok := strings.CutPrefix(get(), owlID+"/"); ok {
+			return d.Prefix + r
+		}
+		return ""
+	}
+	var lsh launchShell
+	if l != nil {
+		read := modelSed(d.Format, d.Model, d.Prefix)
+		file := at.native(f.path)
+		lsh = launchShell{l: l, at: at, distro: distro, fn: func(kind string) string {
+			held := ""
+			if read == "" {
+				held = owlModel()
+			}
+			return l.distroFunction(kind, l.vars(at.gw(), gkey()), read, file, held)
+		}}
+	}
+	// shell gives the shells the function while the agent is on owl's
+	// models, and takes it out after; never at a stopped distro
+	shell := func() {
+		if l != nil && !at.cold {
+			lsh.set(owlModel() != "")
+		}
 	}
 	icon := pluggedIcon(p)
 	a := &Agent{
 		ID: id, Name: d.Name, Icon: icon, Spelled: prefixed,
 		UA:  d.UA,
 		Bin: d.Bin, Path: f.path,
-		Plugin: p.Spec,
-		Notice: func() string { return d.Notice },
+		Plugin:  p.Spec,
+		Aliases: slices.Clone(d.Aliases),
+		Notice: func() string {
+			if l == nil {
+				return d.Notice
+			}
+			m := owlModel()
+			if m == "" {
+				return d.Notice
+			}
+			cmd := l.command(at.gw(), gkey(), m, !distro && runtime.GOOS == "windows")
+			if in := lsh.in(); len(in) > 0 {
+				for i := range in {
+					if distro {
+						in[i] = at.native(in[i])
+					} else {
+						in[i] = update.TildeHome(in[i])
+					}
+				}
+				return noticeLaunchTyped.say("bin", l.bin, "profiles", strings.Join(in, ", "), "agent", d.Name, "command", cmd)
+			}
+			return noticeLaunch.say("agent", d.Name, "command", cmd)
+		},
 		Check: func() string {
 			st, ok := onOwl()
 			if !ok {
@@ -384,51 +639,116 @@ func plugged(home string, p *agentplug.Agent) *Agent {
 			if v, _ := f.get(d.Model); !only && v != d.Prefix+st.Ref {
 				return ""
 			}
+			if _, ok := startOn(); sf != nil && !ok {
+				return ""
+			}
 			var kvs []string
 			for _, k := range sortedKeys(st.Wrote) {
 				kvs = append(kvs, k, st.Wrote[k])
 			}
-			return wiringOff(d.Name, f.path, f.get, kvs...)
+			if w := wiringOff(d.Name, f.path, f.get, kvs...); w != "" || l == nil {
+				return w
+			}
+			// the model's entry under a merge key, which it is picked from
+			m := owlModel()
+			for _, mk := range d.Merge {
+				k := mk + "." + gjson.Escape(m)
+				if _, wrote := st.Had[k]; !wrote {
+					continue
+				}
+				if _, ok := f.raw(k); !ok {
+					return fmt.Sprintf("%s's %s (%s) is gone, so it no longer reaches owl", d.Name, m, filepath.Base(f.path))
+				}
+			}
+			if p := lsh.stale(); p != "" {
+				return fmt.Sprintf("%s's function %s in %s names owl at an address it no longer has", d.Name, l.bin, at.native(p))
+			}
+			return ""
 		},
-		ListsModels: only,
+		ListsModels: only && sf == nil,
 		Fields: []Field{{
 			Key: "model", Label: "model",
 			Get: get,
 			Set: func(v string) error {
 				if ref, ok := strings.CutPrefix(v, owlID+"/"); ok && isOwl(ref) {
-					return wire(ref)
+					if err := wire(ref); err != nil {
+						return err
+					}
+					shell()
+					return nil
+				}
+				if err := startRestore(); err != nil {
+					return err
 				}
 				if st, ok := onOwl(); ok {
 					if err := restore(st); err != nil {
 						return err
 					}
 				}
-				if v == "" {
-					return f.del([]string{d.Model})
+				defer shell()
+				mf, key := f, d.Model
+				if sf != nil {
+					mf, key = *sf, d.Startup.Model
+				} else if bf != nil {
+					mf = *bf
 				}
-				return f.set([]edit.KV{{Path: d.Model, Value: v}})
+				if v == "" {
+					return mf.del([]string{key})
+				}
+				return mf.set([]edit.KV{{Path: key, Value: v}})
 			},
 			Options: func(cur map[string]string) []Option {
-				return withVia(ownOptions("", cur["model"]), id, owlID+"/")
+				if !p.HasOwn() {
+					return withVia(ownOptions("", cur["model"]), id, owlID+"/")
+				}
+				return withVia(group(d.Name, pluggedOwn(p, f, bf, cur["model"])), id, owlID+"/")
 			},
 		}},
 		// the catalog changed: what connect writes for the model may too
 		Sync: func() error {
-			if st, ok := onOwl(); ok {
+			defer shell()
+			if st, ok := onOwl(); ok && sf != nil {
+				// the startup model too while it is owl's, as it is
+				// now; else connect's list alone, for the agent's picker
+				if r, ok := strings.CutPrefix(startModel(), owlID+"/"); ok {
+					return wire(r)
+				}
+				return wire("")
+			} else if ok {
 				if v, _ := f.get(d.Model); only || v == d.Prefix+st.Ref {
 					return wire(st.Ref)
+				} else if r, ok := strings.CutPrefix(get(), owlID+"/"); ok && l != nil {
+					// another of owl's, picked in the agent
+					return wire(r)
 				}
 			}
 			return nil
 		},
 		Unwire: func() error {
+			defer shell()
+			if err := startRestore(); err != nil {
+				return err
+			}
 			if st, ok := onOwl(); ok {
 				return restore(st)
 			}
 			return nil
 		},
 	}
-	if only {
+	paths := []string{f.path}
+	if bf != nil {
+		paths = append(paths, bf.path)
+	}
+	if sf != nil {
+		// a model of the agent's own picked in it, owl's provider still
+		// in its list: connected, as joined, not drift (#2424's Beside)
+		a.Beside = func() bool {
+			_, ok := onOwl()
+			return ok
+		}
+		paths = append(paths, sf.path)
+	}
+	if only && sf == nil {
 		// owl as its provider, on or off: the models are the agent's
 		// to pick, in the list connect writes
 		a.Fields = []Field{{
@@ -454,9 +774,72 @@ func plugged(home string, p *agentplug.Agent) *Agent {
 		}}
 	}
 	if d.Dir != "" {
-		a.Dir = pluggedPath(home, d.Dir)
+		a.Dir = ppath(d.Dir)
 	}
-	return atomic(a, f.path)
+	if l != nil {
+		a.Launch = func() string {
+			m := owlModel()
+			if m == "" {
+				return ""
+			}
+			return l.command(at.gw(), gkey(), m, !distro && runtime.GOOS == "windows")
+		}
+		a.Typed = func() string {
+			if owlModel() == "" || len(lsh.in()) == 0 {
+				return ""
+			}
+			return l.bin
+		}
+		a.Start = func() Starting {
+			s := Starting{Bin: l.bin, Flag: l.flag, Plain: slices.Clone(l.plain)}
+			if m := owlModel(); m != "" {
+				s.Env, s.Model, s.Args = l.vars(at.gw(), gkey()), m, slices.Clone(l.args)
+			}
+			return s
+		}
+	}
+	if d.Effort {
+		a.Fields = append(a.Fields, effortField(id, func() bool { return !at.cold && strings.HasPrefix(get(), owlID+"/") }))
+	}
+	return atomic(a, paths...)
+}
+
+// parsed is f as a hook is given it: its JSON parsed, {} for none or
+// another format.
+func (f pluggedFile) parsed() any {
+	var cfg any = map[string]any{}
+	if f.format == "json" {
+		if b, err := edit.Read(f.path); err == nil && len(b) > 0 {
+			var v map[string]any
+			if json.Unmarshal(jsonc.ToJSON(b), &v) == nil && v != nil {
+				cfg = v
+			}
+		}
+	}
+	return cfg
+}
+
+// pluggedOwn are the agent's own models its plugin's own lists, read from
+// its file as it is (and its base, bf, nil for none), cur among them;
+// each says the vendor it goes to.
+func pluggedOwn(p *agentplug.Agent, f pluggedFile, bf *pluggedFile, cur string) []Option {
+	var base any
+	if bf != nil {
+		base = bf.parsed()
+	}
+	if strings.HasPrefix(cur, owlID+"/") {
+		cur = ""
+	}
+	own, _ := p.OwnModels(f.parsed(), base, cur)
+	out := make([]Option, 0, len(own))
+	for _, o := range own {
+		m := o.Model
+		if m == "" {
+			m = o.Value
+		}
+		out = append(out, Option{Value: o.Value, Icon: modelIcon("", m), Direct: o.Direct})
+	}
+	return out
 }
 
 // pluggedIcon is the picture the plugin gives its agent, else the one the

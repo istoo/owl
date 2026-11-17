@@ -71,18 +71,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], posts = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, posts));
-      await page.goto("http://owl.test/?view=routing");
+      await page.goto("http://owl.test/?view=groups");
       const card = page.locator(".rt-group").first();
       await card.waitFor();
       await card.locator("button", { hasText: w.edit }).click();
       const ed = page.locator(".rt-gedit");
       await ed.locator(".rt-rule").first().waitFor();
-      // the editor grows in over 570ms with its content clipped (slotMorph):
-      // a pointer placed before it settles is over another part after
-      await page.waitForFunction(() => {
-        const n = document.querySelector(".rt-gedit");
-        return n && !n.style.overflow && !n.getAnimations().length;
-      });
       const order = () => ed.locator(".rt-rule .rt-then .rt-model").evaluateAll((bs) => bs.map((b) => b.textContent.split(" · ")[0].trim()));
       const rule = (name) => ed.locator(".rt-rule", { has: page.locator(".rt-then .rt-model", { hasText: name }) });
       const handle = (name) => rule(name).locator(".rt-rhandle");
@@ -94,9 +88,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the grip shows on the rule under the pointer only
       await page.mouse.move(1, 1);
       await page.waitForFunction(() => [...document.querySelectorAll(".rt-rhandle")].map((h) => getComputedStyle(h, "::before").opacity).join() === "0,0,0");
-      // wheeled to the rules first: the editor is taller than the window,
-      // and a code scroll (Playwright's hover into view included) is put back
-      const v = await page.locator("#view-routing").boundingBox();
+      await rule("two").locator(".rt-then").hover();
+      await page.waitForFunction(() => [...document.querySelectorAll(".rt-rhandle")].map((h) => getComputedStyle(h, "::before").opacity).join() === "0,1,0");
+
+      // wheeled to the rules, as the reader would (a scroll no reader asked
+      // for is put back)
+      const v = await page.locator("#view-groups").boundingBox();
       await page.mouse.move(v.x + 10, 300);
       for (let n = 0; n < 40; n++) {
         const b = await ed.locator(".rt-rules").boundingBox();
@@ -105,10 +102,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.mouse.wheel(0, Math.sign(d) * Math.min(Math.abs(d), 300));
         await page.waitForTimeout(60);
       }
-      await page.waitForTimeout(300);
-      await rule("two").locator(".rt-then").hover();
-      await page.waitForFunction(() => [...document.querySelectorAll(".rt-rhandle")].map((h) => getComputedStyle(h, "::before").opacity).join() === "0,1,0");
-
+      await page.waitForTimeout(200);
       const at = () => page.evaluate(() => [...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => [e.id || e.className, e.scrollTop]).join(";") + "|" + Math.round(document.querySelector(".rt-gedit").getBoundingClientRect().top));
       const before = await at();
       // drag "three" above "one"

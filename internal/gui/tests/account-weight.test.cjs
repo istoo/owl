@@ -80,30 +80,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator(".row.provider", { hasText: "Claude Code" }).first().click();
       await page.locator('.editor .acc[data-account-id="off@example.com"]').waitFor();
       const chip = (id) => page.locator(`.editor .acc[data-account-id="${id}"] .key-weight`);
-      // what is scrolled and how far, by its place in the page: a class comes
-      // and goes while a press holds the dialog (#4471)
-      const scrolled = () => page.evaluate(() => [window.scrollY, ...[...document.querySelectorAll("*")].map((e, i) => e.scrollTop > 0 ? `${i}:${e.scrollTop}` : "")].filter(Boolean).join(" "));
+      const scrolled = () => page.evaluate(() => [window.scrollY, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop > 0).map((e) => `${e.className}:${e.scrollTop}`)].join(" "));
 
       // Smart: no weights shown
       assert.equal(await chip("max@example.com").isVisible(), false, `${at}: a weight under Smart`);
-      const pickMode = async (name) => {
-        // a save's answer redraws the editor and closes a menu opened under it:
-        // wait for that answer, and open again if a redraw took the menu anyway
-        const item = page.locator(".route-menu .pm-item", { hasText: new RegExp(`^${name}$`) });
-        for (let i = 0; i < 3; i++) {
-          await page.waitForFunction(() => !document.querySelector(".editor .busy"));
-          await page.locator(".editor .route-pick-btn").click();
-          try { await item.click({ timeout: 1500 }); return; } catch { /* the redraw closed it; open again */ }
-        }
-        await item.click();
-      };
-      await page.locator(".editor .route-pick-btn").scrollIntoViewIfNeeded();
-      const sc = await scrolled();
-      await pickMode(await say(page, lang, "By weight"));
-      // the app puts back a scroll a click or a focus made, a frame or two
-      // later; wait for the place it had, however busy the machine is
-      for (let i = 0; i < 40 && (await scrolled()) !== sc; i++) await page.waitForTimeout(50);
-      assert.equal(await scrolled(), sc, `${at}: a click scrolled`);
+      // Routing is under Advanced
+      { const adv = page.locator(".editor details.advanced"); await adv.waitFor({ state: "attached" }); if (!(await adv.evaluate((d) => d.open))) await adv.locator(":scope > summary").click(); }
+      const by = page.locator(".editor").getByRole("button", { name: await say(page, lang, "By weight"), exact: true });
+      await by.scrollIntoViewIfNeeded();
+      // the weights it shows sit above it, in the accounts, so the editor
+      // holds it where it was clicked rather than keep its scroll
+      const top = () => by.evaluate((b) => Math.round(b.getBoundingClientRect().top));
+      const was = await top();
+      await by.click();
+      await chip("max@example.com").waitFor();
+      assert(Math.abs((await top()) - was) <= 1, `${at}: By weight moved from ${was} to ${await top()}`);
       // the routing's hint names accounts too
       await page.locator(".editor .hint", { hasText: (await say(page, lang, "Requests spread over the keys or accounts by the weight set beside each: one weighing 3 takes three requests for every one weighing 1 takes, evenly over a few requests. One that fails is passed over while it rests, and the others share its requests; a conversation stays with it as Stays says.")).slice(0, 20) }).first().waitFor();
       assert.equal((await chip("max@example.com").textContent()).trim(), await say(page, lang, "Weight {n} · {share}%", { n: 3, share: 75 }), at);
@@ -116,10 +107,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         return { who: r.dataset.accountId, h: Math.round(line.getBoundingClientRect().height), over: line.scrollWidth - line.clientWidth, out: c ? Math.round(c.getBoundingClientRect().right - r.getBoundingClientRect().right) : -1 };
       }));
       for (const f of fit) {
-        // on a phone the address may wrap and its plan has a line of its own
-        assert.ok(f.h <= (web ? 84 : 24), `${at}: ${f.who}'s line is one line (${f.h}px)`);
-        // WebKit rounds a line of fractional text widths a few pixels wide
-        assert.ok(f.over <= 3 && f.out <= 0, `${at}: ${f.who}'s line runs past its row (${f.over}, ${f.out})`);
+        assert.ok(f.h <= (web ? 48 : 24), `${at}: ${f.who}'s line is one line (${f.h}px)`);
+        assert.ok(f.over <= 1 && f.out <= 0, `${at}: ${f.who}'s line runs past its row (${f.over}, ${f.out})`);
       }
       if (process.env.ARTIFACT_DIR && lang === "en") {
         await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });
@@ -148,8 +137,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal((await page.locator("#status").textContent()).trim(), note, at);
 
       // back to Smart hides them
-      await pickMode(await say(page, lang, "Smart"));
+      await page.locator(".editor").getByRole("button", { name: await say(page, lang, "Smart"), exact: true }).first().click();
       assert.equal(await chip("max@example.com").isVisible(), false, `${at}: a weight under Smart`);
+      // open, the editor scrolls and the dialog around it doesn't: the lines
+      // its check-in and warm-up rows keep out of sight were held against
+      // the dialog and grew it a second scrollbar, every row 8px narrower
+      const dialog = await page.evaluate(() => { const d = document.querySelector(".dialog"); return [d.scrollHeight, d.clientHeight]; });
+      assert.ok(dialog[0] <= dialog[1] + 1, `${at}: the dialog scrolls beside the editor (${dialog})`);
       assert.deepEqual(errors, [], at);
       await context.close();
     }

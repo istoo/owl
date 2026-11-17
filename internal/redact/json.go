@@ -95,9 +95,12 @@ var signatureKeys = []string{"signature", "thoughtSignature", "thought_signature
 // unquoted again to look for a "type" and a "data".
 func scan(body []byte) (signed, args, defs, textDocs []string) {
 	found := false
-	for _, k := range append(signatureKeys, "tool_use", "mcp_tool_use", "functionCall", "function_call", "functionResponse", "function_response", "document") {
+	for _, k := range append(signatureKeys, "tool_use", "mcp_tool_use", "functionCall", "function_call", "functionResponse", "function_response", "document", "arguments") {
 		found = found || bytes.Contains(body, []byte(`"`+k+`"`))
 	}
+	// a type that ends so (mcp_tool_use, custom_tool_call), without the
+	// quote before it
+	found = found || bytes.Contains(body, []byte(`tool_use"`)) || bytes.Contains(body, []byte(`_call"`))
 	for _, k := range defKeys {
 		found = found || bytes.Contains(body, []byte(`"`+k+`"`))
 	}
@@ -310,6 +313,28 @@ func definitionsOf(body []byte) []string {
 		}
 	}
 	return defs
+}
+
+// toolArgs says the value under k, in an object of type t under key, is
+// what the model wrote for a tool to run, in any protocol: Anthropic's
+// input of every *_tool_use (tool_use, server_tool_use, mcp_tool_use),
+// a Responses *_call's arguments, input, action or operation
+// (function_call, mcp_call, custom_tool_call, tool_search_call,
+// local_shell_call, computer_call, apply_patch_call), a Chat Completions
+// or Ollama tool call's function.arguments, and Gemini's functionCall
+// args (and a legacy Chat function_call's arguments). Counted only for tool_use and server_tool_use, an mcp_tool_use's
+// input had the protocol's key names (url, data, *_id) kept as written,
+// a phone, a card and a key among them.
+func toolArgs(t, key, k string) bool {
+	switch {
+	case strings.HasSuffix(t, "tool_use"):
+		return k == "input"
+	case strings.HasSuffix(t, "_call"):
+		return k == "arguments" || k == "input" || k == "action" || k == "operation"
+	case key == "function" || key == "functionCall" || key == "function_call":
+		return k == "arguments" || k == "args"
+	}
+	return false
 }
 
 // defKeys are the request's own keys whose values the agent defines for the
@@ -943,14 +968,16 @@ func appendJSONEscape(dst []byte, s string) []byte {
 // whatever the value looks like: the rules judge a value by its shape, the
 // name by what a field so called carries (#2946) — {"api_key": "…"} with a
 // value no rule knows, an AKIA under access_key_id, a bearer token under
-// "Authorization". A short value, and one that stands for a variable
-// (${PASS}, <token>, ****), are left alone. It is asked only of a tool
-// call's arguments and a tool's structured result (args), whose keys are
-// the tool's: a key the vendor's protocol names (Anthropic's
-// mcp_servers[].authorization_token, a tool's own settings) is the
-// vendor's to read, and masked by its name, it would no longer work.
+// "Authorization". A short value, one that stands for a variable (${PASS},
+// <token>, ****), and a moment (a token's expiry,
+// access_token_expires_at, dchaofei #5002) are left alone. It is asked
+// only of a tool call's arguments and a tool's structured result (args),
+// whose keys are the tool's: a key the vendor's protocol names
+// (Anthropic's mcp_servers[].authorization_token, a tool's own settings)
+// is the vendor's to read, and masked by its name, it would no longer
+// work.
 func namedSecret(key, s string) bool {
-	return key != "" && len(s) >= 8 && notAVariable(s) && SecretName(key)
+	return key != "" && len(s) >= 8 && notAVariable(s) && !timestampValue(s) && SecretName(key)
 }
 
 // MaskJSON masks the strings of a request body, and says how many values
@@ -1030,7 +1057,9 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 		if !masked(path, key, s) || under(path, defs) {
 			return s
 		}
-		t, n := mask(s, o, put, asJSON(key, ""))
+		so := o
+		so.args = under(path, args) || key == "arguments"
+		t, n := mask(s, so, put, asJSON(key, ""))
 		total += n
 		return t
 	})

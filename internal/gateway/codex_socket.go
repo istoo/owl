@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,27 +41,16 @@ import (
 // codex.rate_limits and codex.response.metadata, which the HTTP route says
 // in headers, are told in headers too (x-codex-*, x-codex-turn-state).
 //
-// A turn that ended with response.completed leaves its socket open for
-// the session's next turn (codex_socket_keep.go): the next turn is sent
-// on it as a delta after previous_response_id when its body is the same
-// turn with more input, and as the whole body otherwise. That is what
-// Codex's own client does, and it keeps a long conversation's messages
-// small. The kept socket is borrowed by one turn at a time; a concurrent
-// turn of the session dials its own and sends whole. A turn with no
-// session id, a socket that ended otherwise, and a gateway ending keep
-// nothing.
-//
 // Anything the socket can't do falls back to the HTTP request as it was:
 // a refused handshake (and that host is spoken HTTP for codexSocketShun),
 // a connection limit, a body that isn't a streamed turn, and a socket
 // that ends, or won't take the message, before any of the reply was
 // handed on. That last one is Lamrfu's (Discord): chatgpt.com closed the
 // socket 1009 (message too big) on a long conversation's turn, and the
-// turn was a 502. A delta the backend no longer knows (an expired
-// response id) or a kept socket that ended before the reply is sent whole
-// on a new socket, so the caller sees neither. A message as big as one
-// refused 1009 goes straight over HTTP to that host for codexSocketShun
-// (codexTooBig); a delta is measured as the bytes it sends.
+// turn was a 502. Codex's own client sends a turn on a kept socket as a
+// delta after previous_response_id, so its messages stay small; owl
+// does too (codex_socket_keep.go). A message as big as one refused 1009
+// goes straight over HTTP to that host for codexSocketShun (codexTooBig).
 
 // codexSocketOff turns the socket off: the gateway's tests' fakes of the
 // ChatGPT backend speak HTTP, so TestMain sets it, and codex_socket_test
@@ -144,98 +134,118 @@ func shunCodexSocket(host string, why string) {
 }
 
 // codexSocket sends a streamed turn to the ChatGPT backend over its
-// WebSocket, and every other request through next.
+// WebSocket, and one to a Responses provider whose Socket is set over
+// the same WebSocket at its Responses URL (#5781); every other request
+// goes through next.
 type codexSocket struct{ next http.RoundTripper }
 
 func (t codexSocket) RoundTrip(req *http.Request) (*http.Response, error) {
-	if codexSocketOff.Load() || req.Method != http.MethodPost || req.GetBody == nil ||
-		!provider.CodexTurnURL(req.URL) || codexShunned(req.URL.Host) {
+	if codexSocketOff.Load() || req.Method != http.MethodPost || req.GetBody == nil {
 		return t.next.RoundTrip(req)
 	}
-	msg, plain, ok := codexSocketMessage(req)
-	if !ok {
+	turn, shun := provider.SocketTurn(req)
+	if !turn || (shun && codexShunned(req.URL.Host)) {
 		return t.next.RoundTrip(req)
 	}
-	key := ""
-	if !codexSocketKeepOff.Load() {
-		key = codexSessionKey(req, plain)
-	}
-	var kept *codexKeptConn
-	send, delta := msg, false
-	if key != "" {
-		if kept = codexKeptSockets.take(key); kept != nil {
-			if d, ok := codexDelta(kept.turn, msg); ok {
-				send, delta = d, true
-			}
-		}
-	}
-	if codexMessageTooBig(req.URL.Host, len(send)) {
-		if kept != nil {
-			codexKeptSockets.keep(key, kept, false)
-		}
-		return t.next.RoundTrip(req)
-	}
-	res, err := t.socket(req, send, msg, key, kept, delta)
-	if errors.Is(err, errCodexPreviousNotFound) || errors.Is(err, errCodexKeptEnded) {
-		// Nothing of the reply was handed on. A delta the backend forgot or
-		// a kept socket that ended goes whole on a new connection, so the
-		// caller only ever sees the working try.
-		if kept != nil {
-			kept.c.CloseNow()
-		}
-		kept, send, delta = nil, msg, false
-		if codexMessageTooBig(req.URL.Host, len(send)) {
-			return t.next.RoundTrip(req)
-		}
-		res, err = t.socket(req, send, msg, key, nil, false)
-	}
-	if errors.Is(err, errCodexSocketFallBack) {
-		return t.next.RoundTrip(req)
+	res, err := t.overSocket(req, shun)
+	if res != nil && res.StatusCode == http.StatusOK && res.Header.Get("Content-Type") == "" &&
+		!provider.CodexTurnURL(req.URL) {
+		// what a Responses provider's stream is said to be over HTTP;
+		// chatgpt.com's turns go on as they always have
+		res.Header.Set("Content-Type", "text/event-stream")
 	}
 	return res, err
 }
 
-// errCodexSocketFallBack says the turn goes over HTTP after all.
-var errCodexSocketFallBack = errors.New("codex: over HTTP")
+// overSocket is RoundTrip for a turn that may go over the socket; shun
+// says a refused handshake leaves the host to HTTP for a while.
+func (t codexSocket) overSocket(req *http.Request, shun bool) (*http.Response, error) {
+	overHTTP := false
+	toSocket(req.Context())
+	defer func() { sentOnSocket(req.Context(), !overHTTP) }()
+	viaHTTP := func() (*http.Response, error) {
+		if !overHTTP {
+			toHTTP(req.Context())
+		}
+		overHTTP = true
+		return t.next.RoundTrip(req)
+	}
+	body, ok := codexSocketMessage(req)
+	if !ok {
+		return viaHTTP()
+	}
+	msg := codexCreate(body)
+	var shape *codexTurnShape
+	key := codexKeepKey(req, body)
+	if key != "" {
+		if s, ok := codexShape(body); ok {
+			shape = s
+		} else {
+			key = ""
+		}
+	}
+	if k := codexKeepTake(key); k != nil {
+		send := msg
+		if d, ok := k.delta(body, shape); ok {
+			send = codexCreate(d)
+		}
+		if codexMessageTooBig(req.URL.Host, len(send)) {
+			k.close()
+		} else {
+			res, err := t.turn(req, k, send, shape, true)
+			if !errors.Is(err, errCodexSocketAgain) {
+				return res, err
+			}
+		}
+	}
+	if codexMessageTooBig(req.URL.Host, len(msg)) {
+		return viaHTTP()
+	}
+	res, err := t.socket(req, msg, key, shape, shun)
+	if errors.Is(err, errCodexSocketFallBack) {
+		return viaHTTP()
+	}
+	return res, err
+}
 
-// errCodexPreviousNotFound says the backend didn't know the response a
-// delta followed: the turn goes whole on a new socket.
-var errCodexPreviousNotFound = errors.New("codex: kept response not found")
+var (
+	// errCodexSocketFallBack says the turn goes over HTTP after all.
+	errCodexSocketFallBack = errors.New("codex: over HTTP")
+	// errCodexSocketAgain says a kept socket failed before the reply was
+	// handed on, and the turn goes whole on a new one.
+	errCodexSocketAgain = errors.New("codex: on a new socket")
+)
 
-// errCodexKeptEnded says a borrowed kept socket ended before the reply
-// began: the turn goes whole on a new socket.
-var errCodexKeptEnded = errors.New("codex: kept socket ended")
-
-// codexSocketMessage is req's turn as the socket's response.create
-// message, the plain body it was made from (for the session's key), and
-// false for a body that isn't a streamed turn.
-func codexSocketMessage(req *http.Request) ([]byte, []byte, bool) {
+// codexSocketMessage is req's turn as the body of the socket's
+// response.create message, and false for a body that isn't a streamed
+// turn.
+func codexSocketMessage(req *http.Request) ([]byte, bool) {
 	rc, err := req.GetBody()
 	if err != nil {
-		return nil, nil, false
+		return nil, false
 	}
 	defer rc.Close()
 	plain := rc
 	if enc := req.Header.Get("Content-Encoding"); enc != "" {
 		if !strings.EqualFold(enc, "zstd") {
-			return nil, nil, false
+			return nil, false
 		}
 		d := &http.Request{Header: http.Header{"Content-Encoding": {enc}}, Body: rc}
 		if plain, err = decodedBody(d); err != nil {
-			return nil, nil, false
+			return nil, false
 		}
 		defer plain.Close()
 	}
 	body, err := io.ReadAll(io.LimitReader(plain, defaultBodyLimit+1))
 	if err != nil || len(body) > defaultBodyLimit {
-		return nil, nil, false
+		return nil, false
 	}
 	body = bytes.TrimSpace(body)
 	if len(body) < 2 || body[0] != '{' || !gjson.ValidBytes(body) {
-		return nil, nil, false
+		return nil, false
 	}
 	if !gjson.GetBytes(body, "stream").Bool() || gjson.GetBytes(body, "type").Exists() {
-		return nil, nil, false
+		return nil, false
 	}
 	// what Codex says in a header over HTTP and in client_metadata here
 	meta := map[string]string{}
@@ -246,12 +256,9 @@ func codexSocketMessage(req *http.Request) ([]byte, []byte, bool) {
 		meta["ws_request_header_x_openai_internal_codex_responses_lite"] = "true"
 	}
 	if len(meta) > 0 {
-		if body, ok := withClientMetadata(body, meta); ok {
-			return codexCreate(body), body, true
-		}
-		return nil, nil, false
+		return withClientMetadata(body, meta)
 	}
-	return codexCreate(body), body, true
+	return body, true
 }
 
 // codexCreate is body, a JSON object, as a response.create message.
@@ -263,6 +270,28 @@ func codexCreate(body []byte) []byte {
 		out = append(out, ',')
 	}
 	return append(out, rest...)
+}
+
+// withoutClientMetadata is body with key gone from its client_metadata,
+// every other byte as it was, and body itself when it has no such key.
+func withoutClientMetadata(body []byte, key string) []byte {
+	cm := gjson.GetBytes(body, "client_metadata")
+	if !cm.IsObject() || cm.Index <= 0 || !cm.Get(gjson.Escape(key)).Exists() {
+		return body
+	}
+	have := map[string]any{}
+	if json.Unmarshal([]byte(cm.Raw), &have) != nil {
+		return body
+	}
+	delete(have, key)
+	raw, err := json.Marshal(have)
+	if err != nil {
+		return body
+	}
+	out := make([]byte, 0, len(body))
+	out = append(out, body[:cm.Index]...)
+	out = append(out, raw...)
+	return append(out, body[cm.Index+len(cm.Raw):]...)
 }
 
 // withClientMetadata is body with meta's keys set in its client_metadata,
@@ -320,99 +349,100 @@ func codexSocketHeaders(req *http.Request) http.Header {
 	return h
 }
 
-func (t codexSocket) socket(req *http.Request, msg, full []byte, key string, kept *codexKeptConn, delta bool) (*http.Response, error) {
-	ctx, cancel := context.WithCancel(req.Context())
+// socket opens a socket for the turn and sends msg on it; one that
+// carries on with key's conversation is kept for its next turn. A host
+// that refuses the handshake is left to HTTP for a while when shun says
+// so (a provider's Socket "on" never is).
+func (t codexSocket) socket(req *http.Request, msg []byte, key string, shape *codexTurnShape, shun bool) (*http.Response, error) {
+	// the socket may outlive the request, kept for the next turn: only
+	// the handshake ends with it
+	ctx, cancel := context.WithCancel(context.WithoutCancel(req.Context()))
+	stop := context.AfterFunc(req.Context(), cancel)
+	timer := time.AfterFunc(codexSocketDial, cancel)
 	u := *req.URL
-	var (
-		c      *websocket.Conn
-		hs     *http.Response
-		opened time.Time
-	)
-	// A borrowed socket is dialled nowhere: its handshake was the first
-	// turn's, and each turn's headers come in its own frames. A turn that
-	// can't use it sends the whole body on it, still better than a dial.
-	if kept != nil {
-		c, opened = kept.c, kept.opened
-	} else {
-		timer := time.AfterFunc(codexSocketDial, cancel)
-		var err error
-		c, hs, err = websocket.Dial(ctx, u.String(), &websocket.DialOptions{
-			HTTPClient:      &http.Client{Transport: t.next},
-			HTTPHeader:      codexSocketHeaders(req),
-			CompressionMode: websocket.CompressionNoContextTakeover,
-		})
-		stopped := timer.Stop()
-		if err != nil {
-			cancel()
-			if req.Context().Err() != nil {
-				return nil, req.Context().Err()
-			}
-			switch {
-			case hs == nil:
-				shunCodexSocket(u.Host, err.Error())
-			case hs.StatusCode == http.StatusUnauthorized || hs.StatusCode == http.StatusTooManyRequests ||
-				hs.StatusCode >= 500:
-				// the account's or a passing fault: HTTP says it as it is
-			default:
-				shunCodexSocket(u.Host, hs.Status)
-			}
-			return nil, errCodexSocketFallBack
+	c, hs, err := websocket.Dial(ctx, u.String(), &websocket.DialOptions{
+		HTTPClient:      &http.Client{Transport: t.next, CheckRedirect: provider.KeepsCredentials},
+		HTTPHeader:      codexSocketHeaders(req),
+		CompressionMode: websocket.CompressionNoContextTakeover,
+	})
+	stopped := timer.Stop()
+	going := stop()
+	if err != nil {
+		cancel()
+		if req.Context().Err() != nil {
+			return nil, req.Context().Err()
 		}
-		if !stopped {
-			c.CloseNow()
-			cancel()
-			return nil, errCodexSocketFallBack
+		switch {
+		case !shun:
+			// tried again next turn
+		case hs == nil:
+			shunCodexSocket(u.Host, err.Error())
+		case hs.StatusCode == http.StatusUnauthorized || hs.StatusCode == http.StatusTooManyRequests ||
+			hs.StatusCode >= 500:
+			// the account's or a passing fault: HTTP says it as it is
+		default:
+			shunCodexSocket(u.Host, hs.Status)
 		}
-		c.SetReadLimit(-1)
-		opened = time.Now()
+		return nil, errCodexSocketFallBack
 	}
-	if err := c.Write(ctx, websocket.MessageText, msg); err != nil {
+	if !stopped || !going {
 		c.CloseNow()
 		cancel()
 		if req.Context().Err() != nil {
 			return nil, req.Context().Err()
 		}
-		if kept != nil {
-			// an idle socket is the likely stale one: the whole turn on a
-			// new connection, not HTTP
-			return nil, errCodexKeptEnded
-		}
-		return nil, codexSocketEnded(u.Host, len(msg), err)
+		return nil, errCodexSocketFallBack
 	}
-	codexSocketUsed(u.Host, delta, len(msg), len(full))
+	c.SetReadLimit(-1)
 	header := http.Header{}
-	if hs != nil {
-		for k, vs := range hs.Header {
-			switch http.CanonicalHeaderKey(k) {
-			case "Connection", "Upgrade", "Content-Length", "Content-Type":
-				continue
-			}
-			if strings.HasPrefix(http.CanonicalHeaderKey(k), "Sec-Websocket-") {
-				continue
-			}
-			header[k] = vs
+	for k, vs := range hs.Header {
+		switch http.CanonicalHeaderKey(k) {
+		case "Connection", "Upgrade", "Content-Length", "Content-Type":
+			continue
 		}
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "Sec-Websocket-") {
+			continue
+		}
+		header[k] = vs
 	}
-	// a turn with no session is never kept: don't hold its message for the
-	// stream's length
-	keptTurn := full
-	if key == "" {
-		keptTurn = nil
+	k := &codexKept{c: c, cancel: cancel, key: key, host: u.Host, header: header, opened: time.Now()}
+	return t.turn(req, k, msg, shape, false)
+}
+
+// turn sends msg on k and reads the frames ahead of the reply proper. On
+// a kept socket (reused), whatever fails before the reply is handed on
+// is errCodexSocketAgain.
+func (t codexSocket) turn(req *http.Request, k *codexKept, msg []byte, shape *codexTurnShape, reused bool) (*http.Response, error) {
+	ended := func(err error) error {
+		if req.Context().Err() != nil {
+			return req.Context().Err()
+		}
+		err = codexSocketEnded(k.host, len(msg), err)
+		if reused {
+			return errCodexSocketAgain
+		}
+		return err
 	}
-	body := &codexSocketBody{c: c, ctx: ctx, cancel: cancel, key: key, full: keptTurn, opened: opened}
-	for range codexSocketPrelude {
+	trace := socketTrace(req, reused)
+	if err := k.c.Write(req.Context(), websocket.MessageText, msg); err != nil {
+		k.close()
+		return nil, ended(err)
+	}
+	wroteSocket(req.Context(), len(msg))
+	if trace != nil && trace.WroteRequest != nil {
+		trace.WroteRequest(httptrace.WroteRequestInfo{})
+	}
+	header := k.header.Clone()
+	body := &codexSocketBody{c: k.c, ctx: req.Context(), k: k, shape: shape}
+	for i := range codexSocketPrelude {
 		frame, err := body.frame()
+		if i == 0 && err == nil && trace != nil && trace.GotFirstResponseByte != nil {
+			trace.GotFirstResponseByte()
+		}
 		if err != nil {
 			body.Close()
-			if req.Context().Err() != nil {
-				return nil, req.Context().Err()
-			}
-			if kept != nil {
-				// nothing of the reply has been handed on yet
-				return nil, errCodexKeptEnded
-			}
 			// nothing of the reply has been handed on yet
-			return nil, codexSocketEnded(u.Host, len(msg), err)
+			return nil, ended(err)
 		}
 		if frame == nil { // dropped
 			continue
@@ -429,19 +459,16 @@ func (t codexSocket) socket(req *http.Request, msg, full []byte, key string, kep
 				return true
 			})
 		case "error":
-			// ahead of the reply: it stands for the HTTP route's status
-			if delta && codexPreviousGone(frame) {
-				// the backend doesn't know the response this delta follows
+			if reused {
+				// previous_response_not_found, the connection limit, or
+				// any other fault: a new socket answers for itself
 				body.Close()
-				return nil, errCodexPreviousNotFound
+				return nil, errCodexSocketAgain
 			}
+			// ahead of the reply: it stands for the HTTP route's status
 			if res, fall := codexSocketError(req, header, frame); fall || res != nil {
 				body.Close()
 				if fall {
-					if kept != nil {
-						// this socket took its last turn: ask on a new one
-						return nil, errCodexKeptEnded
-					}
 					return nil, errCodexSocketFallBack
 				}
 				return res, nil
@@ -463,6 +490,33 @@ func (t codexSocket) socket(req *http.Request, msg, full []byte, key string, kep
 		ContentLength: -1,
 		Request:       req,
 	}, nil
+}
+
+// socketTrace tells req's client trace (TryNet, the usage record's
+// split) of the turn going out on the socket, as Go's client tells it of
+// an HTTP request: a turn on a kept socket is a request on an open
+// connection, which has no handshake of its own, and the frames' first is
+// the reply's first byte. Without it a kept socket's turn, nearly every
+// Codex turn after a conversation's first, wrote no request the trace
+// saw, and the Routing page's "Where the time went" said only its
+// masking (buhaodeshiyehao on X, Codex through Lody). On a new socket
+// the handshake went through the client and the trace has its DNS,
+// connect and TLS; the socket is the connection, got once the handshake
+// is answered, so the handshake's round trip is the wait for it. The
+// caller tells it WroteRequest once the message is written, and
+// GotFirstResponseByte at the first frame.
+func socketTrace(req *http.Request, reused bool) *httptrace.ClientTrace {
+	trace := httptrace.ContextClientTrace(req.Context())
+	if trace == nil {
+		return nil
+	}
+	if reused && trace.GetConn != nil {
+		trace.GetConn(req.URL.Host)
+	}
+	if trace.GotConn != nil {
+		trace.GotConn(httptrace.GotConnInfo{Reused: reused})
+	}
+	return trace
 }
 
 // codexSocketEnded is the turn going over HTTP after the socket ended,
@@ -596,34 +650,17 @@ func sseEvent(kind string, frame []byte) []byte {
 	return append(out, "\n\n"...)
 }
 
-// codexSocketBody is the socket's frames read as server-sent events, and
-// the turn that may be kept when it ends with response.completed.
+// codexSocketBody is the socket's frames read as server-sent events.
 type codexSocketBody struct {
 	c       *websocket.Conn
 	ctx     context.Context
-	cancel  context.CancelFunc
+	k       *codexKept
+	shape   *codexTurnShape // nil: the socket isn't kept after the turn
+	output  []itemSum
 	pending []byte
 	done    bool
 	err     error
 	closed  atomic.Bool
-
-	// the session's key and the whole turn this message was made from;
-	// full is nil for a turn that can't be kept
-	key    string
-	full   []byte
-	opened time.Time
-
-	// the reply, for the turn the socket answers next
-	reply    codexSocketReply
-	poolable bool
-	released atomic.Bool
-}
-
-// codexSocketReply is what a reply said, no more than a later turn is
-// matched on.
-type codexSocketReply struct {
-	id    string
-	items []codexOutItem
 }
 
 // frame is the socket's next frame, nil for one the reply leaves out.
@@ -634,10 +671,11 @@ func (b *codexSocketBody) frame() ([]byte, error) {
 	typ, data, err := b.c.Read(b.ctx)
 	if err != nil {
 		b.done = true
+		b.k.close()
 		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 			return nil, io.EOF
 		}
-		if b.ctx.Err() != nil && b.closed.Load() {
+		if b.closed.Load() {
 			return nil, io.ErrClosedPipe
 		}
 		return nil, fmt.Errorf("codex websocket: %w", err)
@@ -646,39 +684,31 @@ func (b *codexSocketBody) frame() ([]byte, error) {
 		return nil, nil
 	}
 	data = bytes.TrimSpace(data)
-	switch kind := gjson.GetBytes(data, "type").String(); kind {
+	switch gjson.GetBytes(data, "type").String() {
 	case "responsesapi.websocket_timing":
 		return nil, nil
-	case "response.created":
-		if b.reply.id == "" {
-			b.reply.id = gjson.GetBytes(data, "response.id").String()
-		}
 	case "response.output_item.done":
-		if item := gjson.GetBytes(data, "item"); item.IsObject() {
-			b.reply.items = append(b.reply.items, codexOutItemOf([]byte(item.Raw)))
+		if b.shape != nil {
+			if sum, ok := codexReplyItem(data); ok {
+				b.output = append(b.output, sum)
+			} else {
+				b.shape = nil
+			}
 		}
 	case "response.completed":
-		if id := gjson.GetBytes(data, "response.id").String(); id != "" {
-			b.reply.id = id
-		}
-		if len(b.reply.items) == 0 {
-			// a reply that streamed no item: the whole response's output
-			// still tells the next turn's head
-			gjson.GetBytes(data, "response.output").ForEach(func(_, it gjson.Result) bool {
-				b.reply.items = append(b.reply.items, codexOutItemOf([]byte(it.Raw)))
-				return true
-			})
-		}
 		b.done = true
-		if b.key != "" && b.reply.id != "" && len(b.full) > 0 {
-			// the body is read or closed and the socket is kept
-			b.poolable = true
+		if id := gjson.GetBytes(data, "response.id").String(); id != "" && b.shape != nil {
+			// kept for the conversation's next turn, which may carry on
+			// from this one
+			b.k.fields, b.k.input = b.shape.fields, b.shape.sums
+			b.k.output, b.k.replyID = b.output, id
+			codexKeepPut(b.k)
 		} else {
-			go b.c.Close(websocket.StatusNormalClosure, "")
+			b.k.closeNormally()
 		}
 	case "response.failed", "response.incomplete", "response.done", "error":
 		b.done = true
-		go b.c.Close(websocket.StatusNormalClosure, "")
+		b.k.closeNormally()
 	}
 	return data, nil
 }
@@ -686,11 +716,9 @@ func (b *codexSocketBody) frame() ([]byte, error) {
 func (b *codexSocketBody) Read(p []byte) (int, error) {
 	for len(b.pending) == 0 {
 		if b.err != nil {
-			b.release()
 			return 0, b.err
 		}
 		if b.done {
-			b.release()
 			return 0, io.EOF
 		}
 		frame, err := b.frame()
@@ -712,31 +740,14 @@ func (b *codexSocketBody) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// Close ends a turn read only in part, and its socket; a socket whose
+// turn was read to its end is kept or closed already.
 func (b *codexSocketBody) Close() error {
 	if b.closed.Swap(true) {
 		return nil
 	}
-	b.release()
+	if !b.done {
+		b.k.close()
+	}
 	return nil
-}
-
-// release closes the socket, or keeps it for its session's next turn when
-// the reply ended with response.completed and the caller has read or
-// closed the body. The caller is done with it by then: the frame after
-// response.completed is the next turn's, so none is left unread.
-func (b *codexSocketBody) release() {
-	if b.released.Swap(true) {
-		return
-	}
-	if b.poolable {
-		b.cancel() // the turn is answered; no read is watching it
-		codexKeptSockets.keep(b.key, &codexKeptConn{
-			c:      b.c,
-			opened: b.opened,
-			turn:   &codexSocketTurn{msg: b.full, id: b.reply.id, out: b.reply.items},
-		}, true)
-		return
-	}
-	b.c.CloseNow()
-	b.cancel()
 }

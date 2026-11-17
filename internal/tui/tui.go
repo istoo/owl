@@ -398,6 +398,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.flash, m.flashOK = "reloaded", true
 					if m.page == pageUsage {
 						m.quotas = nil
+						// every account read again, a saved Claude
+						// account's /usage run too, as the app's
+						// Refresh does (#5380)
+						provider.AskEveryClaudeUsage()
 						return m, m.loadQuotas(true)
 					}
 					return m, nil
@@ -1045,6 +1049,9 @@ func (m model) hintWidth() int {
 // and the last one is reserved: the ones that don't fit are left out
 // rather than cut, since half a word reads wrong. The pages pass the help
 // hint last, so ? survives every width.
+// hints is the footer's keys and words, as many as fit.
+func hints(kv ...string) string { return hintsFit(0, kv...) }
+
 func hintsFit(max int, kv ...string) string {
 	sep := sFaint.Render("  ·  ")
 	sepW := lipgloss.Width(sep)

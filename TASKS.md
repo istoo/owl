@@ -487,3 +487,35 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       一小时内累计 CPU 56.8 秒（平均一个核的 1.6%），30 秒采样窗口内 5%（热点是 syscall 21% 与分配清零 19%，
       都是真实 I/O 和分配的代价，没有再刨的空间）。三次同一时间点：footprint 719 → 442 → 394MB，存活 235 → 195 → 179MB。
       浸泡尺子留在 internal/gateway/memory_soak_test.go，默认跳过，作为以后每次内存改动的对照。
+
+## 2026-11-17 上游全量合流（yetone/magpie → owl）
+
+- [x] 固定上游 sha：`4f94b8a829090236be37d3687e76e16b5113eec0`（`git fetch upstream` 一次，之后不追新提交）；
+      合流基点 `e17b6cefc`（2026-11-04，`git merge-base 68bbe1383 upstream/main`）；owl 当前 `1bf8fec80`（旧历史头 `68bbe1383`）。
+- [x] 改名转换 T：`scripts/upstream-sync/rename.py`（路径 + 文本；例外：`@magpie-community`、`magpie-community`、
+      `X-Magpie-*`/`x-magpie-*`、`json:"magpie"`、插件 package.json 的 `magpie` 清单键、`magpie_label/by/price/via/cache_unknown/deferred`、
+      `"magpie":"routing-group"`、`usemagpie`；Go 文件写完跑 gofmt 以对齐结构体字段）。
+- [x] 校准：`T(e17b6cefc)` 对 `68bbe1383` 剩 848 个不同文件（994 行差异起）、12 个只在 T 侧、93 个只在 owl 侧；
+      T 侧路径里含 magpie 的只剩 `internal/plugin/testdata/github/npm/@magpie-community_…json`；
+      残留 magpie 文本全部是上述例外（外加 usemagpie 链接，owl 自己的改动里删）。差异 ≤10 行的文件 571 个，>100 行的 25 个（app.js/i18n/css/README 等 owl 真实改动）。
+- [ ] 造 B'=T(e17b6cefc)、U'=T(upstream/main)、O'=owl 当前树（父均为 B'），三方合并
+- [ ] 冲突按归属解决（owl 自有清单见任务说明；其余取上游）
+- [ ] 合并结果落到 main 拉出的分支，单提交 `sync: upstream magpie to 4f94b8a`，新增 `UPSTREAM`
+- [ ] 全量验证（build/gofmt/vet/go test/GUI/沙箱启动）
+- [x] B'=`d76476bdbf36e5d84f228d48021b6f86a206d578`（T(e17b6cefc)），U'=`83809fa4de023264942a6ff326651e09b4704fb2`（T(4f94b8a82)，父 B'），
+      O'=`fa85029cde8b57607360511312cf0be3a7ed63a6`（owl 1bf8fec80，父 B'）；合并后 2535 新增、1940 修改、215 冲突。
+- [x] 冲突解决（215 个）：owl 自有（.github/workflows、README*、site/public/install.sh、TASKS、build、托盘面板、内存优化）取 owl；
+      文档/站点/上游代码取上游；app.js/app.css 逐块合并（owl 的界面结构 + 上游新功能）；GUI 测试取上游，跑出红再按 owl 界面改。
+      拿不准的记在下方。
+- [x] 合并后编译修复：appdir copyTree/copyFile 与上游 move.go 重名（删 owl 重复实现）、provider cmpOr、gateway maxoutput 重复块、
+      noteMasked 改 []byte、plugin.FromMagpie 兼容常量、edit.WriteAtomicMode、provider.AnyImageInput、plugin host nonce（#4136）、
+      tui help 面板（owl 功能，取 owl 并补 AskEveryClaudeUsage）、closeMatches、replyBufSize（owl 内存优化）。
+- [x] 隐私：上游新增的 usemagpie.ai 运行时请求已改走 GitHub/社区 dist 分支：bark 图标、插件 tagged 目录、README 缓存、
+      Library 自有 MCP 的图标与主页、Windows 快捷方式 URLInfoAbout、desktopiso bundle id、update 的 Site/feed/notes（GitHub release 资产生成）。
+- [x] 删掉被上游实现取代的 owl 测试：cc_uuidset_test.go（上游 uuid_set.go）、dockflap_mem_darwin_test.go（上游 Dock 修法）、
+      spotlight_batch_test.go（上游改成一次 mdfind）、routing-steady.test.cjs（上游改名为 routing-steady-garbage）。
+- [x] 验证：go build ./...、GOOS=windows build、GOOS=linux -tags nogui build；gofmt -l 空；go vet ./...、GOOS=windows vet、GOOS=linux vet 均通过。
+- [ ] go test ./... -timeout 45m（日志 tee），红的逐个归因
+- [ ] GUI 全套（chromium+webkit）、TestCoreScriptBudget、i18n-keys
+- [ ] make app + 沙箱 HOME 启动
+- [ ] 落到 main 拉出的分支（单提交），分支名待报

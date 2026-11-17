@@ -7,6 +7,10 @@
 // models in a click. Each step is ticked from the state the server gives,
 // never from having been seen; the card goes once the first two are done,
 // and put away it stays away, kept in the settings, not the page's storage.
+// Renzexi01 on X (一进来就这么复杂): while the card shows, the agents'
+// list is folded under it, behind "Show all {n} agents", since its second
+// step names the ones found here; one connected, or the card put away,
+// and the list is in view as before.
 // Both engines, a wide and a narrow window and the panel, every language.
 // No backend, the API is faked here.
 const assert = require("node:assert/strict");
@@ -93,6 +97,7 @@ const STRINGS = ["Get started", "Add a model source", "Connect an agent", "Set u
 
 async function open(browser, layout, lang, w, posts) {
   const context = await browser.newContext({ viewport: layout.viewport, reducedMotion: "reduce" });
+  await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "agents"); } catch {} });
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   page.setDefaultNavigationTimeout(60000);
@@ -100,13 +105,14 @@ async function open(browser, layout, lang, w, posts) {
   page.on("pageerror", (e) => page.errors.push(e.message));
   await page.route("**/*", server(lang, w, posts));
   await page.goto("http://owl.test" + layout.url);
-  if (layout.name === "panel") {
-    await page.locator('#pHome [data-open="agents"]').click();
-  }
-  await page.locator(".row.agent").first().waitFor();
+  // folded under Get started, the rows are there but out of view
+  await page.locator(".row.agent").first().waitFor({ state: "attached" });
   return { context, page };
 }
 
+// the agents' rows in view, not folded under the list's Show more
+const inView = (page) => page.locator(".row.agent").evaluateAll((rs) => rs.filter((r) => !r.closest(".agent-fold")).map((r) => r.dataset.id || r.id));
+const folded = (page) => page.locator(".agent-fold .row.agent").count();
 const stepDone = (page, step) => page.locator(`.guide-step[data-step="${step}"]`).evaluate((e) => e.classList.contains("done"));
 const tops = (page) => page.evaluate(() => [document.scrollingElement.scrollTop, document.querySelector("#view-agents")?.scrollTop]);
 const sideways = (page) => page.evaluate(() => {
@@ -134,13 +140,22 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal((await page.locator(".guide-h").textContent()), await tr("Get started"));
         assert.equal(await stepDone(page, "source"), false);
         assert.equal(await stepDone(page, "agent"), false);
-        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 0, m: 3 }));
+        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 0, m: 2 }));
         // the agents found here are named, Cursor (never connectable) not;
         // with no models yet they can't be connected
         assert.deepEqual(await page.locator(".guide-agent").evaluateAll((bs) => bs.map((b) => b.dataset.id)), ["codex", "claude", "opencode"]);
         assert.ok(await page.locator(".guide-agent").evaluateAll((bs) => bs.every((b) => b.disabled)));
         // routing waits for a model source: no button yet
         assert.equal(await page.locator(".guide-tpl").count(), 0);
+        // the card alone, the list folded under it
+        assert.deepEqual(await inView(page), [], "no agent row in view under Get started");
+        assert.equal(await folded(page), 5);
+        if (layout.name !== "panel") {
+          const more = page.locator(".agent-more");
+          assert.equal((await more.textContent()).trim(), await tr("Show all {n} agents", { n: 5 }));
+          if (lang !== "en") assert.notEqual(await tr("Show all {n} agents"), "Show all {n} agents", `${lang} has "Show all {n} agents"`);
+          assert.equal(await more.getAttribute("aria-expanded"), "false");
+        }
         assert.equal(await sideways(page), false, "nothing runs off sideways");
         if (shots && (lang === "en" || lang === "zh")) await page.screenshot({ path: path.join(shots, `getting-started-${engine}-${lang}-${layout.name}-new.png`) });
 
@@ -160,11 +175,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // be connected, and a routing group is a click away
         w.served = 12;
         await page.goto("http://owl.test" + layout.url);
-        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await card.waitFor();
         assert.equal(await stepDone(page, "source"), true);
         assert.match(await page.locator('.guide-step[data-step="source"] .guide-say').textContent(), /12/);
-        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 1, m: 3 }));
+        assert.equal(await page.locator(".guide-n").textContent(), await tr("{n} of {m} done", { n: 1, m: 2 }));
         const codex = page.locator('.guide-agent[data-id="codex"]');
         assert.equal(await codex.isDisabled(), false);
         const tpl = page.locator(".guide-tpl");
@@ -188,11 +202,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(await tops(page), before, "no click moved the page");
         assert.equal(top[0], before[0]);
 
-        // done stays done: a reload brings no card back
+        // done stays done: a reload brings no card back, and the agent
+        // connected is in view, the rest folded as for anyone
         await page.goto("http://owl.test" + layout.url);
-        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(".row.agent").first().waitFor();
         assert.equal(await page.locator(".guide").count(), 0);
+        assert.equal(await folded(page), 4);
         assert.deepEqual(page.errors, []);
       });
 
@@ -208,6 +223,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.locator(".guide").waitFor({ state: "detached" });
         assert.ok(posts.includes("/api/settings/guide"));
         assert.equal(w.hidden, true);
+        // put away, the list is in view as it was before there was a card
+        assert.equal(await folded(page), 0);
         assert.deepEqual(await tops(page), top, "no click moved the page");
         assert.deepEqual(page.errors, []);
         await first.context.close();

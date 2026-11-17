@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/settings"
 	"github.com/istoo/owl/internal/usage"
@@ -155,7 +156,7 @@ func TestPresetPlanEmbeddingResolvesOutsideChatModels(t *testing.T) {
 			t.Fatalf("embedding model exposed for chat: %+v", m)
 		}
 	}
-	got, model, ok := resolveRetrievalModel(embed[0].ID)
+	got, model, ok := resolveRetrievalModel(embed[0].ID, catalog.ServesEmbedding)
 	if !ok || got.ID != p.ID || model != embed[0].ID {
 		t.Fatalf("bare embedding resolved to %q/%q, %v", got.ID, model, ok)
 	}
