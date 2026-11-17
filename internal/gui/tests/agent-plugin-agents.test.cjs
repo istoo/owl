@@ -112,15 +112,22 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await view.waitFor();
         const agents = view.locator(".pm-sec").filter({ has: page.locator(".pm-sechead h3", { hasText: new RegExp("^" + await said(page, lang, "Agents") + "$") }) });
         await agents.waitFor();
+        // owl keeps the page's header in the page (docs/owl-design.md), above
+        // the plugins' body at a window's width and over it at a phone's, so
+        // the top is whichever of the two starts lower
         await page.waitForFunction(() => {
-          const v = document.querySelector("#view-plugins");
-          const s = [...v.querySelectorAll(".pm-sec")].find((x) => x.querySelector(".pm-card .pm-chip.kind.ag"));
-          return s && Math.abs(s.getBoundingClientRect().top - v.getBoundingClientRect().top) < 80;
+          const v = document.querySelector("#view-plugins"), b = v.querySelector(".pm-body");
+          const s = [...b.querySelectorAll(".pm-sec")].find((x) => x.querySelector(".pm-card .pm-chip.kind.ag"));
+          const top = Math.max(v.getBoundingClientRect().top, b.getBoundingClientRect().top);
+          return s && Math.abs(s.getBoundingClientRect().top - top) < 80;
         });
         assert.equal(await agents.locator(".pm-card").count(), AGENTS.length);
         // it stays there once the page has what it loads
         await page.waitForTimeout(300);
-        const top = await agents.evaluate((s) => s.getBoundingClientRect().top - document.querySelector("#view-plugins").getBoundingClientRect().top);
+        const top = await agents.evaluate((s) => {
+          const v = document.querySelector("#view-plugins"), b = s.closest(".pm-body");
+          return s.getBoundingClientRect().top - Math.max(v.getBoundingClientRect().top, b.getBoundingClientRect().top);
+        });
         assert(Math.abs(top) < 80, "Agents moved away: " + top);
         await page.context().close();
 
