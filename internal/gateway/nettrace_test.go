@@ -57,10 +57,12 @@ func TestTryTellsWhereItsTimeWent(t *testing.T) {
 	}
 	r, n := ask()
 	t.Logf("a new connection: %+v", n)
-	// the vendor's wait is the hold, give or take the machine: a loaded
-	// runner measured 298.7 ms for a 300 ms hold (11-10)
+	// the vendor's wait is the hold. The fake starts holding when it has
+	// read the request, which can be before the write returns here and Send
+	// ends, so a busy machine moves part of the hold into Send (298.7 ms of
+	// Wait for a 300 ms hold, 11-10): Send and Wait together cover it.
 	holdMs := float64(hold.Milliseconds())
-	if n.Wait < holdMs-10 || n.Wait > holdMs+5000 {
+	if n.Send+n.Wait < holdMs-1 || n.Wait > holdMs+5000 {
 		t.Fatalf("wait %v for a %v hold: %+v", n.Wait, hold, n)
 	}
 	if n.Reused || n.TLS <= 0 || n.Asks != 1 || n.Before != 0 {
@@ -78,7 +80,7 @@ func TestTryTellsWhereItsTimeWent(t *testing.T) {
 	}
 	// the open connection carries the next one
 	_, n = ask()
-	if !n.Reused || n.DNS != 0 || n.Connect != 0 || n.TLS != 0 || n.Wait < holdMs-10 {
+	if !n.Reused || n.DNS != 0 || n.Connect != 0 || n.TLS != 0 || n.Send+n.Wait < holdMs-1 {
 		t.Fatalf("the open connection: %+v", n)
 	}
 }
@@ -138,7 +140,10 @@ func TestSocketTurnTellsWhereItsTimeWent(t *testing.T) {
 			t.Fatalf("%s: no timing", what)
 		}
 		t.Logf("%s: %+v", what, *n)
-		if n.Wait < holdMs-1 || n.Wait > holdMs+5000 || n.Head < n.Wait {
+		// the fake holds from when it read the frame, which can be before
+		// the write returns here: Send and Wait together cover the hold
+		// (Send 5.4, Wait 195.1 for 200 ms on ubuntu CI, run 44159644833)
+		if n.Send+n.Wait < holdMs-1 || n.Wait > holdMs+5000 || n.Head < n.Wait {
 			t.Fatalf("%s: timing %+v for a %v hold", what, *n, hold)
 		}
 		if sum := n.Own + n.Before + n.Pool + n.DNS + n.Connect + n.TLS + n.Send + n.Wait; sum > n.Head+1 {
