@@ -569,14 +569,30 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       真实红 21 个文件 / 172 条断言（其余 1485 个是未跑到的 pending）。根因之一：合并取了上游 tests/reader.cjs，丢 owl 的
       navTo/footTop 导出，所有 `const { navTo }` 的测试报 navTo is not a function；已在 reader.cjs 补回。
 - [x] 用上游 U' 的 assets 交叉验证归属：agent-details-ready（Details 动画末尾高度跳 80px）、agent-switch-accounts（点账号后
-      aria-expanded 仍为 null）、account-arrange（等 provider/arrange 响应超时）、add-sheet-hint（短窗口提示条）在上游 assets 上
-      同样失败——是上游自己的红；account-weight、account-refresh-holds 在上游 assets 上绿，属 owl 侧差异，待修。
+      aria-expanded 仍为 null）、account-arrange（点拖动时 `Cannot read properties of null (reading 'id')`）在上游 assets 上
+      同样失败——是上游自己的红。add-sheet-hint 复跑在 U' 上 52/52 全绿，此前记为上游红是误判：它是 owl 标题栏在 de 1300
+      浮动时只给 285px（长提示约 293px）造成的，已按 owl 布局改测试（`1ba876e1a`）。
+      account-weight、account-refresh-holds（第一条）在上游 assets 上绿，属 owl 侧差异，已修。
 - [x] 上游新增测试假定旧托盘面板里有 agent 列表；owl 的托盘面板是「今天」总览（docs/owl-design.md 三·七），这些 panel 子测试
       按 owl 设计跳过：agent-speed、agent-grip、agent-app-restart、agent-proxied、agent-unreachable（window 子测试保留）。
 - [x] 首跑红文件修复后复跑 21 个文件：207 条中 39 红——agent-details-ready 16、agent-switch-accounts 10（这两组上游 assets 同样红）、
       account-arrange 1、add-sheet-hint 1（上游红）；owl 侧还剩 agent-plugin-agents 5、account-refresh-holds 3、account-weight 1 未修。
       全量 GUI 未跑完（预计 8-9 小时），见上。
+- [x] owl 侧 GUI 红修完（三个提交，chromium+webkit 复跑）：
+      `6aee4f947` 刷新保持——合并丢了上游在 focusin 里的 `if (!modalRefocus) modalMark(...)`，重绘把焦点还给按钮副本时
+      重新标记了移动后的按钮，holdModal 找不到替身就不补偿滚动，按下的刷新被顶上来的行推下 186px；补回守卫后
+      account-refresh-holds 第一条两引擎全绿。
+      `194ce27e2` 账户权重——owl 的 Routing 是下拉菜单（route-pick-btn），不是上游的分段按钮；account-weight 改为开菜单选，
+      key-weight 恢复 owl main 的菜单版；并修了 .acc-break 在 480px 以上仍作为空 flex 项吃 9px 间距的真实 bug（德语 560px
+      WebKit 行尾溢出 3px），窄屏按 owl 设计允许两行地址+尾行。两文件 6/6，另 4 个同类文件 22/22。
+      `5b4b5b708` Agents 定位——owl 把页头留在页面内，宽屏时 `#view-plugins` 的顶比正文高 40px；测试改以「视图与 .pm-body
+      中较低者为顶」，agent-plugin-agents 两引擎 22/22。`1ba876e1a` 添加框提示——宽屏浮动进标题栏时按「栏给的长提示实际宽度」
+      决定长短，不再按 1300px 窗口猜，add-sheet-hint 两引擎 52/52（U' 也 52/52）。TestCoreScriptBudget 绿。
+      另发现 account-refresh-holds 的第二条（a sheet pressed while short rises into the room）在上游 U' 上同样红，走 issue 记录。
+- [ ] 后续项：owl 发布链加 ed25519 签名与构建证明（release.yml 生成 latest.json 的 `signed`、开启 signingOn/attestingOn、
+      配 istoo/owl-releases 的 secret 与 attestation）；当前保持 signingOn=false / attestingOn=false。
 - [x] make app：Go 1.26.10 的 toolchain 在 GOMODCACHE，footprint-overlay 被 go 拒绝；改用
       `PATH=/opt/homebrew/Cellar/go/1.27.3/bin:$PATH GOTOOLCHAIN=local make app` 成功。沙箱 HOME（/tmp/owl-sync/home）启动
       `owl web --no-open --addr 127.0.0.1:0`：/api/state 200（JSON 有 agents）、/?mode=panel 200、/v1/models 403（无 key，网关在）。
-- [x] 分支 `sync/upstream-4f94b8a`：99083ade1（sync）、1ed4b427e（owl 规则）、c9bbbc955（本轮修复）。未 push、未打 tag、未改 main。
+- [x] 分支 `sync/upstream-4f94b8a`：99083ade1（sync）、1ed4b427e（owl 规则）、db97ba705（owl 自有文件补回）、
+      6aee4f947 + 194ce27e2 + 5b4b5b708 + 1ba876e1a（owl 侧 GUI 红）。未 push、未打 tag、未改 main。
