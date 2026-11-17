@@ -179,6 +179,13 @@ func ImportGoogleAccounts(ctx context.Context, agent string, files []string) ([]
 	if settings.AccountDiscoveryOff() {
 		return nil, errAccountDiscoveryOff
 	}
+	// a subscription its plugin serves takes no accounts imported here: an
+	// import is a new user's, and Antigravity is retired (11-15). The file
+	// is read and checked with Google as a sign-in is, so this comes before
+	// any of it.
+	if PluginServes(agent) {
+		return nil, fmt.Errorf("Antigravity is retired and imports nothing: use Antigravity (local agy CLI), install it with `owl plugin add %s`, then move the accounts from Providers", agyCLIPackage)
+	}
 	app, ok := googleAppOf(agent)
 	if !ok || agent != "antigravity" {
 		return nil, fmt.Errorf("accounts can't be imported for %s", agent)
