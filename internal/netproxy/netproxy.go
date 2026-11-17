@@ -399,8 +399,10 @@ func For(u *url.URL) (*url.URL, error) {
 	default:
 		return Parse(s)
 	}
-	if p, err := fromEnv(u); p != nil || err != nil {
-		return p, err
+	if envNamesProxy() {
+		// the environment's word is the whole word: a host its NO_PROXY
+		// passes by goes direct, not through the machine's own proxy
+		return fromEnv(u)
 	}
 	sys := System()
 	if sys.URL == "" {
@@ -587,6 +589,12 @@ func fromEnv(u *url.URL) (*url.URL, error) {
 		return nil, nil
 	}
 	return Parse(all)
+}
+
+// envNamesProxy says the environment sets a proxy at all: then its
+// NO_PROXY is the one that decides, never the machine's own proxy.
+func envNamesProxy() bool {
+	return envOf("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy") != ""
 }
 
 func envOf(keys ...string) string {

@@ -190,7 +190,7 @@ echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"de
 echo '{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}}'
 echo '{"type":"stream_event","event":{"type":"message_stop"}}'
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	srv := New()
 	t.Cleanup(srv.subscription.abortAll)
 	p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}

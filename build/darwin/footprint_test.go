@@ -14,6 +14,12 @@ import (
 // -overlay flag.
 func overlay(t *testing.T) string {
 	t.Helper()
+	// a toolchain go downloaded into the module cache (GOTOOLCHAIN=auto, a
+	// go.mod newer than the installed Go) is beneath GOMODCACHE, where go
+	// refuses an overlay of any file: the check needs an installed Go
+	if strings.Contains(filepath.ToSlash(runtime.GOROOT()), "/pkg/mod/golang.org/toolchain@") {
+		t.Skip("the Go toolchain is in the module cache, which go won't overlay")
+	}
 	dir := t.TempDir()
 	out, err := exec.Command("sh", "footprint-overlay.sh", filepath.Join(dir, "ovl")).CombinedOutput()
 	if err != nil {

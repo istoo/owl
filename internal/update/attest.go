@@ -88,6 +88,12 @@ import (
 // (istoo/owl-releases 9213fbd).
 const firstAttested = "0.1.3891"
 
+// attestingOn is whether owl's own releases carry attestations. They don't
+// yet (no istoo/owl-releases publish here), so an update would ask GitHub
+// about bytes GitHub never built; false keeps it from asking. A bundle the
+// feed names on owl's site is still checked. See SIGNING KEY in TASKS.md.
+var attestingOn = false
+
 // attestRepo is where the attestations are stored and what they must name.
 const attestRepo = "istoo/owl-releases"
 

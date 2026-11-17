@@ -6,8 +6,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/istoo/owl/internal/settings"
 )
 
 // A saved rule is held to what netproxy.CheckResolve takes, and only a
@@ -44,6 +47,21 @@ func TestResolveSaved(t *testing.T) {
 // is still asked for that name (SNI and Host). An account of a subscription
 // takes no rule.
 func TestResolveVia(t *testing.T) {
+	// a proxy the machine's environment names would resolve gw.invalid
+	// itself, so the rule's address would never be dialled
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"} {
+		t.Setenv(k, "")
+	}
+	// nor the system's (macOS' scutil): a direct setting is the user's
+	// word for this test's requests
+	h := t.TempDir()
+	t.Setenv("HOME", h)
+	t.Setenv("USERPROFILE", h)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(h, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(h, ".cache"))
+	if err := settings.Save(settings.Settings{Proxy: "direct"}); err != nil {
+		t.Fatal(err)
+	}
 	outside := dialsOut(t)
 	var sni, host string
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { host = r.Host }))

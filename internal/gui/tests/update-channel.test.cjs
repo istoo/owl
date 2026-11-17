@@ -138,6 +138,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           // another setting's save keeps it
           await showRow(page, auto);
           before = await scrolls(page);
+          // owl's About keeps Automatic updates a switch, not a pair of segments
           await auto.locator("[role=switch]").click();
           await page.waitForFunction(() => document.querySelector(".update-auto-row [role=switch]")?.getAttribute("aria-checked") === "false");
           assert.equal(ctl.saves.at(-1).noAutoUpdate, true);

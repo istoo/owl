@@ -66,6 +66,10 @@ func TestSignedListGivesTheHash(t *testing.T) {
 }
 
 func TestTamperedReleaseRefused(t *testing.T) {
+	// signed-era releases (signingOn), so a dropped signature is a refusal
+	wasOn := signingOn
+	signingOn = true
+	t.Cleanup(func() { signingOn = wasOn })
 	cases := map[string]func(*Release){
 		"feed hash swapped": func(r *Release) {
 			a := r.Assets["a"]
@@ -116,6 +120,11 @@ func TestUnsignedEraNeedsNoSignature(t *testing.T) {
 	if old.Assets["a"].SHA256 != "ab" {
 		t.Fatal("hash changed")
 	}
+	// owl's own releases aren't signed yet (signingOn false); with the key in
+	// place the signature is asked for from firstSigned on
+	wasOn := signingOn
+	signingOn = true
+	t.Cleanup(func() { signingOn = wasOn })
 	first := &Release{Version: firstSigned}
 	if first.verify() == nil {
 		t.Fatal("the first signed release passed unsigned")

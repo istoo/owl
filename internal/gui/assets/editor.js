@@ -6,11 +6,9 @@
 function drawEditor(p, presetID) {
   const pr = presetID ? providers.presets.find((x) => x.id === presetID) : p?.preset ? providers.presets.find((x) => x.id === p.preset) : null;
   const isNew = !p, custom = !pr && !p?.account, decides = !!(p?.decide || pr?.decide);
-  // a preset already added is added again only through "Add another": one
-  // more provider of it, under a name and id of its own
+  // a preset added again only through "Add another"
   const another = isNew && !!pr?.added;
-  // an editor opened afresh has Names, prices & levels folded: it stayed open in
-  // every editor after, until owl was restarted (Hu9956, #868)
+  // Model settings folded afresh (#868)
   if (!draft) naming = unpickedShown = picksLeft = null;
   draft = draft || (p
     ? draftOf(p)
@@ -39,10 +37,16 @@ function drawEditor(p, presetID) {
     if (p) h.append(providerSwitch(p));
     ed.append(h);
     if (p?.off) ed.append(el("div", "hint off-note", t("Switched off: agents aren't given its models and no request goes to it. Its keys and settings are kept; switch it on to use it again.")));
+    if (p?.self) {
+      const [keep, cb] = tick(t("Use it anyway"), !!p.keepSelf);
+      cb.onchange = () => accountAction("provider/keepself", { id: p.id, keepSelf: cb.checked }, t(cb.checked ? "{name} is used anyway" : "{name} is left out: it is this owl", { name: p.name }));
+      const note = el("div", "hint off-note self-note", selfNote(p));
+      note.append(keep);
+      ed.append(note);
+    }
   }
 
-  // a vendor's global and China endpoints are presets of their own, one row
-  // in the add sheet: here the new provider picks between them, the key kept
+  // a vendor's global and China endpoints: one row in the add sheet, picked here
   const pair = isNew && pr ? (globalOf(pr) ? [globalOf(pr), pr] : chinaOf(pr) ? [pr, chinaOf(pr)] : null) : null;
   if (pair) {
     const seg = el("div", "segs area");
@@ -61,9 +65,7 @@ function drawEditor(p, presetID) {
     ed.append(...field(t("Region"), seg, ""));
   }
 
-  // who uses it: just the agents already pointed here, so a click changes
-  // one's model. Pointing a new agent at the provider happens in the Agent
-  // tab's picker, not here.
+  // the agents already pointed here; a new one is pointed in the Agents tab
   if (p) {
     const on = p.agents.filter((a) => a.current);
     if (on.length) {
@@ -81,7 +83,8 @@ function drawEditor(p, presetID) {
   }
 
   let name, url;
-  if (another) {
+  const remoteNew = isNew && pr?.id === "remote-owl";
+  if (another && !remoteNew) {
     name = input(draft.name === pr.name ? "" : draft.name, t("e.g. {name} · Work", { name: pr.name }));
     const hint = el("div", "hint");
     const idHint = () => { hint.textContent = t("id {id} — a number is added if it is taken", { id: draft.id }); };
@@ -91,10 +94,7 @@ function drawEditor(p, presetID) {
     wrap.append(name, hint);
     ed.append(el("label", "", t("Name")), wrap);
   }
-  // an added preset's name is the user's, as a custom provider's is: two
-  // of a vendor's sites (Kimi and Kimi (China)) named as they tell them
-  // apart, in the list and every picker (yapechan on Discord). Left empty,
-  // it is the preset's again
+  // an added preset's name is the user's (yapechan on Discord); empty, the preset's
   if (p && pr && !p.account) {
     name = input(draft.name === pr.name ? "" : draft.name, pr.name);
     name.className = "provider-name";
@@ -132,15 +132,14 @@ function drawEditor(p, presetID) {
   // the Redaction row, shown while every address is on this computer or
   // the local network
   let showLocal = () => {};
-  // the Certificate row, shown while a provider of the user's own has an
-  // https:// address (#2383)
+  // the Certificate rows, shown over https:// (#2383, #5596)
   let showTLS = () => {};
-  // the Key header row, shown while the provider has a third-party
-  // Anthropic API, which is sent its key in both headers by default
+  let pinBody = () => {};
+  // the Key header row, for a third-party Anthropic API
   let showAuth = () => {};
-  // the Compaction row, shown while the provider has a Responses API
-  // (Provider.CarriesCompaction): Codex's own compaction can go only there
+  // the Compaction row, for a Responses API (CarriesCompaction)
   let showCompaction = () => {};
+  let showSocket = () => {};
   const carriesCompaction = () => !!((draft.responses ?? (isNew && pr ? pr.responses : "")) || "").trim();
   if (custom) {
     name = input(draft.name, t("e.g. My Relay"));
@@ -148,18 +147,14 @@ function drawEditor(p, presetID) {
     ed.append(...field(t("Name"), name));
     if (p) idField();
 
-    // the base URL is the one the chosen protocol is asked at; a vendor
-    // that serves only the Responses API is added (and tested) with that
-    // alone, since /chat/completions would only fail (#73)
+    // the base URL is the chosen protocol's; Responses alone where only it serves (#73)
     const seg = el("div", "segs base-apis");
     for (const [v, hint] of [["openai", "…/v1 — chat completions, and responses when the vendor has it"], ["responses", "…/v1 — for a vendor that serves only the Responses API, not chat completions"], ["anthropic", "the root URL, what ANTHROPIC_BASE_URL would take"], ["gemini", "…/v1beta — Google's Gemini API (generateContent), or one that answers as it does; the key goes in x-goog-api-key"], ["decide", "a decision API's root, POST …/systemone under it: its models are a routing group's classifier, never an agent's"]]) {
       const b = el("button", "opt" + (draft.api === v ? " on" : ""), t(API_NAMES[v]));
       b.title = t(hint);
       b.onclick = () => {
         if (draft.api === v) return;
-        // each protocol keeps its own URL (#105); an unsaved one moves to a
-        // protocol without one, in its spelling (#73), and goes back once
-        // that protocol is given its own (#1231)
+        // each protocol keeps its own URL (#105, #73, #1231)
         const from = apiField[draft.api], to = apiField[v];
         carried = null;
         if (!draft[to] && draft[from] && draft[from] !== (p?.[from] || "")) {
@@ -172,8 +167,6 @@ function drawEditor(p, presetID) {
       b.dataset.api = v;
       seg.append(b);
     }
-    // the protocol the base URL is for, shown as picked: by its button,
-    // or by a detection taken (useDetected)
     const showApi = (v) => {
       draft.api = v;
       url.value = draft[apiField[v]] || "";
@@ -186,6 +179,7 @@ function drawEditor(p, presetID) {
       showTLS();
       showAuth();
       showCompaction();
+      showSocket();
     };
     queueMicrotask(() => slide(seg, "api"));
     url = input(draft[apiField[draft.api]], urlHint(draft.api), "url");
@@ -193,13 +187,11 @@ function drawEditor(p, presetID) {
     url.oninput = () => {
       draft[apiField[draft.api]] = url.value;
       if (carried) { draft[carried.from] = carried.value; carried = null; fillEndpoints(); }
-      showSearch(); showLocal(); showTLS(); showAuth(); showCompaction();
+      showSearch(); showLocal(); showTLS(); showAuth(); showCompaction(); showSocket();
     };
     const urlWrap = el("div", "stack");
     urlWrap.append(seg, url);
-    // the APIs that answered a detection, taken for the provider: their
-    // URLs set, one that wasn't found there (404, 405) cleared, and the
-    // base URL's protocol one of those that answered
+    // the APIs a detection found: URLs set, a 404/405 one cleared
     const useDetected = (rs) => {
       carried = null;
       for (const x of rs) {
@@ -209,6 +201,10 @@ function drawEditor(p, presetID) {
       const v = draft[apiField[draft.api]] ? draft.api : ["openai", "responses", "anthropic", "gemini", "decide"].find((a) => draft[apiField[a]]);
       showApi(v || draft.api);
       draft.onModelPrefs?.(); // the APIs a model can be given follow the URLs
+    };
+    draft.onV1 = (rs) => {
+      for (const x of rs) if (x.v1 && (draft[x.protocol] || "").trim().replace(/\/+$/, "") + "/v1" === x.v1) draft[x.protocol] = x.v1;
+      showApi(draft.api);
     };
     curlBase = (api, base) => {
       carried = null;
@@ -221,29 +217,22 @@ function drawEditor(p, presetID) {
     ed.append(...field("Base URL", urlWrap));
   }
 
-  // the Cline API serves a model from whichever host its AI gateway picks;
-  // pinned, its DeepSeek models are served by DeepSeek's own API alone and
-  // its GLM models by Z.ai's (sdytman on Discord), which keeps their prompt
-  // cache (White Immortal on Discord). One tick for both makers. ClinePass,
-  // or the Cline plugin's provider (ARNO on Discord)
+  // Cline's DeepSeek and GLM models pinned to their makers' APIs (sdytman, ARNO on Discord);
+  // since 11-06 Cline refuses the pin for all but glm-5.3-flash (#5442), as the note says
   const upstreamField = () => {
     const [ptk, pcb] = tick(t("DeepSeek and GLM models only from their makers' own APIs"), !!draft.pinUpstream);
     ptk.classList.add("pin-upstream");
     pcb.onchange = () => { draft.pinUpstream = pcb.checked; };
-    return field(t("Upstream"), ptk, t("Cline serves a model from any host its gateway picks; pinned, a request for a DeepSeek model goes only to DeepSeek and one for a GLM model only to Z.ai, which keeps its prompt cache, and fails when that API can't take it"));
+    return field(t("Upstream"), ptk, t("Since 2026-11-06 Cline refuses a pinned DeepSeek or GLM request with 403, so owl sends them unpinned and Cline picks the host; only glm-5.3-flash still asks Z.ai"));
   };
 
-  // the settings few need — headers, proxy, limits, windows, fallback —
-  // folded under Advanced, out of the way of the key and the models: open
-  // when one of them is set, or as it was left in this editor
   const adv = edAligned(el("details", "more advanced"));
-  adv.open = advanced && advanced.of === editing ? advanced.open : advancedSet(draft, p);
+  adv.open = advanced && advanced.of === editing ? advanced.open : advancedSet(draft, p) || (custom && !!(draft.balanceURL || "").trim());
   const of = editing;
   adv.onfold = (open) => { advanced = { of, open }; };
   adv.append(el("summary", "", t("Advanced")));
   const advIn = el("div", "inner");
   adv.append(advIn);
-
   const unmaskRow = (hint, urls) => {
     const [ltk, lcb] = tick(t("Send requests unmasked"), !!draft.unredacted);
     const row = field(t("Redaction"), ltk, hint), note = el("div", "hint unmasked-away");
@@ -260,18 +249,18 @@ function drawEditor(p, presetID) {
 
   let routePick = null;
   if (p?.account) {
-    // the sign-in belongs to the agent; owl only borrows it
     const a = p.account;
     if (subOf(a.agent)) {
-      // no Claude Code on Windows: the gateway runs the one in WSL
       if (a.agent === "claude" && !p.switchOnly) ed.append(claudeModeRow());
-      const via = a.wsl ? t("Runs through WSL · {distro}: Claude Code there signs in and answers; Windows has none of its own.", { distro: a.wsl }) + " " : "";
-      ed.append(...field(t("Accounts"), renderAccounts(a, p), via + (p.routing ? t("Tick every account to use; Routing says how requests spread over them.") : subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : subOf(a.agent).own && (a.logins || []).some((l) => l.own) ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota. {agent} itself stays signed in as it is.", { agent: a.agentName && a.agentName !== a.agent ? a.agentName : p.name }) : subOf(a.agent).own || subOf(a.agent).plugin ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota.") : t("{agent} signs in to the first. Tick more and owl moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName }))));
+      // switched connected or not (Greatrobbort on X)
+      const via = a.wsl ? t("Runs through WSL · {distro}: Claude Code there signs in and answers; Windows has none of its own.", { distro: a.wsl }) + " " : "", alone = /^c(laude|odex)$/.test(a.agent) ? " " + t("Just want accounts switched? {agent} needn't be connected to owl.", { agent: a.agentName }) : "";
+      ed.append(...field(t("Accounts"), renderAccounts(a, p), via + (p.routing ? t("Tick every account to use; Routing says how requests spread over them.") + (subOf(a.agent).own ? " " + t("Only requests through owl use them; {agent} itself stays signed in as it is.", { agent: a.agentName || p.name }) : "") : subOf(a.agent).single ? t("{agent} keeps one account; the gateway runs it for every request. Signing in to another replaces it.", { agent: a.agentName }) : subOf(a.agent).own && (a.logins || []).some((l) => l.own) ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota. {agent} itself stays signed in as it is.", { agent: a.agentName && a.agentName !== a.agent ? a.agentName : p.name }) : subOf(a.agent).own || subOf(a.agent).plugin ? t("The gateway uses the first. Tick more and it moves on to the next when the one before it is out of quota.") : t("{agent} signs in to the first. Tick more and owl moves on to the next when the one before it is out of quota. Sessions already running keep theirs until restarted.", { agent: a.agentName })) + alone));
+      ed.append(...pluginOptionsField(subOf(a.agent), true));
       if ((a.logins || []).filter((l) => l.active || l.on).length > 1) { routePick = renderRouting(p); ed.append(...routePick.nodes); }
       if (p.move) ed.append(...renderMove(p));
     } else {
       const acct = el("div", "acct");
-      acct.append(icon(a.agentIcon), el("span", "n", a.user), hideAccounts.eye(a.user, p.id), el("span", "plan", accountPlan(a)));
+      acct.append(icon(a.agentIcon), el("span", "n", a.user), hideAccounts.eye(a.user, p.id), planChip(accountPlan(a)));
       ed.append(...field(t("Account"), acct, t("{agent}'s sign-in, read from its own files. Sign out there and this provider goes away.", { agent: a.agentName })));
     }
     const modelsField = field(t("Models"), renderModels(p), pluginFilterNote(subOf(a.agent)));
@@ -279,12 +268,14 @@ function drawEditor(p, presetID) {
     else ed.append(...modelsField);
     if (p.drawIds?.length) ed.append(...renderDrawers(p));
     if (p.filmIds?.length) ed.append(...renderVideomakers(p));
+    // the subscription's own warm-up, check-in and resets first
+    if (subOf(a.agent)) advIn.append(...provPrefsField(a.agent));
     // a subscription's window too: Codex's backend says 272K for models
     // that take 872K (#120)
     const cx = input(draft.contexts || "", t("e.g. 128k · or gpt-6=1m, comma separated"));
     advIn.append(...field(t("Context window"), contextPicks(p, cx), t("How long a request the models take, told to the agents; empty leaves it to the vendor and models.dev")));
-    advIn.append(...outputField());
-    advIn.append(...compactField());
+    advIn.append(...outputField(p));
+    advIn.append(...compactField(p));
     if (p.carriesCompaction) advIn.append(...nativeCompactionField(() => true)[0]);
     advIn.append(...field(t("Fallback"), renderFallback(p), fallbackHint(p)));
     const proxies = el("div", "stack");
@@ -293,7 +284,7 @@ function drawEditor(p, presetID) {
     if (perAccount) proxies.append(perAccount);
     advIn.append(...field(t("Proxy"), proxies));
     advIn.append(...concurrencyField(p));
-    advIn.append(...priceRateField(), ...countFreeField(), ...rateWindowsField());
+    advIn.append(...priceRateField(), ...countFreeField(), ...billingField(), ...rateWindowsField());
     if (p.cline) advIn.append(...upstreamField());
     advIn.append(...unmaskRow(""));
     ed.append(...pluginOptionsField(subOf(a.agent)));
@@ -320,6 +311,8 @@ function drawEditor(p, presetID) {
       if (ox.error) return outputError(ed, ox.error);
       const cpx = parseContexts(draft.compacts || "");
       if (cpx.error) return compactError(ed, cpx.error);
+      const maxImages = self.maxImagesOf?.(ed);
+      if (maxImages === false) return;
       const proxy = proxyOfDraft();
       if (proxy === null) return proxyError(ed);
       const own = accountProxiesOfDraft();
@@ -341,7 +334,7 @@ function drawEditor(p, presetID) {
       if (priceTypedError(ed)) return;
       const picked = accountModelsDraft(p);
       if (picked === false) return pickError();
-      const body = { id: p.id, models: chosenIds(), noModels: noneChosen(), bestInFamily: bestChosen(), unlisted: draft.unlisted, hiddenDrawers: draft.hiddenDrawers, hiddenVideomakers: draft.hiddenVideomakers, fallback: draft.fallback, contexts: cx.map, outputs: ox.map, compacts: cpx.map, proxy, accountProxies: own.map, maxConcurrency, maxAccounts, ...queue, priceRate, rateWindows, modelPrefs: modelPrefsOfDraft(), pinUpstream: !!draft.pinUpstream, unredacted: !!draft.unredacted, countFree: !!draft.countFree, ...(p.carriesCompaction ? { nativeCompaction: !!draft.nativeCompaction } : {}), ...routingOfDraft(p) };
+      const body = { id: p.id, models: chosenIds(), noModels: noneChosen(), bestInFamily: bestChosen(), unlisted: draft.unlisted, hiddenDrawers: draft.hiddenDrawers, hiddenVideomakers: draft.hiddenVideomakers, fallback: draft.fallback, contexts: cx.map, outputs: ox.map, compacts: cpx.map, maxImages, proxy, accountProxies: own.map, maxConcurrency, maxAccounts, ...queue, priceRate, rateWindows, modelPrefs: modelPrefsOfDraft(), pinUpstream: !!draft.pinUpstream, unredacted: !!draft.unredacted, countFree: !!draft.countFree, billing: draft.billing || "", ...(p.carriesCompaction ? { nativeCompaction: !!draft.nativeCompaction } : {}), ...routingOfDraft(p) };
       saving(saveBtn, t("Saving…"));
       saveAccountModelsDraft(picked).then(() => savePluginOptions(subOf(a.agent))).then(() => providerAction("save", body, t("{name} saved", { name: p.name })), (e) => { doneSaving(saveBtn); editorError(e.message || String(e)); }); };
     bar.append(cancel, saveBtn);
@@ -349,15 +342,13 @@ function drawEditor(p, presetID) {
     return ed;
   }
 
-  // a vendor reached at the user's own resource (Azure OpenAI): no URL of
-  // the preset's, the one the resource is at is typed or pasted here, and
-  // owl puts it on the API the preset speaks when it is saved
+  // a vendor at the user's own resource (Azure OpenAI): its URL typed here
   let endpoint = null;
   if (pr?.endpoint) {
     if (draft.chat === undefined) { draft.chat = p?.chat || ""; draft.responses = p?.responses || ""; }
     endpoint = input(draft.chat || draft.responses || "", pr.endpoint, "url");
     endpoint.classList.add("endpoint");
-    endpoint.oninput = () => { draft.chat = draft.responses = endpoint.value.trim(); refreshEndpoints(); showCompaction(); };
+    endpoint.oninput = () => { draft.chat = draft.responses = endpoint.value.trim(); refreshEndpoints(); showCompaction(); showSocket(); };
     ed.append(...field(t("Endpoint"), endpoint, pr.endpointHint ? t(pr.endpointHint) : ""));
   }
 
@@ -365,8 +356,7 @@ function drawEditor(p, presetID) {
   // (provider.AtAddress); shown first, never folded (mengxiangziyou on X)
   let address = null, addressField = null;
   if (pr?.kind === "local") {
-    // a saved provider's URLs (or a duplicate's) start it; a new one's are
-    // the preset's, sent as none unless moved, so the gateway takes them
+    // a saved provider's URLs start it; a new one's are the preset's
     const own = draft.chat !== undefined;
     // oMLX's decision API (#1641) is the same server's, and moves with it
     draft.addressFrom ??= { chat: draft.chat ?? pr.chat ?? "", responses: draft.responses ?? pr.responses ?? "", anthropic: draft.anthropic ?? pr.anthropic ?? "", decide: draft.decide ?? (p?.decide || pr.decide || "") };
@@ -375,8 +365,7 @@ function drawEditor(p, presetID) {
     address = input(draft.address, originOf(pr));
     address.inputMode = "url";
     address.classList.add("address");
-    // the Jev endpoint field shows where the decision API moved to, until
-    // one is typed there
+    // the Jev endpoint field follows the decision API until typed
     address.oninput = () => {
       draft.address = address.value;
       refreshEndpoints();
@@ -388,14 +377,10 @@ function drawEditor(p, presetID) {
     addressField = field(t("Server address"), address, t("Where the server listens; change the port, or give another computer's address"));
   }
 
-  // null, not false, when there is none: false?.key is undefined, and a
-  // provider with no key read .set of it (willz: a local Ollama without a
-  // key opened no editor, its row just toggling)
+  // null, not false, with no key (willz)
   const copied = (!p && draft.copyOf && providers.providers.find((x) => x.id === draft.copyOf)) || null;
   const key = input(draft.key || "", p?.key.set ? t("{masked} · paste a new key to replace it", { masked: p.key.masked }) : copied?.key.set ? t("{masked} · {name}'s key, or paste another", { masked: copied.key.masked, name: copied.name }) : t(pr?.keyHint || (pr?.noKey || p?.key.optional ? "optional for local servers" : "paste an API key")), "password");
-  // many keys pasted at once (361 on Discord): one a line, or separated by
-  // commas or spaces, are kept as one list; saved, the first is the key
-  // and the others are added to its accounts, as Paste several does
+  // many keys pasted at once (361 on Discord): the first is the key, the others its accounts
   const keyCount = el("span", "hint key-count");
   const countKeys = () => {
     const n = splitKeys(key.value).length;
@@ -403,23 +388,28 @@ function drawEditor(p, presetID) {
     keyCount.title = n > 1 ? t("The first is tried first; the other {n} are added to its accounts", { n: n - 1 }) : "";
   };
   key.oninput = () => { draft.key = key.value; countKeys(); };
-  // a curl command from a vendor's docs pasted into the key or the Base URL
-  // fills the form (@mark_li21 on X), saying what it took; a key it only
-  // stands for is left out, and the key's box is where to paste one
+  // a pasted curl command fills the form (@mark_li21 on X)
   const fromCurl = (e) => {
-    const c = curlOf(e.clipboardData?.getData("text") || "");
+    const text = e.clipboardData?.getData("text") || "";
+    const c = window.curlOf?.(text) || window.envOf?.(text);
     if (!c) return false;
+    const env = !!c.bases;
     e.preventDefault();
     const took = [], notes = [];
-    if (curlBase && c.api) { curlBase(c.api, c.base); took.push(t("Base URL") + " (" + t(API_NAMES[c.api]) + ")"); }
+    if (curlBase) {
+      for (const [api, base] of env ? c.bases : c.api ? [[c.api, c.base]] : []) {
+        curlBase(api, base);
+        took.push(t("Base URL") + " (" + t(API_NAMES[api]) + ")");
+      }
+    }
     // no key box when keys are Accounts: none taken unseen
     if (c.key && key.isConnected) { key.value = draft.key = c.key; countKeys(); took.push(t("API key")); }
     if (curlModel && c.model) { curlModel(c.model); took.push(t("model {model}", { model: c.model })); }
-    if (took.length) notes.push(t("Filled in from the curl command: {what}.", { what: took.join(" · ") }));
+    if (took.length) notes.push(env ? t("Filled in from the pasted text: {what}.", { what: took.join(" · ") }) : t("Filled in from the curl command: {what}.", { what: took.join(" · ") }));
     if (curlBase && !c.api) notes.push(t("Its URL isn't an address ending in /chat/completions, /messages or /responses: type the base URL."));
     if (curlBase && c.urlHole) notes.push(t("Replace {part} in the base URL.", { part: c.urlHole }));
     if (c.placeholder) notes.push(t("Its key, {key}, only stands for one: paste your own API key.", { key: c.placeholder }));
-    if (!c.key) shown(key)?.focus(NO_SCROLL);
+    if (!c.key) shown(key)?.focus({ preventScroll: true });
     editorError(notes.join(" "), "note");
     return true;
   };
@@ -466,14 +456,14 @@ function drawEditor(p, presetID) {
   }
   const keyWrap = el("div", "pair");
   keyWrap.append(key, side);
-  // Google Vertex AI takes no key: it is asked at the user's own Google
-  // Cloud project with a token their Google credentials mint, so its
-  // project, location, credentials file and a service account to go as
-  // are asked in its place, the project first
+  // Vertex AI: no key, the user's Google Cloud project's token
   const vertex = p ? !!p.vertex : !!pr?.vertex;
   let vertexProject = null;
-  if (vertex) draft.vertex = draft.vertex || { project: p?.vertex?.project || "", location: p?.vertex?.location || "", credentials: p?.vertex?.credentials || "", impersonate: p?.vertex?.impersonate || "" };
+  if (vertex) draft.vertex = draft.vertex || { project: p?.vertex?.project || "", location: p?.vertex?.location || "", credentials: p?.vertex?.credentials || "", impersonate: p?.vertex?.impersonate || "", baseUrl: p?.vertex?.baseUrl || "" };
   const vertexFields = () => {
+    // the address shown follows a key typed: with one the project is optional
+    const typedKey = key.oninput;
+    key.oninput = () => { typedKey(); refreshEndpoints(); };
     const box = (k, placeholder, cls) => {
       const i = input(draft.vertex[k], placeholder);
       i.classList.add(cls);
@@ -487,6 +477,8 @@ function drawEditor(p, presetID) {
       ...field(t("Location"), box("location", "global", "vertex-location"), t("global, us, eu or a region such as us-central1. Each location serves its own models; global serves them all.")),
       ...field(t("Credentials file"), box("credentials", "~/.config/gcloud/application_default_credentials.json", "vertex-credentials"), t("Optional. Left empty, gcloud's Application Default Credentials are used (gcloud auth application-default login), or the file GOOGLE_APPLICATION_CREDENTIALS names. A service account's key file works too.")),
       ...field(t("Service account"), box("impersonate", t("optional · a service account's email"), "vertex-impersonate"), t("Requests are then made as this service account, impersonated with the credentials above: their account needs roles/iam.serviceAccountTokenCreator on it.")),
+      ...(p?.keyList?.length ? [] : field(t("API key"), keyWrap, t("Instead of the above: a Vertex AI API key (express mode). Gemini models only, no project needed."))),
+      ...field(t("Base URL"), box("baseUrl", "https://aiplatform.googleapis.com", "vertex-base-url"), t("Only with an API key: where requests go in place of Google's address, such as a proxy.")),
     ];
   };
   if (addressField) ed.append(...addressField);
@@ -496,12 +488,44 @@ function drawEditor(p, presetID) {
   // keys are replaced in Accounts; the box is for no key yet (Kylin_Cloud on X)
   else if (!p?.keyList?.length) ed.append(...field(t("API key"), keyWrap, isNew ? t("Kept in ~/.config/owl/providers.json, readable by you alone. Nothing is read from your shell.") : ""));
 
+  // blank, the preset's (treeman_26897)
+  if (remoteNew) {
+    const idIn = input("", pr.id);
+    name = input("", pr.name);
+    name.className = "provider-name";
+    idIn.className = "provider-id";
+    name.oninput = idIn.oninput = () => { draft.name = name.value.trim() || pr.name; draft.id = slug(idIn.value) || slug(name.value) || pr.id; idIn.placeholder = draft.id; };
+    name.onkeydown = idIn.onkeydown = key.onkeydown;
+    ed.append(...field(t("Name"), name), ...field(t("ID"), idIn));
+  }
+  // off when added
+  if ((p?.preset || pr?.id) === "remote-owl" && !p?.account) {
+    // KoiLx0 on X: its skills and prompts; an agent connected there,
+    // installed here, connected here too, one disconnected here stays so
+    // (agent.SetConnectAgents)
+    for (const [k, say, head, to] of [
+      ["libraryMCP", t("Add its MCP servers to the Library"), t("MCP servers"), ed],
+      ["libraryShared", t("Use its skills and prompts"), t("Skills and prompts"), ed],
+      ["connectAgents", t("Connect new agents to this remote"), t("Agents"), advIn],
+    ]) {
+      const [l, c] = tick(say, (draft[k] ??= !!p?.[k]));
+      l.classList.add(k.replace(/(?=[A-Z])/, "-").toLowerCase());
+      c.onchange = () => (draft[k] = c.checked);
+      to.append(...field(head, l));
+    }
+  }
+  // lcc580 on X
+  if ((p?.preset || pr?.id) === "remote-owl") {
+    const [l, c] = tick(t("With the provider serving it there"), !!draft.upstreamProviders);
+    l.classList.add("upstream-providers");
+    c.onchange = () => { draft.upstreamProviders = c.checked; draft.onUpstreamProviders?.(); };
+    ed.append(...field(t("Model names"), l));
+  }
+
   // A user-defined provider can have its own picture; presets keep theirs.
   if (custom) ed.append(...field(t("Icon"), iconPicker(ed), ""));
 
-  // Request headers of the user's own, for a preset's provider as much as a
-  // custom one — which workspace a key is for, who the app is; signed-in
-  // accounts returned above use the agent's own authentication headers.
+  // the user's own request headers, a preset's or a custom one's
   if (custom) {
     if (!draft.headers.length) draft.headers.push(["", ""]);
     advIn.append(...field(t("Headers"), headerEditor(), t("Extra HTTP headers sent to the vendor, applied after auth. For gateways that need a private scheme. ${sessionId} in a value is the conversation's id; ${threadId} is the thread's, where the agent names one (Codex), else the same.")));
@@ -525,7 +549,7 @@ function drawEditor(p, presetID) {
   if (perKey) proxies.append(perKey);
   advIn.append(...field(t("Proxy"), proxies));
   advIn.append(...concurrencyField(p));
-  advIn.append(...priceRateField(), ...countFreeField(), ...rateWindowsField());
+  advIn.append(...priceRateField(), ...keyRateField(p), ...countFreeField(), ...billingField(), ...rateWindowsField());
 
   if (p?.cline || (isNew && pr?.id === "clinepass")) advIn.append(...upstreamField());
 
@@ -561,16 +585,15 @@ function drawEditor(p, presetID) {
   // the agent's User-Agent (#1851); an account or ownClient keeps its own
   const uaPassable = () => !p?.account && !(p ? p.ownClient : pr?.ownClient);
   if (uaPassable()) {
-    const [utk, ucb] = tick(t("Send the agent's own User-Agent"), !!draft.passUserAgent);
+    const [utk, ucb] = tick(t("Send the agent's own User-Agent"), draft.passUserAgent !== false);
     ucb.onchange = () => { draft.passUserAgent = ucb.checked; };
-    advIn.append(...field(t("User-Agent"), utk, t("For a plan that serves only the coding agents it names: each request goes with the User-Agent the agent sent (pi, OpenCode, Claude Code…), not owl's. Requests owl makes itself, and ones the agent sent without one, still go as owl. A User-Agent set in Headers above always wins.")));
+    advIn.append(...field(t("User-Agent"), utk, t("Off, every request goes as owl. A User-Agent set in Headers above always wins.")));
   }
 
   const addressOf = (k) => (draft[k] ?? (isNew && pr ? pr[k] : "")) || "";
-  const unmaskable = () => (p?.preset || pr?.id) !== "remote-owl";
-  if (unmaskable()) {
-    advIn.append(...unmaskRow(t("For a model running on this computer or your local network: secrets, personal data and your masked words go to it as written. Leave it off for a local relay or proxy that passes requests on to a vendor."), () => ["chat", "responses", "anthropic", "gemini", "decide"].map(addressOf)));
-  }
+  // another owl masks by its own Settings (CrazyMouse_TT on X)
+  const remote = (p?.preset || pr?.id) === "remote-owl";
+  advIn.append(...unmaskRow(t(remote ? "The other owl gets requests as written and masks them by its own Settings › Privacy. Off, they are masked here first." : "For a model running on this computer or your local network: secrets, personal data and your masked words go to it as written. Leave it off for a local relay or proxy that passes requests on to a vendor."), () => remote ? [] : ["chat", "responses", "anthropic", "gemini", "decide"].map(addressOf)));
 
   // a user's provider whose certificate nothing trusts (#2383, provider.TakesInsecureTLS)
   const tlsTakes = () => custom && (!p || !!p.takesInsecureTLS);
@@ -579,10 +602,34 @@ function drawEditor(p, presetID) {
     const [ctk, ccb] = tick(t("Don't check its certificate"), !!draft.insecureTLS);
     ctk.classList.add("insecure-tls");
     ccb.onchange = () => { draft.insecureTLS = ccb.checked; };
-    const row = field(t("Certificate"), ctk, t("For your own server with a self-signed certificate or one from your company's CA. owl then can't tell it from another machine answering at its address: turn it on only on a network you trust."));
-    showTLS = () => { for (const e of row) e.style.display = onHTTPS() ? "" : "none"; };
+    const row = field(t("Certificate"), ctk, t("For your own server with a self-signed certificate or one from your company's CA. owl then can't tell it from another machine answering at its address: turn it on only on a network you trust."), t("Turn it on only on a network you trust."));
+    const [htk, hcb] = tick(t("HTTP/1.1 only"), !!draft.http1);
+    hcb.onchange = () => { draft.http1 = hcb.checked; };
+    const hrow = field(t("HTTP version"), htk);
+    showTLS = () => { for (const e of [...row, ...hrow]) e.style.display = onHTTPS() ? "" : "none"; };
     showTLS();
     ed.append(...row);
+    advIn.append(...hrow);
+  }
+  // a client certificate and server CA (#5596, mTLS), and a self-signed
+  // server's certificate pinned (Zhangzhangi on X), in tlscerts.js
+  const certTakes = () => p ? !!p.takesClientCert : (custom || remote);
+  const certAt = document.createComment("");
+  advIn.append(certAt);
+  // an editor closed before the import is in (#6216) has no draft, or
+  // another editor's: no rows for it
+  const certDraft = draft;
+  import("./tlscerts.js").then(() => draft === certDraft && tlsCertRows({ p, pr, draft, at: certAt, certTakes, onHTTPS, addressOf, asTyped, show: (f) => { const was = showTLS; showTLS = () => { was(); f(); }; showTLS(); }, save: (f) => { pinBody = f; } }), statusErr);
+  // Responses over WebSocket (#5781): auto, or the CLI's on kept
+  const socketable = () => !p?.account && (p?.preset || pr?.id) !== "google-vertex" && /^\s*https?:\/\//i.test(addressOf("responses"));
+  {
+    const [stk, scb] = tick(t("Send Responses turns over WebSocket"), !!draft.socket);
+    stk.classList.add("socket-tick");
+    scb.onchange = () => { draft.socket = scb.checked ? (p?.socket || "auto") : ""; };
+    const srow = field(t("WebSocket"), stk);
+    showSocket = () => { for (const e of srow) e.style.display = socketable() ? "" : "none"; };
+    showSocket();
+    advIn.append(...srow);
   }
   // off, a 429 or quota refusal rests none of its keys (LimitRestOff, zoecats)
   if (custom) {
@@ -591,8 +638,26 @@ function drawEditor(p, presetID) {
     advIn.append(...field(t("Rests"), rtk, t("Off: a 429 or an out-of-quota refusal doesn't rest its keys, and the next request is sent to it as usual. For a relay whose limits pass in a moment.")));
   }
 
-  // a balance token of the vendor's own (AiHubMix), or a custom one's (balanceFix)
-  let balFix = null;
+  if (p ? p.takesPassErrors : custom) {
+    const b = el("button", "sess-pick pass-errors"), d = draft;
+    import("./passerrors.js").then(() => passErrorsFill(b, d), statusErr);
+    advIn.append(...field(t("Errors"), b));
+  }
+
+  // image-files, on DeepSeek's own API (#5407)
+  if (p?.takesImageFiles) {
+    const [itk, icb] = tick(t("Upload images once and send them by file id"), !draft.imageFilesOff);
+    itk.classList.add("image-files");
+    icb.onchange = () => { draft.imageFilesOff = !icb.checked; };
+    advIn.append(...field(t("Images"), itk, t("Off: an agent's images are sent inline on every turn.")));
+  }
+
+  let balFix = null, balSlot = null;
+  if (custom) {
+    balSlot = el("div", "bal-slot");
+    balSlot.style.display = "contents";
+    advIn.append(balSlot);
+  }
   if (p?.balanceToken?.takes || custom) {
     const saved = !!p?.balanceToken?.set;
     const tok = input(draft.balanceToken || "", saved && !draft.clearBalanceToken ? t("saved · paste a new one to replace it") : t("optional · the account's system access token"), "password");
@@ -607,7 +672,9 @@ function drawEditor(p, presetID) {
       side.append(drop);
       pair.append(side);
     }
-    const tokHelp = custom || p.balanceURL
+    const tokHelp = custom
+      ? t("Leave it empty to read the key's own balance: most relays tell it at the Balance URL above (a sub2api relay's …/v1/usage, a new-api relay's …/api/usage/token). Only for the whole account's balance: a new-api relay's System Access Token, or a sub2api panel's login token (a JWT, sent as a Bearer); it is used for nothing else.")
+      : p.balanceURL
       ? t("What the Balance URL is asked with in place of the key, when it wants the account's own token: a new-api relay's System Access Token, or a sub2api panel's login token (a JWT, sent as a Bearer); it is used for nothing else.")
       : t("A key tells only what is left on itself. For the whole account's balance on the Usage page, generate a System Access Token in {p}'s settings and paste it here; it is used for nothing else.", { p: pr?.name || p.name });
     const [label, wrap] = field(t("Account balance"), pair, tokHelp);
@@ -620,13 +687,14 @@ function drawEditor(p, presetID) {
     advIn.append(label, wrap);
   }
 
-  // StepFun tells a Step Plan's 5-hour, weekly and credit windows only to
-  // its platform's sign-in, never to a key: signed in once in a window of
-  // owl's, the Usage page shows them
+  // a Step Plan's windows are told only to a StepFun sign-in
   if (p?.stepPlan) ed.append(...field(t("Step Plan allowances"), renderStepPlan(p.stepPlan, p.id), t("A key tells only the balance. The Step Plan's 5-hour, weekly and credit windows are told only to a StepFun sign-in: bring yours here once and owl keeps it (for 30 days), used for nothing else.")));
+  // a Baidu Qianfan Token Plan's to a console sign-in (qianfanplan.js), and
+  // a Qwen AI platform plan's to a sign-in there (qianwenplan.js)
+  if (p?.qianfanPlan) { const at = el("span"); ed.append(at); import("./qianfanplan.js").then(() => at.replaceWith(...qianfanPlanField(p)), () => {}); }
+  if (p?.qianwenPlan) { const at = el("span"); ed.append(at); import("./qianwenplan.js").then(() => at.replaceWith(...qianwenPlanField(p)), () => {}); }
 
-  // a key on a team's GLM Coding Plan is told the team's windows only with
-  // the team's organization and project, which the console shows (#236)
+  // a team's GLM Coding Plan windows need its org and project (#236)
   const team = p ? !!p.zhipuTeam : !!pr?.zhipuTeam;
   if (team) {
     draft.zhipuTeam = draft.zhipuTeam || { org: p?.zhipuTeam?.org || "", project: p?.zhipuTeam?.project || "" };
@@ -666,15 +734,16 @@ function drawEditor(p, presetID) {
       pair.append(side);
     }
     const rows = [
-      ...field(idName, ak, ""),
+      // what a RAM user's key needs (aliRAMHint, MetalHqa on X)
+      ...field(idName, ak, access.vendor === "alibaba" ? t(ALI_RAM) : ""),
       ...field(secretName, pair, tc
         ? t("Token Plan Enterprise's usage is told only to the Tencent Cloud account's API key (console → Access management → API keys), not to the plan's API key. Give its SecretId and SecretKey here for the Usage page to show it; a sub-user's key that may read TokenHub is enough. It is used for nothing else.")
+        : access.vendor === "alibaba"
+        ? t("The plan's usage is told only to the Alibaba Cloud account's AccessKey (console → AccessKey), not to the plan's API key. Give its AccessKey ID and Secret here for the Usage page to show it. It is used for nothing else.")
         : t("The plan's 5-hour, weekly and monthly windows are told only to the account's access key (Volcengine console → API Access Keys), not to the plan's API key. Give it here for the Usage page to show them; it is used for nothing else.")),
     ];
     ed.append(...rows);
-    // a preset with the plan at some of its regions only (Tencent Cloud's
-    // 企业版 beside its personal plan) asks for it at those, and at an
-    // endpoint none of its regions has, which may be one of them
+    // the plan at some regions only (Tencent's 企业版)
     const at = pr?.accessKeyRegions;
     if (at?.length) {
       accessAt = (r) => {
@@ -685,8 +754,7 @@ function drawEditor(p, presetID) {
     }
   }
 
-  // a relay that offers several regional endpoints, or a vendor whose plans
-  // are served at their own: one selector, and the provider's base URLs follow it
+  // regional endpoints or plans: one selector the base URLs follow
   let refreshEndpoints = () => {}, onRegion = () => {};
   if (pr?.regions?.length) {
     // Bedrock's ten regions don't fit the width: they scroll
@@ -736,9 +804,9 @@ function drawEditor(p, presetID) {
     // models.dev says: one for all of them, and model=size for one
     const cx = input(draft.contexts || "", t("e.g. 128k · or gpt-6=1m, comma separated"));
     if (!decideOnly(p || pr)) advIn.append(...field(t("Context window"), contextPicks(p, cx), t("How long a request the models take, told to the agents; empty leaves it to the vendor and models.dev")));
-    if (!decideOnly(p || pr)) advIn.append(...outputField());
+    if (!decideOnly(p || pr)) advIn.append(...outputField(p));
     if (!decideOnly(p || pr)) {
-      advIn.append(...compactField());
+      advIn.append(...compactField(p));
       const [row, refresh] = nativeCompactionField(carriesCompaction);
       advIn.append(...row);
       showCompaction = refresh;
@@ -757,8 +825,7 @@ function drawEditor(p, presetID) {
     ed.append(...field(t("Models"), pick.box, t("Optional: Fetch models to pick from the vendor's list, or type ids; none picked, owl asks for the list after saving.")));
   }
 
-  // Jev's endpoint can be the one its gateway's docs give — Cloudflare's
-  // names the account, …/accounts/<id>/ai/run — in place of the preset's
+  // Jev's endpoint may be its gateway's own (Cloudflare's …/ai/run)
   if (decides && !custom && (p?.preset || pr?.id) !== "remote-owl") {
     if (draft.decide === undefined) draft.decide = p?.decide || pr?.decide || "";
     const du = input((address && movedURLs(draft)?.decide) || draft.decide, pr?.decide || "https://…", "url");
@@ -779,13 +846,16 @@ function drawEditor(p, presetID) {
     };
     wsIn.oninput = () => { draft.workspace = wsIn.value; fill(); };
     du.oninput = () => { draft.decide = du.value; };
-    onRegion = (r) => { draft.region = r.id; if (r.decide) { draft.decide = du.value = r.decide; fill(); } };
+    // a plan with none of its own (Volcengine's Coding Plan) drops the
+    // one of the plan it was at; the gateway finds pay as you go's itself
+    onRegion = (r) => {
+      draft.region = r.id;
+      if (r.decide) { draft.decide = du.value = r.decide; fill(); }
+      else if (!pr?.decide) draft.decide = du.value = r.chat && r.chat === p?.chat ? p?.decide || "" : "";
+    };
     ed.append(...wsRow);
     fill();
-    // Jev's own presets (TypeSafe, Vercel, Cloudflare) name it and the
-    // gateway docs' address; a provider that also serves conversations
-    // (OpenRouter, OpenCode Zen, Ollama …) asks its own decision models
-    // on System One, and Jev's title and Cloudflare's example aren't its
+    // Jev's own presets name it; the others ask their own decision models
     const jev = decideOnly(p || pr) && /jev/i.test(pr?.name || p?.name || "");
     ed.append(...field(t(jev ? "Jev endpoint" : "System One endpoint"), du, tmpl().includes(WORKSPACE) ? t("The address the decision model is asked at, POST …/systemone under it; the workspace ID above fills it in") : jev ? t("The address Jev is asked at; paste the one from your gateway's docs, e.g. Cloudflare's …/accounts/<account id>/ai/run") : t("The address its decision models are asked at, POST …/systemone under it")));
   }
@@ -795,12 +865,10 @@ function drawEditor(p, presetID) {
     const row = field(t("Endpoints"), ebox, "");
     refreshEndpoints = () => {
       const base = p || pr || {};
-      const src = { chat: draft.chat || base.chat || "", responses: draft.responses || base.responses || "", anthropic: draft.anthropic || base.anthropic || "", decide: base.decide || "" };
-      // Vertex AI's is the address its project and location make, shown
-      // with its Test once a project is typed, saved one or not: with none
-      // there is nowhere to ask
+      const src = { chat: draft.chat || base.chat || "", responses: draft.responses || base.responses || "", anthropic: draft.anthropic || base.anthropic || "", decide: (pr && !pr.decide ? draft.decide ?? base.decide : base.decide) || "" };
+      // Vertex AI's, from its project and location, once one is typed
       if (vertex) {
-        src.gemini = vertexBase(draft.vertex);
+        src.gemini = vertexBase(draft.vertex, !!(draft.key || "").trim() || !!p?.key?.set);
         for (const x of row) x.hidden = !src.gemini;
       }
       Object.assign(src, address && movedURLs(draft));
@@ -824,13 +892,16 @@ function drawEditor(p, presetID) {
       const add = (label, key, ph, hint) => {
         if (apiField[draft.api] === key) return;
         const i = input(draft[key], ph, "url");
-        i.oninput = () => { draft[key] = i.value; if (carried?.from === key) carried = null; showSearch(); showLocal(); showTLS(); showAuth(); showCompaction(); };
+        i.oninput = () => { draft[key] = i.value; if (carried?.from === key) carried = null; showSearch(); showLocal(); showTLS(); showAuth(); showCompaction(); showSocket(); draft.onModelPrefs?.(); };
         eps.append(...field(t(label), i, t(hint)));
       };
       add("OpenAI URL", "chat", "https://…/v1", "if the vendor also serves chat completions");
       add("Anthropic URL", "anthropic", "https://…", "if the vendor also serves Anthropic messages");
       add("Responses URL", "responses", "https://…/v1", "if the vendor serves the OpenAI Responses API (Codex uses it natively)");
       add("Gemini URL", "gemini", "https://…/v1beta", "if the vendor serves Google's Gemini API (generateContent)");
+      // beside a conversation URL: a model can then be set to System One
+      // under Model settings, for a routing group to ask
+      add("System One URL", "decide", "https://…/v1", "if the vendor also serves a decision API, POST …/systemone under it; a model set to System One under Model settings is asked there");
     };
     fillEndpoints();
     inner.append(eps);
@@ -843,8 +914,6 @@ function drawEditor(p, presetID) {
     const bal = input(draft.balanceURL, "https://…/api/usage/token", "url");
     bal.classList.add("bal-url");
     bal.oninput = () => { draft.balanceURL = bal.value; balPath.placeholder = balanceFieldOf(bal.value); };
-    // how the URL is asked: GET, or POST with no body for a vendor that
-    // answers only a POST (#2368)
     const method = segs([["", "GET"], ["POST", "POST"]], draft.balanceMethod === "POST" ? "POST" : "", (v) => { draft.balanceMethod = v; });
     method.classList.add("bal-method");
     method.setAttribute("role", "group");
@@ -852,7 +921,8 @@ function drawEditor(p, presetID) {
     method.title = t("How the Balance URL is asked: GET, or POST with no body for a vendor that answers only a POST");
     const balAsk = el("div", "pair bal-ask");
     balAsk.append(method, bal);
-    inner.append(...field(t("Balance URL"), balAsk, t("Where the vendor tells what is left on the key, asked with it like a chat request; {key} in it or in a header is each key's own, for a vendor that takes the key in the URL (…?key={key}); shown on the Usage page")));
+    if (p && !draft.balanceURL) import("./balfound.js").then(() => balFound(balAsk, p, draft, bal, () => balPath), () => {});
+    balSlot.append(...field(t("Balance URL"), balAsk, t("Where the vendor tells what is left on the key, asked with it like a chat request; {key} in it or in a header is each key's own, for a vendor that takes the key in the URL (…?key={key}); shown on the Usage page")));
     const balPath = input(draft.balancePath, balanceFieldOf(draft.balanceURL));
     balPath.classList.add("bal-path");
     balPath.oninput = () => { draft.balancePath = balPath.value; };
@@ -861,7 +931,7 @@ function drawEditor(p, presetID) {
     balPair.append(balPath);
     if (p) {
       const side = el("div", "side");
-      const check = el("button", "text action", t("Check balance"));
+      const check = el("button", "text action bal-check", t("Check balance"));
       check.title = t("Ask the Balance URL now, as the form has it");
       side.append(check);
       balPair.append(side);
@@ -869,13 +939,14 @@ function drawEditor(p, presetID) {
       check.onclick = async () => {
         check.classList.add("busy");
         res.className = "bal-res wait"; res.textContent = "…"; res.title = "";
-        const body = { id: p.id, balanceURL: (draft.balanceURL || "").trim(), balancePath: (draft.balancePath || "").trim(), balanceMethod: draft.balanceMethod || "", headers: headersOf(draft.headers) };
+        const body = { id: p.id, balanceURL: (draft.balanceURL || "").trim(), balancePath: (draft.balancePath || "").trim(), balanceMethod: draft.balanceMethod || "", noBalanceProbe: !!draft.noBalanceProbe, headers: headersOf(draft.headers) };
         if (draft.balanceToken) body.balanceToken = draft.balanceToken;
         else if (draft.clearBalanceToken) body.clearBalanceToken = true;
         try {
           const r = await api("provider/balance", body);
           res.className = "bal-res " + (r.error ? "bad" : r.ok ? "ok" : "");
-          res.textContent = r.error ? balanceError(r.error) || r.error : r.ok ? t("Balance") + " " + r.amount : t("No Balance URL to ask");
+          res.textContent = r.error ? balanceError(r.error) || r.error : r.ok ? t("Balance") + " " + r.amount : t(r.looked ? "No balance at /v1/usage or /api/usage/token" : "No Balance URL to ask");
+          if (r.looked) window.balFoundShow?.(r);
           res.title = r.error || "";
         } catch (e) { res.className = "bal-res bad"; res.textContent = e.message; }
         check.classList.remove("busy");
@@ -883,7 +954,7 @@ function drawEditor(p, presetID) {
       balPair.append(res);
       balPair.classList.add("wrap");
     }
-    inner.append(...field(t("Balance field"), balPair, t("Where the amount is in the reply, e.g. data.balance; it can be a sum with + - * / and brackets, e.g. data.total / 500000 or (1 - credits.used / 70) %; \"$\" in front adds the sign, \"%\" after it shows a percent, with a bar; several, each with a label, go apart by \";\", e.g. 5h: a.used / a.cap %; $credits.left; a list's items are a.*.used, or a[status=active].used for those that match, put in sum(), max(), min() or count(); an amount the reply hasn't shows \"—\" and the others still show")));
+    balSlot.append(...field(t("Balance field"), balPair, t("Where the amount is in the reply, e.g. data.balance; it can be a sum with + - * / and brackets, e.g. data.total / 500000 or (1 - credits.used / 70) %; \"$\" in front adds the sign, \"%\" after it shows a percent, with a bar; several, each with a label, go apart by \";\", e.g. 5h: a.used / a.cap %; $credits.left; a list's items are a.*.used, or a[status=active].used for those that match, put in sum(), max(), min() or count(); an amount the reply hasn't shows \"—\" and the others still show")));
     more.append(inner);
     ed.append(more);
   }
@@ -928,7 +999,7 @@ function drawEditor(p, presetID) {
     const ph = replyHeadersOf(draft.passHeaders, true);
     if (ph.error) { shown(ed.querySelector(".pass-headers"))?.focus(NO_SCROLL); return editorError(t("Request headers to pass: {why}", { why: ph.error }), "warn"); }
     body.passHeaders = ph.value;
-    if (decides || custom) body.decide = (custom && draft.api !== "decide" && !p?.decide ? "" : draft.decide || "").trim();
+    if (decides || custom) body.decide = (draft.decide || "").trim();
     if ((body.decide || "").includes(WORKSPACE)) { ed.querySelector(".workspace-id")?.focus(NO_SCROLL); return editorError(t("Give the workspace ID your API key belongs to, or pick the Token Plan"), "warn"); }
     if (custom) {
       // the API picked for the Base URL is saved with it, and one left with
@@ -940,16 +1011,26 @@ function drawEditor(p, presetID) {
       body.baseAPI = draft.api === "openai" ? "chat" : draft.api;
     }
     if (custom) { body.icon = draft.icon || "generic"; body.iconFrom = draft.iconFrom || ""; body.balanceURL = (draft.balanceURL || "").trim(); body.balancePath = (draft.balancePath || "").trim(); body.balanceMethod = draft.balanceMethod || ""; body.modelsURL = (draft.modelsURL || "").trim(); }
+    if (p?.takesListOff) body.listOff = !!draft.listOff;
     if (p) { body.fallback = draft.fallback; body.unlisted = draft.unlisted; body.hiddenDrawers = draft.hiddenDrawers; body.hiddenVideomakers = draft.hiddenVideomakers; body.noModels = noneChosen(); body.bestInFamily = bestChosen(); body.modelPrefs = modelPrefsOfDraft(); Object.assign(body, routingOfDraft(p)); }
     body.searches = !!draft.searches && searchable();
+    for (const k of ["libraryMCP", "libraryShared", "connectAgents"]) if (draft[k] != null) body[k] = draft[k];
     body.pinUpstream = !!draft.pinUpstream;
     if (twoKeyHeaders()) body.authHeader = draft.authHeader || "";
-    body.unredacted = !!draft.unredacted && unmaskable();
+    body.unredacted = !!draft.unredacted;
     body.countFree = !!draft.countFree;
-    if (tlsTakes()) body.insecureTLS = !!draft.insecureTLS && onHTTPS();
+    body.billing = draft.billing || "";
+    if (tlsTakes()) { body.insecureTLS = !!draft.insecureTLS && onHTTPS(); body.http1 = !!draft.http1 && onHTTPS(); }
+    if (certTakes()) for (const k of CERT_FIELDS) body[k] = onHTTPS() ? (draft[k] || "").trim() : "";
+    pinBody(body, certTakes());
+    if (socketable()) body.socket = draft.socket || "";
     if (custom) body.limitRestOff = !!draft.limitRestOff;
+    body.noBalanceProbe = !!draft.noBalanceProbe;
+    if ((p?.preset || pr?.id) === "remote-owl") body.upstreamProviders = !!draft.upstreamProviders;
+    if (p?.takesImageFiles) body.imageFilesOff = !!draft.imageFilesOff;
+    if (p ? p.takesPassErrors : custom) body.passErrors = !!draft.passErrors;
     if (!decideOnly(p || pr)) body.nativeCompaction = !!draft.nativeCompaction && carriesCompaction();
-    body.passUserAgent = !!draft.passUserAgent && uaPassable();
+    if (uaPassable()) body.passUserAgent = draft.passUserAgent !== false;
     const cx = parseContexts(draft.contexts || "");
     if (cx.error) return contextError(ed, cx.error);
     body.contexts = cx.map;
@@ -960,6 +1041,7 @@ function drawEditor(p, presetID) {
       const cpx = parseContexts(draft.compacts || "");
       if (cpx.error) return compactError(ed, cpx.error);
       body.compacts = cpx.map;
+      if ((body.maxImages = self.maxImagesOf?.(ed)) === false) return;
     }
     body.proxy = proxyOfDraft();
     if (body.proxy === null) return proxyError(ed);
@@ -981,6 +1063,7 @@ function drawEditor(p, presetID) {
     Object.assign(body, queue);
     body.priceRate = priceRateOfDraft();
     if (body.priceRate === undefined) return priceRateError(ed);
+    if ((body.keyPriceRates = self.keyPriceRates?.(ed)) === null) return;
     body.rateWindows = self.rateWindowsOfDraft?.();
     if (body.rateWindows === false) return rateWindowsError(ed);
     if (p && priceTypedError(ed)) return;
@@ -1004,7 +1087,7 @@ function drawEditor(p, presetID) {
     if (isNew && custom && !body.name) { name.focus(); return editorError(t("Give it a name"), "warn"); }
     if (isNew && custom && !body.chat && !body.anthropic && !body.responses && !body.gemini && !body.decide) { url.focus(); return editorError(t("A base URL is needed"), "warn"); }
     if (endpoint && !body.chat && !body.responses) { endpoint.focus(); return editorError(t(pr.endpointNeeded || "Your resource's endpoint is needed"), "warn"); }
-    if (vertex && !body.vertex.project) { vertexProject?.focus(NO_SCROLL); return editorError(t("Google Vertex AI needs the id of your Google Cloud project"), "warn"); }
+    if (vertex && !body.vertex.project && !(draft.key || "").trim() && !p?.key?.set) { vertexProject?.focus(NO_SCROLL); return editorError(t("Google Vertex AI needs the id of your Google Cloud project"), "warn"); }
     if (address) {
       const a = (draft.address || "").trim();
       if (localAddress(a) === null) { address.focus(NO_SCROLL); return editorError(t("Address: {v} isn't an address like http://localhost:11434", { v: a }), "warn"); }
@@ -1025,3 +1108,6 @@ function drawEditor(p, presetID) {
   setTimeout(() => (isNew ? (custom || another ? name : endpoint || vertexProject || key) : null)?.focus(), 0);
   return ed;
 }
+
+// contextsText is a provider's contexts as the editor shows them: the one
+// for all its models first, then model=size.

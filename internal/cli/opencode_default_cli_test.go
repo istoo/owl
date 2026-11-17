@@ -12,6 +12,13 @@ import (
 // Disconnect does. DevEco Code, OpenCode's fork with its own folder, the
 // same.
 func TestAgentOpenCodeDefaultPutsBackTheModel(t *testing.T) {
+	// the OpenCode reading this config is 1.x, whatever is installed on the
+	// machine: a 2.x one gets providers in 2's words (opencode_v2_test.go)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\necho 1.0.0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
 	for _, c := range []struct{ id, file string }{
 		{"opencode", "opencode/opencode.json"},
 		{"deveco", "deveco/deveco.json"},

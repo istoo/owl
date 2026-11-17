@@ -120,7 +120,7 @@ while read -r line; do
   say "pid $$ had $had turn $n"
 done
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	provider.ForgetAccounts()
 	t.Cleanup(provider.ForgetAccounts)
 	if err := provider.SaveGroup(provider.Group{ID: "orchestrator", Name: "Orchestrator", Members: []string{"claude/claude-opus-5-5"}}); err != nil {

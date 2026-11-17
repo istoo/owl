@@ -93,8 +93,8 @@ document.addEventListener("scroll", () => row?.contains(document.activeElement) 
 addEventListener("keydown", (e) => !/^(Tab|Shift|Alt|Meta|Control)$/.test(e.key) && hide(), true);
 addEventListener("resize", hide);
 hide();
-// the Automatic updates row's lines on why an update can be trusted
-import("./updatetrust.js").catch(() => {});
+// owl's release chain has no signing key or attestation: no lines claim a
+// check this build does not make (internal/update/signed.go, attest.go)
 // the pointer already on a row, or focus, as the import came
 {
   const on = [...document.querySelectorAll(ROWS)].findLast?.((r) => r.matches(":hover")) || rowOf(document.activeElement);

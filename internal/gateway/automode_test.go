@@ -555,7 +555,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 
 	s := New()
 	p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}
@@ -713,7 +713,7 @@ for line in sys.stdin:
  send({'type':'stream_event','event':{'type':'message_stop'}})
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	t.Setenv("CLAUDE_CODE_EXTRA_BODY", `{"model":"must-not-leak"}`)
 	s := New()
 	t.Cleanup(s.subscription.abortAll)

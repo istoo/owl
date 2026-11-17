@@ -33,6 +33,13 @@ var signingKey = "3XuYQEohIRDF+zxGQry1iXGZ1cfKYFX3vsST6GSSbYQ="
 // firstSigned is the first release published with a SHA256SUMS.sig.
 const firstSigned = "0.1.3862"
 
+// signingOn is whether owl's own releases carry that signature. They don't
+// yet: istoo/owl carries the release chain it had before this scheme, with
+// no UPDATE_SIGNING_KEY secret, so requiring it would refuse every one of
+// its updates. A signature the feed does carry is checked all the same; set
+// this true once owl's release workflow signs (SIGNING KEY in TASKS.md).
+var signingOn = false
+
 // Signed is a release's SHA256SUMS as published and its ed25519 signature
 // (base64).
 type Signed struct {
@@ -48,7 +55,7 @@ func signedRequired(version string) bool {
 	if os.Getenv("OWL_UPDATE_FEED") != "" {
 		return false
 	}
-	return !Newer(firstSigned, version)
+	return signingOn && !Newer(firstSigned, version)
 }
 
 // verify checks rel against the embedded key and, when it is signed, sets
@@ -95,7 +102,7 @@ func (rel *Release) verify() error {
 			return fmt.Errorf("release %s: the feed's checksum for %s is not the signed one; not installed", rel.Version, name)
 		}
 		a.SHA256 = want
-		a.attest = !Newer(firstAttested, rel.Version)
+		a.attest = attestingOn && !Newer(firstAttested, rel.Version)
 		rel.Assets[name] = a
 	}
 	return nil

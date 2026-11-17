@@ -26,6 +26,7 @@ const (
 
 func siteFixture(t *testing.T) []byte {
 	t.Helper()
+	upstreamIdentity()
 	b, err := os.ReadFile(filepath.Join("testdata", "attest", "attestations-"+siteTag+".jsonl"))
 	if err != nil {
 		t.Fatal(err)

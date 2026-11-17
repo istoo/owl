@@ -40,7 +40,9 @@ func TestAssetTypesHoldAgainstTheRegistry(t *testing.T) {
 		}
 		return nil
 	})
-	for _, ext := range []string{".js", ".css", ".svg", ".png", ".jpg", ".json", ".webm"} {
+	// owl keeps no .jpg or .webm: the masking demo those belonged to is
+	// upstream's, and owl's redact page draws none (assets/plugins/redact)
+	for _, ext := range []string{".js", ".css", ".svg", ".png", ".json"} {
 		if !seen[ext] {
 			t.Errorf("no %s file served", ext)
 		}

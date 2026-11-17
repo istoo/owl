@@ -74,7 +74,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         return page;
       };
 
-      for (const mode of ["", "panel"]) {
+      // owl's tray panel is the today overview (docs/owl-design.md 三·七): no agent rows to open there
+    for (const mode of [""]) {
         await t.test(`${mode || "window"}: how to fix`, async () => {
           const calls = [];
           const page = await open(mode, "", calls);

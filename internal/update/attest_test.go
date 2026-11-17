@@ -26,11 +26,21 @@ const (
 
 func attestFixture(t *testing.T) []byte {
 	t.Helper()
+	upstreamIdentity()
 	b, err := os.ReadFile(filepath.Join("testdata", "attest", "sums-v0.1.3925.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// upstreamIdentity points the verifier at the identity the fixture bundles
+// really carry: they were signed by yetone/magpie-releases' release.yml,
+// the only release workflow whose bundles exist. Owl publishes none yet, so
+// a test of the verifier itself is judged against theirs.
+func upstreamIdentity() {
+	attestID.SAN = `^https://github\.com/yetone/magpie-releases/\.github/workflows/release\.yml@refs/(heads/main|tags/v[0-9A-Za-z.+-]+)$`
+	attestID.Repo = "https://github.com/yetone/magpie-releases"
 }
 
 // attestServer answers the attestation API with body (status code), counts
@@ -220,6 +230,11 @@ func TestAttestationOnlyWhereItIsOwed(t *testing.T) {
 
 // Release.verify marks the files of releases that carry attestations.
 func TestVerifyMarksAttestedReleases(t *testing.T) {
+	// owl's own releases aren't attested yet; the mark's era is tested as
+	// if they were
+	wasOn := attestingOn
+	attestingOn = true
+	t.Cleanup(func() { attestingOn = wasOn })
 	rel := signedRelease(t, firstAttested, map[string]string{"a": "1"})
 	if err := rel.verify(); err != nil || !rel.Assets["a"].attest {
 		t.Fatalf("%v %+v", err, rel.Assets["a"])

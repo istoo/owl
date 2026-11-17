@@ -32,7 +32,7 @@ func fakeWarmClaude(t *testing.T, out string, code int) string {
 		"echo \"errors:$DISABLE_ERROR_REPORTING\"; echo \"updater:$DISABLE_AUTOUPDATER\"; } > " + log + "\n" +
 		"echo '" + out + "'\nexit " + string(rune('0'+code)) + "\n"
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:3425")
 	return log
 }
@@ -112,7 +112,7 @@ func TestClaudeUsageRunsClaudeCode(t *testing.T) {
 		"{ printf 'args:'; for a in \"$@\"; do printf '[%s]' \"$a\"; done; echo; echo \"token:$CLAUDE_CODE_OAUTH_TOKEN\"; } > " + log + "\n" +
 		"cat " + out + "\n"
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "leaked")
 	got, err := claudeUsage(context.Background(), "")
 	if err != nil || got != text {
@@ -254,7 +254,7 @@ func TestClaudeRunEndsWhatItStarted(t *testing.T) {
 			dir := t.TempDir()
 			pidFile := filepath.Join(dir, "child")
 			testenv.Program(t, filepath.Join(dir, "claude"), "#!/bin/sh\nsleep 300 </dev/null >/dev/null 2>&1 &\necho $! > "+pidFile+"\nsleep 300\n")
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 			var pid int
 			t.Cleanup(func() {
 				if pid > 0 {

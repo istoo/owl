@@ -323,12 +323,23 @@ func (p *Project) tidy() {
 	p.Made = kept
 }
 
+// linkedPath says path itself is a symbolic link. A project's repository
+// can hold one (.mcp.json -> ~/.ssh/config), and edit.WriteAtomic follows
+// it, so owl would write outside the project (#4132).
+func linkedPath(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode()&os.ModeSymlink != 0
+}
+
 // writeIgnore takes the lines an older owl kept in the project's
 // .gitignore, between its two lines, out of it; the rest of the file is
 // the user's and stays. A .gitignore owl made is taken away once
 // nothing's left in it.
 func (p *Project) writeIgnore() error {
 	f := filepath.Join(p.Dir, ".gitignore")
+	if linkedPath(f) {
+		return fmt.Errorf("%s is a symbolic link; owl writes none of its own through one", f)
+	}
 	b, err := os.ReadFile(f)
 	if os.IsNotExist(err) {
 		p.Gitignore = false

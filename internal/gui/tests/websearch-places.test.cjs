@@ -122,8 +122,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       return { page, posts: f.posts };
     };
     const builtinTab = async (page) => {
-      const side = await page.evaluate(() => document.body.classList.contains("side-nav"));
-      await page.locator(side ? ".nav-sub:not(.leaving) .nav-s" : "#view-plugins .lib-tabs .opt").first().click();
+      // owl's sidebar lists no page tabs (docs/owl-design.md): the page keeps its strip
+      await page.locator("#view-plugins .lib-tabs .opt").first().click();
       await searchRow(page).waitFor();
     };
     for (const lang of LANGS) {

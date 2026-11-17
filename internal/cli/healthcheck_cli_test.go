@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/istoo/owl/internal/gateway"
+	"github.com/istoo/owl/internal/settings"
 )
 
 // owl healthcheck, a container's HEALTHCHECK, passes only while a
@@ -89,6 +91,18 @@ func fakeServing(t *testing.T, pid int) string {
 	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("OWL_ADDR", "")
+	// Settings' port is one of this test's own, so the default port a owl
+	// runs on on the machine doing the test answers for no address here
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ps, _ := net.SplitHostPort(l.Addr().String())
+	l.Close()
+	port, _ := strconv.Atoi(ps)
+	if err := settings.Save(settings.Settings{Port: port}); err != nil {
+		t.Fatal(err)
+	}
 	m := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			w.Write([]byte(`{"state":"restarting","version":"v9.9.9"}`))

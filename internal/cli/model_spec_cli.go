@@ -13,15 +13,15 @@ import (
 
 const specUsage = `usage:
   owl model spec <provider/model>             its context window, max output, vision and reasoning levels,
-                                                 and whether each is yours or the vendor's list's / models.dev's
+                                              and whether each is yours or the vendor's list's / models.dev's
   owl model spec <provider/model> [--context <n>] [--output <n>] [--vision on|off] [--reasoning <levels>]
-                                                 say any of them: --context 200000 or 1m, --output 128k,
-                                                 --reasoning low-high (a range), low,medium,high (a list) or off
-                                                 (send it no reasoning field); auto as any value takes yours off
-                                                 that one and goes back to the vendor's list and models.dev
+                                              say any of them: --context 200000 or 1m, --output 128k,
+                                              --reasoning low-high (a range), low,medium,high (a list) or off
+                                              (send it no reasoning field); auto as any value takes yours off
+                                              that one and goes back to the vendor's list and models.dev
   owl model spec '<provider>/*' --context <n> --output <n>
-                                                 a window and max output for every model of that provider that
-                                                 has none of its own; vision and reasoning are set per model
+                                              a window and max output for every model of that provider that
+                                              has none of its own; vision and reasoning are set per model
   owl model spec <provider/model> --reset     take every value you set off this model
   owl model specs                             the models you gave a spec
 

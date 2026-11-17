@@ -96,6 +96,12 @@ REPLACEMENTS = [
 
 BINARY_SNIFF = 8192
 
+# Files whose bytes a signature is over: renaming inside them makes the
+# signature fail (the signed sample's message names the product).
+SIGNED = (
+    "internal/update/testdata/signed-sample.msg",
+)
+
 
 def transform(text, path=""):
     """Apply the protected patterns and the name replacements to one string."""
@@ -160,6 +166,8 @@ def copy_tree(src, dst):
             if not data:
                 out = data
             elif is_binary(data):
+                out = data
+            elif rel.replace(os.sep, "/") in SIGNED:
                 out = data
             else:
                 try:

@@ -111,6 +111,7 @@ func scan(body []byte) (signed, args, defs, textDocs []string) {
 	// obj is what the object being visited says it is, as its keys come
 	type objFacts struct {
 		typ                                       string
+		argKey                                    string // arguments, action or operation
 		sig, thought, data, input, args, response bool
 	}
 	var stack []objFacts
@@ -159,6 +160,14 @@ func scan(body []byte) (signed, args, defs, textDocs []string) {
 		switch {
 		case f.input && (f.typ == "tool_use" || f.typ == "server_tool_use" || f.typ == "mcp_tool_use"):
 			args = append(args, join(string(path), "input"))
+		case f.input && strings.HasSuffix(f.typ, "_call"):
+			args = append(args, join(string(path), "input"))
+		case f.argKey != "" && strings.HasSuffix(f.typ, "_call"):
+			args = append(args, join(string(path), f.argKey))
+		case f.argKey != "" && (key == "function" || key == "functionCall" || key == "function_call"):
+			// a Chat Completions tool call's function, and a legacy
+			// function_call's arguments
+			args = append(args, join(string(path), f.argKey))
 		case f.args && (key == "functionCall" || key == "function_call"):
 			args = append(args, join(string(path), "args"))
 		case f.response && (key == "functionResponse" || key == "function_response"):
@@ -177,6 +186,9 @@ func scan(body []byte) (signed, args, defs, textDocs []string) {
 			t.input = true
 		case "args":
 			t.args = true
+		case "arguments", "action", "operation":
+			// a Responses *_call's own key for what the tool runs with
+			t.argKey = key
 		case "response":
 			t.response = true
 		}

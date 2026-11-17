@@ -26,7 +26,7 @@ func pagedPackedSetup(t *testing.T, row bool) (path string, b []byte, db *sql.DB
 		t.Fatal(err)
 	}
 	os.Remove(src)
-	plain = bytes.Replace(plain, []byte(`"model_provider":"openai"`), []byte(`"model_provider":"zai","history_mode":"paginated"`), 1)
+	plain = bytes.Replace(plain, []byte(`"model_provider":"openai"`), []byte(`"model_provider":"z","history_mode":"paginated"`), 1)
 	enc, _ := zstd.NewWriter(nil)
 	b = enc.EncodeAll(plain, nil)
 	path = filepath.Join(codex, "sessions", "2026", "03", "09", "rollout-2026-03-09T09-25-41-"+mgCX+".jsonl.zst")
@@ -46,7 +46,7 @@ func pagedPackedSetup(t *testing.T, row bool) (path string, b []byte, db *sql.DB
 	}
 	t.Cleanup(func() { db.Close() })
 	if _, err := db.Exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, model_provider TEXT NOT NULL, history_mode TEXT NOT NULL DEFAULT 'legacy');
-		INSERT INTO threads VALUES (?, ?, 'zai', 'paginated')`, mgCX, path); err != nil {
+		INSERT INTO threads VALUES (?, ?, 'z', 'paginated')`, mgCX, path); err != nil {
 		t.Fatal(err)
 	}
 	return path, b, db
@@ -67,14 +67,14 @@ func TestMoveCodexProviderPagedByRow(t *testing.T) {
 		}
 		return s
 	}
-	if m, _ := findManaged(ListAgent("codex"), mgCX); m.Provider != "zai" || m.UsesProvider != "owl" {
+	if m, _ := findManaged(ListAgent("codex"), mgCX); m.Provider != "z" || m.UsesProvider != "owl" {
 		t.Fatalf("listed %q, uses %q", m.Provider, m.UsesProvider)
 	}
 	mv, err := MoveCodexProvider(mgCX, "owl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row() != "owl" || len(mv.DB) != 1 || len(mv.Files) != 0 || mv.From != "zai" {
+	if row() != "owl" || len(mv.DB) != 1 || len(mv.Files) != 0 || mv.From != "z" {
 		t.Fatalf("row %q, moved %+v", row(), mv)
 	}
 	if now, _ := os.ReadFile(path); !bytes.Equal(now, b) {
@@ -83,7 +83,7 @@ func TestMoveCodexProviderPagedByRow(t *testing.T) {
 	if m, _ := findManaged(ListAgent("codex"), mgCX); m.Provider != "owl" {
 		t.Fatalf("listed on %q after the move", m.Provider)
 	}
-	if _, err := MoveCodexProvider(mgCX, "zai"); err != nil || row() != "zai" {
+	if _, err := MoveCodexProvider(mgCX, "z"); err != nil || row() != "z" {
 		t.Fatalf("back: %v, row %q", err, row())
 	}
 	if now, _ := os.ReadFile(path); !bytes.Equal(now, b) {
@@ -98,10 +98,10 @@ func TestMoveCodexProviderPagedNoRow(t *testing.T) {
 	path, b, _ := pagedPackedSetup(t, false)
 	_, err := MoveCodexProvider(mgCX, "owl")
 	var stuck *StuckError
-	if !errors.As(err, &stuck) || stuck.From != "zai" || stuck.To != "owl" {
+	if !errors.As(err, &stuck) || stuck.From != "z" || stuck.To != "owl" {
 		t.Fatalf("err %v", err)
 	}
-	for _, want := range []string{"history by byte", "no row", "stays on zai", "Delete"} {
+	for _, want := range []string{"history by byte", "no row", "stays on z", "Delete"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("%q doesn't say %q", err, want)
 		}

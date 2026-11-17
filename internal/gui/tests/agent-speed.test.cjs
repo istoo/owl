@@ -70,7 +70,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     const errors = [];
     t.after(() => browser.close());
-    for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) for (const panel of [false, true]) {
+    // owl's tray panel is the today overview (docs/owl-design.md 三·七): no agent rows to open there
+    for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) for (const panel of [false]) {
       await t.test(`${lang} ${panel ? "tray panel 440px" : "window"}`, async () => {
         const w = said[lang];
         const open = async (c, posts = [], refuse = () => false) => {

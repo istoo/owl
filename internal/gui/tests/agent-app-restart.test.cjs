@@ -60,7 +60,8 @@ const row = (id) => `.row.agent[data-id="${id}"]`;
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of Object.keys(words)) {
     const w = words[lang];
-    for (const [mode, width] of [["", 980], ["", 440], ["panel", 440]]) {
+    // owl's tray panel is the today overview (docs/owl-design.md 三·七): no agent rows to open there
+    for (const [mode, width] of [["", 980], ["", 440]]) {
       test(`${engine} ${lang} ${mode || "window"} ${width}px: Restart asks, then restarts the app`, async (t) => {
         const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
         t.after(() => browser.close());

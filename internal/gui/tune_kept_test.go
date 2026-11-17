@@ -18,6 +18,11 @@ import (
 // leave it.
 func TestTuneKeepsWhatItPutIn(t *testing.T) {
 	sandboxHome(t)
+	// a Claude Code started from one of its own shells sets these; they
+	// take the setting's place, and this test is about the setting
+	for _, k := range []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "FORCE_PROMPT_CACHING_5M", "CLAUDE_CODE_PROMPT_CACHE_TTL", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"} {
+		t.Setenv(k, "")
+	}
 	home := t.TempDir()
 	kept := func(cs []sessions.Call) []tuneAdvice {
 		t.Helper()

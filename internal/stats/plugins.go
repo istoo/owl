@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/istoo/owl/internal/plugin"
-	"github.com/istoo/owl/internal/update"
 )
 
 // Discover's counts: how many computers use each plugin, and its likes.
@@ -23,12 +22,14 @@ import (
 // own act, sent when they make it.
 
 // Site takes the day's plugins and the likes; OWL_SITE_HOST points
-// them elsewhere, for testing.
+// them elsewhere. Owl has no site of its own for these: without it no
+// counts are asked, no like is sent and no plugin list leaves this
+// computer, and the likes stay here.
 func Site() string {
 	if h := os.Getenv("OWL_SITE_HOST"); h != "" {
 		return strings.TrimRight(h, "/")
 	}
-	return update.Site
+	return ""
 }
 
 // publicPlugins is plugin.Public; tests put their own.
@@ -37,6 +38,9 @@ var publicPlugins = plugin.Public
 // sendPlugins tells usemagpie.ai the plugins installed here Discover
 // lists; nothing when there are none.
 func sendPlugins(ctx context.Context, id string) error {
+	if Site() == "" {
+		return nil
+	}
 	names := publicPlugins(ctx)
 	if len(names) == 0 {
 		return nil
@@ -56,6 +60,9 @@ type Counts struct {
 
 // PluginCounts asks usemagpie.ai each plugin's counts, by Discover's key.
 func PluginCounts(ctx context.Context) (map[string]Counts, error) {
+	if Site() == "" {
+		return map[string]Counts{}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", Site()+"/api/plugins/stats", nil)
@@ -86,6 +93,9 @@ func PluginCounts(ctx context.Context) (map[string]Counts, error) {
 // this computer's id; the answer is its likes now. The page lets only a
 // plugin installed here be liked (gui), and the like says it is.
 func Like(ctx context.Context, name string, on bool) (int, error) {
+	if Site() == "" {
+		return 0, nil
+	}
 	id, err := installID()
 	if err != nil {
 		return 0, err

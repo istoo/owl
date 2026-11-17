@@ -248,14 +248,14 @@ func TestLaunchdInstall(t *testing.T) {
 	if err := Install(Options{}); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.yetone.owl.serve.plist")
+	file := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.istoo.owl.serve.plist")
 	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := string(b)
 	for _, want := range []string{
-		"<key>Label</key><string>com.yetone.owl.serve</string>",
+		"<key>Label</key><string>com.istoo.owl.serve</string>",
 		"<array><string>/opt/my owl/owl%1</string><string>serve</string></array>",
 		"<key>SuccessfulExit</key><false/>",
 		"<key>ProcessType</key><string>Standard</string>",
@@ -279,7 +279,7 @@ func TestLaunchdInstall(t *testing.T) {
 	}
 	uid := strconv.Itoa(os.Getuid())
 	got := strings.Join(calls(t, log), "\n")
-	want := "launchctl print gui/" + uid + "/com.yetone.owl.serve\nlaunchctl bootstrap gui/" + uid + " " + file
+	want := "launchctl print gui/" + uid + "/com.istoo.owl.serve\nlaunchctl bootstrap gui/" + uid + " " + file
 	if got != want {
 		t.Errorf("install ran\n%s\nwant\n%s", got, want)
 	}
@@ -287,7 +287,7 @@ func TestLaunchdInstall(t *testing.T) {
 	// loaded: install again takes it out first; restart takes it out and
 	// loads it again (the fake still says loaded, so start kickstarts)
 	os.Remove(filepath.Join(dir, "launchctl.print.fail"))
-	write(t, filepath.Join(dir, "launchctl.print.out"), "gui/501/com.yetone.owl.serve = {\n\tactive count = 1\n\tstate = running\n\tprogram = /opt/owl\n\tpid = 777\n\tlast exit code = (never exited)\n\tendpoints = {\n\t\tstate = active\n\t}\n}\n")
+	write(t, filepath.Join(dir, "launchctl.print.out"), "gui/501/com.istoo.owl.serve = {\n\tactive count = 1\n\tstate = running\n\tprogram = /opt/owl\n\tpid = 777\n\tlast exit code = (never exited)\n\tendpoints = {\n\t\tstate = active\n\t}\n}\n")
 	os.Remove(log)
 	if err := Install(Options{}); err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestLaunchdInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = strings.Join(calls(t, log), "\n")
-	svc := "gui/" + uid + "/com.yetone.owl.serve"
+	svc := "gui/" + uid + "/com.istoo.owl.serve"
 	want = "launchctl print " + svc + "\nlaunchctl bootout " + svc + "\nlaunchctl bootstrap gui/" + uid + " " + file + "\nlaunchctl print " + svc + "\nlaunchctl bootout " + svc + "\nlaunchctl print " + svc + "\nlaunchctl kickstart " + svc
 	if got != want {
 		t.Errorf("reinstall and restart ran\n%s\nwant\n%s", got, want)
@@ -463,7 +463,7 @@ func TestInstallWithWeb(t *testing.T) {
 			return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "systemd", "user", "owl.service")
 		}, "ExecStart=\"/opt/my owl/owl%%1\" serve \"--web=0.0.0.0:3430\"\n", "Environment=\"OWL_WEB_KEY=" + key + "\"\n"},
 		{"darwin", func() string {
-			return filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.yetone.owl.serve.plist")
+			return filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.istoo.owl.serve.plist")
 		}, "<array><string>/opt/my owl/owl%1</string><string>serve</string><string>--web=0.0.0.0:3430</string></array>", "<key>OWL_WEB_KEY</key><string>" + key + "</string>"},
 	} {
 		t.Run(c.goos, func(t *testing.T) {
@@ -607,7 +607,7 @@ func TestLaunchdOldAgentMended(t *testing.T) {
 	if err := Install(Options{}); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.yetone.owl.serve.plist")
+	file := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.istoo.owl.serve.plist")
 	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
@@ -648,7 +648,7 @@ func TestLaunchdOldAgentMended(t *testing.T) {
 	}
 	mended("Restart")
 	uid := strconv.Itoa(os.Getuid())
-	svc := "gui/" + uid + "/com.yetone.owl.serve"
+	svc := "gui/" + uid + "/com.istoo.owl.serve"
 	// the fake still says loaded after the bootout, so start kickstarts
 	// what bootstrap would load: what matters is the bootout first
 	got := strings.Join(calls(t, log), "\n")

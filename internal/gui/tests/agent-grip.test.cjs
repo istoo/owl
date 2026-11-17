@@ -67,7 +67,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       if (errors.length) console.log(errors);
       await browser.close();
     });
-    for (const lang of ["en", "zh"]) for (const mode of ["window", "panel"]) {
+    // owl's tray panel is the today overview (docs/owl-design.md 三·七): no agent rows to open there
+    for (const lang of ["en", "zh"]) for (const mode of ["window"]) {
       await t.test(`${lang}, ${mode}`, async () => {
         const ctx = await browser.newContext({ viewport: mode === "panel" ? { width: 380, height: 560 } : { width: 1000, height: 640 }, reducedMotion: "reduce" });
         const page = await ctx.newPage(), f = fixture(lang);

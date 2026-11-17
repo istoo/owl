@@ -334,4 +334,37 @@ async function openPage(page, view) {
   await page.locator(`#view-${view}`).waitFor();
 }
 
-module.exports = { openPage, openRequest, closeRequest, provPrefsProviders, openProvPrefs, inEditor, settled, inView, reach, wheelTo, click, openPart, watchSettingsReads, settingsDrawn, agentRow, openAgentSettings, pickItem };
+
+// footTop: where what covers the page's end begins, the window's foot or,
+// on a phone (owl web), the tab bar fixed over it (phonetabs.js): a click
+// meant for the page lands above it
+function footTop(page) {
+  return page.evaluate(() => {
+    const nav = document.querySelector(".top #nav");
+    const bar = nav && getComputedStyle(nav).position === "fixed" ? nav.getBoundingClientRect().top : innerHeight;
+    return Math.min(innerHeight, bar, document.querySelector("footer.foot")?.getBoundingClientRect().top ?? innerHeight);
+  });
+}
+
+// navTo opens a page by its tab: at a narrow width the tab is under More,
+// which reaches it. The open page's own tab stays in the row.
+async function navTo(page, view) {
+  const b = page.locator(`#nav button[data-view="${view}"]`).first();
+  await page.waitForFunction((view) => {
+    const t = document.querySelector(`#nav button[data-view="${view}"]`);
+    if (!t) return true;
+    return t.getClientRects().length > 0 || t.classList.contains("nav-over");
+  }, view, { timeout: 15000 }).catch(() => {});
+  if (await b.isVisible()) return b.click();
+  const more = page.locator("#nav .tb-more:visible, #navMore:visible");
+  await more.waitFor({ state: "visible", timeout: 1000 }).catch(() => {});
+  if (await b.isVisible()) return b.click();
+  const name = (await b.textContent()).trim();
+  for (let i = 0; i < 3; i++) {
+    await more.click();
+    try { await page.locator(".nav-more-menu .pm-item", { hasText: name }).click({ timeout: 3000 }); return; } catch { /* a redraw closed the menu */ }
+  }
+  await page.locator(".nav-more-menu .pm-item", { hasText: name }).click();
+}
+
+module.exports = { footTop, openPage, navTo, openRequest, closeRequest, provPrefsProviders, openProvPrefs, inEditor, settled, inView, reach, wheelTo, click, openPart, watchSettingsReads, settingsDrawn, agentRow, openAgentSettings, pickItem };

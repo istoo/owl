@@ -99,7 +99,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	s := New()
 	t.Cleanup(s.subscription.abortAll)
 	return &resumeHarness{t: t, s: s, p: provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}, logs: logs, config: config}

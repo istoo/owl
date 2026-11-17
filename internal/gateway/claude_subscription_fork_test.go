@@ -104,7 +104,7 @@ while read -r line; do
 done
 wait
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	provider.ForgetAccounts()
 	t.Cleanup(provider.ForgetAccounts)
 	if err := provider.SaveGroup(provider.Group{ID: "orchestrator", Name: "Orchestrator", Members: []string{"claude/claude-opus-5-5"}}); err != nil {
@@ -323,7 +323,7 @@ while read -r line; do
 done
 wait
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	if mode != "print" {
 		// the interactive mode's helper, a stand-in that runs Claude
 		// Code as it was asked, saying the run is the interactive mode's

@@ -20,12 +20,12 @@ import (
 const apiUsage = `usage:
   owl model api <provider/model>              the API the model is asked on, and the ones its provider has
   owl model api <provider/model>... <api>     ask the model(s) on this API: chat, responses, anthropic,
-                                                 gemini, or decide (System One: a decision model a routing
-                                                 group asks as a turn begins); auto leaves it to the vendor's
-                                                 list and every URL the provider has, as by default
+                                              gemini, or decide (System One: a decision model a routing
+                                              group asks as a turn begins); auto leaves it to the vendor's
+                                              list and every URL the provider has, as by default
   owl model api <provider/model>... --reset   the same as auto
   owl model apis [<provider>]                 the models you set an API for; with a provider, each of its
-                                                 models and the API it is asked on
+                                              models and the API it is asked on
 
   It is the provider editor's "API this model is asked on", under Model settings, and is
   saved the same way: the app, a running gateway and the agents' model lists go by it at once.

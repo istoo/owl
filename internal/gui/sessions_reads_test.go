@@ -19,6 +19,11 @@ import (
 // reads that agent only, and Settings turns it off again.
 func TestSessionReadsRoutes(t *testing.T) {
 	h := sandboxHome(t)
+	// only Claude Code is this machine's here: an agent on PATH (OpenCode,
+	// say) or with a session store in the real data folder would be found
+	// beside it, and this test asks about the one
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", filepath.Join(h, ".local", "share"))
 	claude := filepath.Join(h, ".claude")
 	t.Setenv("CLAUDE_CONFIG_DIR", claude)
 	f := filepath.Join(claude, "projects", "-work-app", "sess1.jsonl")

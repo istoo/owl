@@ -77,6 +77,13 @@ func tuiWords(t *testing.T) (all []string, fmts map[string]bool) {
 						add(s)
 					}
 				}
+			case "hintsFit":
+				// hintsFit(width, key, word, …): the words start after it
+				for i := 2; i < len(call.Args); i += 2 {
+					if s, ok := lit(call.Args[i]); ok {
+						add(s)
+					}
+				}
 			}
 			return true
 		})

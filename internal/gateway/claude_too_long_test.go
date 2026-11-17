@@ -26,7 +26,7 @@ read -r line
 echo '{"type":"system","subtype":"init","session_id":"s"}'
 echo '{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long","session_id":"s"}'
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	for _, c := range []struct {
 		from provider.Protocol
 		path string

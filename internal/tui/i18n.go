@@ -43,7 +43,9 @@ var words = map[string]map[string]string{"zh": zh}
 
 var zh = map[string]string{
 	"gateway %s · served while owl tui is open": "网关 %s · owl tui 开着时由它提供",
-	"gateway not running: %s":                   "网关未运行：%s",
+	"help":                    "帮助",
+	"close":                   "关闭",
+	"gateway not running: %s": "网关未运行：%s",
 	"owl: the gateway stopped with owl tui; agents connected to owl reach it while owl tui, owl web or owl serve runs":                                                                     "owl：网关随 owl tui 一起停了；接入 owl 的 Agent 在 owl tui、owl web 或 owl serve 运行时才能连上",
 	"owl: the gateway goes on in owl's service (owl daemon status)":                                                                                                                        "owl：网关在 owl 的服务里继续运行（owl daemon status）",
 	"owl: the gateway goes on in owl's service, which now starts with this system or your login, so agents connected to owl reach it with owl tui closed; owl daemon uninstall removes it": "owl：网关在 owl 的服务里继续运行，它现在随系统或登录启动，所以关掉 owl tui 后接入 owl 的 Agent 仍能连上；owl daemon uninstall 可移除",

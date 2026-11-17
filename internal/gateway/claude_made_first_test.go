@@ -87,7 +87,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(bin, "claude"), script)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+stdPath())
 	provider.ForgetAccounts()
 	t.Cleanup(provider.ForgetAccounts)
 }

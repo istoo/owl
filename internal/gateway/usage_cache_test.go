@@ -224,7 +224,7 @@ while read -r line; do
   echo '{"type":"result","subtype":"success","is_error":false,"result":""}'
 done
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	runsEndWithTest(t, dir)
 	s := New()
 	t.Cleanup(s.subscription.abortAll)

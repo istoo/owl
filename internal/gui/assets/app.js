@@ -7428,7 +7428,7 @@ function renderAdd() {
       const grid = section("Partners", "owl's sponsors");
       const k = grid.previousElementSibling;
       // the heading's row ends in the way to join them, the address
-      // usemagpie.ai's own "Become a sponsor" writes to
+      // the project's own "Become a sponsor" writes to
       const head = el("div", "kind-row");
       const join = el("button", "sponsor-me");
       join.type = "button";
@@ -15730,101 +15730,6 @@ function keyCards(list) {
   return gone.size ? list.filter((q) => !gone.has(q)).map((q) => merged.get(q) || q) : list;
 }
 
-// packUsage lays the Usage cards in 260px columns, each card to the column
-// that ends highest (#860), as tall as what it holds (jen_celeus on X).
-const USAGE_MIN = 260, USAGE_GAP = 7;
-let usagePacked = null, usagePackFrame = 0;
-function packUsage() {
-  const list = $("#subscriptionUsage");
-  if (usagePackFrame) { cancelAnimationFrame(usagePackFrame); usagePackFrame = 0; }
-  if (!list || list.classList.contains("sorting")) return;
-  const cards = [...list.children], width = list.clientWidth;
-  if (!width || !cards.length) {
-    // out of sight: the grid as it is without packing, packed once it shows
-    list.classList.remove("packed");
-    list.style.gridTemplateColumns = "";
-    for (const c of cards) { c.style.gridArea = ""; c.style.minHeight = ""; }
-    usagePacked = null;
-    return;
-  }
-  // sorted: a drag keeps the columns it was shown in
-  const keys = cards.map((c) => c.dataset.key || "").sort().join();
-  const most = Math.max(1, Math.min(cards.length, Math.floor((width + USAGE_GAP) / (USAGE_MIN + USAGE_GAP))));
-  const place = (n, hs) => {
-    const { at, ends } = usagePlace(n, hs);
-    const tall = Math.max(...ends) - USAGE_GAP;
-    // what stands empty under the columns' ends, by the columns' width
-    const empty = ends.reduce((s, e) => s + tall - (e - USAGE_GAP), 0) * (width - (n - 1) * USAGE_GAP) / n;
-    return { n, at, tall, empty };
-  };
-  const heights = () => {
-    for (const c of cards) c.style.minHeight = "";
-    for (const g of list.querySelectorAll(".quota-windows")) fitQuota(g);
-    return cards.map((c) => c.getBoundingClientRect().height);
-  };
-  const columns = (n) => { list.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`; };
-  let best;
-  if (usagePacked && usagePacked.most === most && usagePacked.keys === keys && list.classList.contains("packed")) {
-    // the same cards, as many columns fitting: the columns as they are
-    best = place(usagePacked.n, heights());
-  } else {
-    list.classList.remove("packed");
-    for (const c of cards) c.style.gridArea = "";
-    for (let n = most; n >= Math.max(1, most - 1); n--) {
-      columns(n);
-      const p = place(n, heights());
-      if (!best) best = p;
-      else if (p.tall <= best.tall * 1.3 && p.empty < best.empty * 0.6) best = p;
-    }
-    // measured again: a count beside its name or under it is the width's
-    columns(best.n);
-    best = place(best.n, heights());
-  }
-  usagePacked = { most, keys, n: best.n };
-  list.classList.add("packed");
-  // the last card in each column, down to the end of the tallest
-  const last = new Map(best.at.map(([c], i) => [c, i]));
-  best.at.forEach(([c, top, h], i) => {
-    if (last.get(c) === i) h = best.tall - top;
-    const area = `${top + 1} / ${c + 1} / span ${Math.max(1, h)} / span 1`;
-    if (cards[i].style.gridArea !== area) cards[i].style.gridArea = area;
-    const min = last.get(c) === i ? `${h}px` : "";
-    if (cards[i].style.minHeight !== min) cards[i].style.minHeight = min;
-  });
-}
-// a card's height or the page's width moved: packed again on the next frame
-// (in the observer's own call the change is owed to it in the same frame,
-// which WebKit reports as a ResizeObserver loop). A packed card is held to
-// the rows it was given, so one whose content only shrinks (a curve made
-// small again) keeps its own size: what is in it is watched too (#2059,
-// mengyianx: 剩余额度走势 closed left the box as tall as when open).
-// usagePlace packs heights hs into n columns: [column, top, height] each
-function usagePlace(n, hs) {
-  const ends = Array(n).fill(0), at = [];
-  for (const h of hs.map(Math.ceil)) {
-    // the leftmost of those ending within a pixel of the highest
-    const low = Math.min(...ends), c = ends.findIndex((e) => e <= low + 1);
-    at.push([c, ends[c], h]);
-    ends[c] += h + USAGE_GAP;
-  }
-  return { at, ends };
-}
-// usageLayout: dragCards' layout for the packed Usage cards (usagelayout.js),
-// none until it is in, the cards then placed as the grid has them
-let usageLayout = null;
-import("./usagelayout.js").then((m) => { usageLayout = m.usageLayout; }).catch(() => {});
-
-const usagePack = new ResizeObserver(() => { if (!usagePackFrame) usagePackFrame = requestAnimationFrame(packUsage); });
-function packUsageNow(list) {
-  packUsage();
-  usagePack.disconnect();
-  usagePack.observe(list);
-  for (const card of list.children) {
-    usagePack.observe(card);
-    for (const part of card.children) usagePack.observe(part);
-  }
-}
-
 // usageHandle: a card's logo is its handle (drag, or Alt+arrows); a grip
 // shows by it on hover.
 let usageArranging = false, usageRenderPending = false;
@@ -21287,7 +21192,7 @@ function renderRedact(s, keep) {
     }, settingsErr))).id = "agentTelemetryAllRow";
   rowIn(share, t("Count me as a user"), t("Once a day, a random id for this computer with owl's version and system"),
     onOff(!s.noStats, (on) => savePrefs({ ...keep, noStats: !on })));
-  if (!s.noStats) rowIn(share, t("Share the agents, providers, models and plugins I use"), t("Sent with that event, by owl's own ids, with how many of each, and how often each partner was shown, opened and added; a provider you added yourself is only “custom”. Which of Discover's plugins are installed goes to usemagpie.ai for its counts. No names, addresses, accounts, keys or usage"),
+  if (!s.noStats) rowIn(share, t("Share the agents, providers, models and plugins I use"), t("Sent with that event, by owl's own ids, with how many of each, and how often each partner was shown, opened and added; a provider you added yourself is only “custom”. No names, addresses, accounts, keys or usage"),
     onOff(!s.noUsageStats, (on) => savePrefs({ ...keep, noUsageStats: !on })));
   if (!featureHides($('#nav button[data-view="masking"]'))) {
     const open = el("button", "", t("Open"));

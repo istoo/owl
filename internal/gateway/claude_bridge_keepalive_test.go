@@ -50,7 +50,7 @@ while read -r line; do
   echo '{"type":"result","subtype":"success","is_error":false,"result":""}'
 done
 `)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+stdPath())
 
 	s := New()
 	t.Cleanup(s.subscription.abortAll)

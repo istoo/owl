@@ -498,9 +498,9 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
 - [x] 校准：`T(e17b6cefc)` 对 `68bbe1383` 剩 848 个不同文件（994 行差异起）、12 个只在 T 侧、93 个只在 owl 侧；
       T 侧路径里含 magpie 的只剩 `internal/plugin/testdata/github/npm/@magpie-community_…json`；
       残留 magpie 文本全部是上述例外（外加 usemagpie 链接，owl 自己的改动里删）。差异 ≤10 行的文件 571 个，>100 行的 25 个（app.js/i18n/css/README 等 owl 真实改动）。
-- [ ] 造 B'=T(e17b6cefc)、U'=T(upstream/main)、O'=owl 当前树（父均为 B'），三方合并
-- [ ] 冲突按归属解决（owl 自有清单见任务说明；其余取上游）
-- [ ] 合并结果落到 main 拉出的分支，单提交 `sync: upstream magpie to 4f94b8a`，新增 `UPSTREAM`
+- [x] 造 B'=T(e17b6cefc)、U'=T(upstream/main)、O'=owl 当前树（父均为 B'），三方合并
+- [x] 冲突按归属解决（owl 自有清单见任务说明；其余取上游）
+- [x] 合并结果落到 main 拉出的分支，单提交 `sync: upstream magpie to 4f94b8a`，新增 `UPSTREAM`
 - [ ] 全量验证（build/gofmt/vet/go test/GUI/沙箱启动）
 - [x] B'=`d76476bdbf36e5d84f228d48021b6f86a206d578`（T(e17b6cefc)），U'=`83809fa4de023264942a6ff326651e09b4704fb2`（T(4f94b8a82)，父 B'），
       O'=`fa85029cde8b57607360511312cf0be3a7ed63a6`（owl 1bf8fec80，父 B'）；合并后 2535 新增、1940 修改、215 冲突。
@@ -515,7 +515,68 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
 - [x] 删掉被上游实现取代的 owl 测试：cc_uuidset_test.go（上游 uuid_set.go）、dockflap_mem_darwin_test.go（上游 Dock 修法）、
       spotlight_batch_test.go（上游改成一次 mdfind）、routing-steady.test.cjs（上游改名为 routing-steady-garbage）。
 - [x] 验证：go build ./...、GOOS=windows build、GOOS=linux -tags nogui build；gofmt -l 空；go vet ./...、GOOS=windows vet、GOOS=linux vet 均通过。
-- [ ] go test ./... -timeout 45m（日志 tee），红的逐个归因
-- [ ] GUI 全套（chromium+webkit）、TestCoreScriptBudget、i18n-keys
-- [ ] make app + 沙箱 HOME 启动
-- [ ] 落到 main 拉出的分支（单提交），分支名待报
+- [x] 修复合流丢掉的 owl 规则（第二个提交 `1ed4b427e`）：access 的网关 key 只能由 owl 生成；Codex effort 回退到全部档位；
+      effort/subagent_effort/login/dsh 的 `Closed` 标记与 asleep WSL 克隆的 Closed；Codex 线程移动恢复 owl 的“任意长度都就地改”
+      （owl 的 id 更短，行尾补空格；把 Relay 子测试改为与 OpenAI 一样不复制）；commandcode_test 的 JSON 键、bark 图标 URL、
+      cherrystudio base64 字面量按 owl 名更新；site 索引重新生成。
+- [x] 修 T 的连带错误：`com.yetone.magpie.*` 被改成 `com.yetone.owl.*`，已恢复 owl 的 `com.istoo.owl.*`（Info.plist 的 ccswitch scheme、daemon_test）。
+- [x] 隐私：stats 的插件上报/点赞/计数在未设 `OWL_SITE_HOST` 时完全不出网（owl 没有上游站点），Discover 的点赞只存本机；
+      GUI 隐私文案去掉“插件列表发给 usemagpie.ai”，删掉无人引用的“从 usemagpie.ai 下载更新”三条文案（4 语言）；
+      Plugins 页“Write a plugin”指回 `github.com/istoo/owl/blob/main/site/public/docs/`。
+- [x] 核对被删的 owl GUI 测试：routing-groups-jump / routing-pointer-pin / routing-steady 的前提（路由组在请求列表下方、
+      同页滚动跳转）已被上游“路由组独立成页”取代（plugins/routing/client.js 的 groups 页 + `rtToGroups`），旧测试恢复后必然失败，保持删除。
+- [x] 合流后帮助表重排：`magpie`→`owl` 少 3 列，modelUsage/specUsage/apiUsage 按 owl 的 46 列重排（上游测试 TestModelUsage* 因列错位红）。
+- [x] 环境依赖测试改成自洽：healthcheck/update 的 fakeServing 把 Settings 端口设成自己挑的空闲端口（本机 3425 有真实 owl，
+      旧测试会探到它）；opencode default 测试在 PATH 放一个 1.0.0 的假 opencode（本机装的是 2.0.32，会走 OpenCode 2 的写法）；
+      build/darwin 足迹测试在 GOROOT 位于 GOMODCACHE（自动下载的 toolchain）时 skip，因为 go 拒绝 overlay 该目录（用 1.27.3 本地
+      Go 可过：`GOTOOLCHAIN=local /opt/homebrew/Cellar/go/1.27.3/bin/go test ./build/darwin`）。
+- [x] 合流丢的上游 provider 编辑器功能补回：editor.js 以 B' 的 drawEditor 为基、owl 的 editor.js 与 U' 的 drawEditor 做 diff3（3 处冲突），
+      补回 remoteNew 的名称/ID、remote-owl 的 MCP/技能/连接/模型名四个开关、User-Agent 透传、HTTP/1.1、mTLS 证书（tlscerts.js）、
+      Responses over WebSocket、passErrors、image-files、余额槽、Vertex 的 Base URL 与“API key 代替 project”；冲突按 owl 的 renderRouting
+      （nodes/advNodes/slot + mergeRouteAdv）结构解决，并加上上游的“只想切账号”提示与 top 位置的插件选项。
+- [x] app.js 与 plugins/usage/page.js 都声明了 usagePacked/packUsage/usagePack（上游已把打包移进 page.js）：页面启动即
+      “Identifier 'usagePack' has already been declared”，整页脚本不执行（About、侧栏测试全红）。删掉 app.js 里 owl 的旧打包实现 95 行。
+- [x] i18n：合并把整块文案复制了两遍（每语言 9 个重复键，共 36 行），按“后者生效”删前面的；补回 owl 丢失的 4 个键
+      （Check every、Cline 固定上游、套餐 User-Agent、用量空态），usage 空态 4 语言新写。claude_image_budget_test.go 的行内注释
+      含 “, with an image”，被重命名后的 i18n-keys 当成 routing 插件的词，改为 “carrying an image”。
+- [x] gateway 首轮全包 9 红，均归因并修：TestClaudeCodeOnCodexSpendsAsCodex（T 把守卫词改成 owl，夹具 “knowledge” 里有 owl，
+      改成 owl）；TestRedactionWantedWhenSettingsUnreadable（redactionWanted 取上游 Shared，丢了 owl 的 fail-closed，
+      改用 SharedChecked，读失败即视为要脱敏）；TestKeptRoutesHoldNoRequestBody/TranslatedBody（modelOf 丢了 strings.Clone，
+      unsafe 字符串把整个正文钉在路由里）；TestSystemOneMasked（decide_group 里 owl 的旧脱敏块与上游的块并存，删旧的，
+      保留按候选 unmasked() 判断的）；TestWithFieldsAllocates/WithoutTurnEffortAllocates（withFields 取上游整包解码，丢了 owl 的
+      withFieldsRaw/Slow 快路径，补回）；TestLargeBodiesGoOutOnConnectionsOfTheirOwn（丢了 owl 的 uploadLanes，按新 transport 包装补回）。
+- [x] 恢复/删除 GUI 测试：owl main 自己删过 8 个基点测试（About 两个、gateway 自有 key 两个、masking-demo 两个、nav-sub-unroll、
+      side-width）。About 两个按 owl 界面改（Community/GitHub 行；许可行随 notices 功能补回）；masking-demo 两个同样删除（owl 的 redact/page.js 没有这段演示，只有 demo.js 与视频素材也不成事）；
+      nav-sub-unroll 与 side-width 对应 owl 有意去掉的侧栏页签与拖动，删除（owl app.js 注释与 docs/owl-design.md 都说明侧栏无页签）。
+- [x] About 更新区按上游新界面补齐（Update button、Hidden for 3 days/quiet、Check every、Daily 通道、Off/On 分段），
+      但 Automatic updates、Download updates、Restart 保持 owl 的开关（owl 的 update-auto/restart 测试如此要求）；下载源仍是 owl 的
+      GitHub 镜像行，Update source 选择器不引入（owl 只从 GitHub 更新）。删掉 updatetrust.js：它声称每次更新有 ed25519 签名与
+      Sigstore 证明，而 owl 的签名/证明开关是关的，这句话不成立。
+- [x] 上游新增、依赖 owl 已删界面的 GUI 测试：删 nav-sub-fold、nav-sub-icons、nav-lamp-icon、library-groups、memory-icon、
+      settings-update-source、about-report（owl 的 About 没有 Report a problem 行）；places 两个测试改用页面自己的页签；plugin-middleware 的“编写插件”链接改指 istoo/owl 文档；
+      update-mirror 恢复 owl 版（GitHub 措辞）；update-channel 恢复上游版并把它点 Automatic updates 的方式改成 owl 的开关。
+- [x] internal/gui 全包其余两红：assets_test 要求有 .jpg/.webm（上游 masking demo 的素材，owl 没有）→ 要求列表回退到 owl 的；
+      TestSessionReadsRoutes 在整包跑时把本机 OpenCode 的数据目录算成“已找到”→ 测试把 XDG_DATA_HOME 也指向沙箱。
+- [x] go test ./... -count=1 -timeout 45m：104 个包 ok（gateway 全包 940s 绿）；仅 internal/gui 两红——assets_test 的 .jpg/.webm、
+      TestSessionReadsRoutes 整包干扰。两处修好后 `go test ./internal/gui -count=1` 271s 绿。日志 /tmp/owl-sync/full3.log、gui-go2.log。
+- [ ] **SIGNING KEY（需要决定）**：上游 update 要求 0.1.3862 起 latest.json 带 ed25519 `signed`（密钥在 istoo/owl-releases 的
+      `UPDATE_SIGNING_KEY` secret），0.1.3891 起还要 GitHub build attestation。owl 的 release.yml 不产生这两样，若照上游要求，
+      owl 的每次更新都会被拒。当前用 `signingOn=false` / `attestingOn=false` 关掉强制（带了签名仍会校验），owl 的 SHA-256
+      校验链照旧。要启用：在 istoo/owl 加 secret、release.yml 生成 SHA256SUMS.sig 并写进 latest.json，再把两个开关打开；
+      attestation 还要求发布仓库是 istoo/owl-releases 且 workflow 名/路径固定。
+- [x] TestCoreScriptBudget 绿；i18n-keys 四条绿（补 4 个丢失键、去 36 行重复键之后）。
+- [~] GUI 全套首跑（1579 文件，concurrency 2）：30 分钟只跑完约 94 个文件，按此速度约 8-9 小时，故中途停下先修系统性红。
+      真实红 21 个文件 / 172 条断言（其余 1485 个是未跑到的 pending）。根因之一：合并取了上游 tests/reader.cjs，丢 owl 的
+      navTo/footTop 导出，所有 `const { navTo }` 的测试报 navTo is not a function；已在 reader.cjs 补回。
+- [x] 用上游 U' 的 assets 交叉验证归属：agent-details-ready（Details 动画末尾高度跳 80px）、agent-switch-accounts（点账号后
+      aria-expanded 仍为 null）、account-arrange（等 provider/arrange 响应超时）、add-sheet-hint（短窗口提示条）在上游 assets 上
+      同样失败——是上游自己的红；account-weight、account-refresh-holds 在上游 assets 上绿，属 owl 侧差异，待修。
+- [x] 上游新增测试假定旧托盘面板里有 agent 列表；owl 的托盘面板是「今天」总览（docs/owl-design.md 三·七），这些 panel 子测试
+      按 owl 设计跳过：agent-speed、agent-grip、agent-app-restart、agent-proxied、agent-unreachable（window 子测试保留）。
+- [x] 首跑红文件修复后复跑 21 个文件：207 条中 39 红——agent-details-ready 16、agent-switch-accounts 10（这两组上游 assets 同样红）、
+      account-arrange 1、add-sheet-hint 1（上游红）；owl 侧还剩 agent-plugin-agents 5、account-refresh-holds 3、account-weight 1 未修。
+      全量 GUI 未跑完（预计 8-9 小时），见上。
+- [x] make app：Go 1.26.10 的 toolchain 在 GOMODCACHE，footprint-overlay 被 go 拒绝；改用
+      `PATH=/opt/homebrew/Cellar/go/1.27.3/bin:$PATH GOTOOLCHAIN=local make app` 成功。沙箱 HOME（/tmp/owl-sync/home）启动
+      `owl web --no-open --addr 127.0.0.1:0`：/api/state 200（JSON 有 agents）、/?mode=panel 200、/v1/models 403（无 key，网关在）。
+- [x] 分支 `sync/upstream-4f94b8a`：99083ade1（sync）、1ed4b427e（owl 规则）、c9bbbc955（本轮修复）。未 push、未打 tag、未改 main。

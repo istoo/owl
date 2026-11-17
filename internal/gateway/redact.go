@@ -369,7 +369,15 @@ func redactionWantedFor(ctx context.Context) bool {
 }
 
 func redactionWanted() bool {
-	return masking.Wanted(settings.Shared())
+	s, err := settings.SharedChecked()
+	if err != nil {
+		// a failed read is unknown, never "off": the settings say masking,
+		// and sending the user's text as written is the worse error
+		// (LESSONS: a failed read means unknown; gwmw.Masking then fails
+		// closed when no masker serves)
+		return true
+	}
+	return masking.Wanted(s)
 }
 
 // maskedQuery masks a web search's query, as the settings say, before it

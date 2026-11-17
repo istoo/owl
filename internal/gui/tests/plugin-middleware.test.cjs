@@ -105,8 +105,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     t.after(() => browser.close());
     const I = {
-      en: { kinds: ["All", "Subscriptions", "Middleware"], a: "Write a plugin", url: "https://usemagpie.ai/docs/plugins", trust: /sign-in or your requests/ },
-      zh: { kinds: ["全部", "订阅", "中间件"], a: "编写插件", url: "https://usemagpie.ai/docs/zh/plugins", trust: /登录或看到你的请求/ },
+      en: { kinds: ["All", "Subscriptions", "Middleware"], a: "Write a plugin", url: "https://github.com/istoo/owl/blob/main/site/public/docs/plugins.html", trust: /sign-in or your requests/ },
+      zh: { kinds: ["全部", "订阅", "中间件"], a: "编写插件", url: "https://github.com/istoo/owl/blob/main/site/public/docs/zh/plugins.html", trust: /登录或看到你的请求/ },
     };
     for (const lang of ["en", "zh"]) {
       await t.test(lang, async () => {

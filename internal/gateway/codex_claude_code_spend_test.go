@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -134,7 +135,9 @@ func TestClaudeCodeOnCodexSpendsAsCodex(t *testing.T) {
 		if n, want := len(gjson.GetBytes(b, "tools").Array()), len(gjson.GetBytes(raw, "tools").Array()); n != want {
 			t.Errorf("turn %d: %d tools, Claude Code declared %d", i+1, n, want)
 		}
-		if strings.Contains(strings.ToLower(gjson.GetBytes(b, "input").Raw), "owl") {
+		// the word, not letters inside another: upstream's fixture says
+		// "knowledge", which carries them since the rename
+		if regexp.MustCompile(`(?i)\bowl\b`).MatchString(gjson.GetBytes(b, "input").Raw) {
 			t.Errorf("turn %d: the input names owl", i+1)
 		}
 		// Claude Code's system blocks, billing line left out, go as one
