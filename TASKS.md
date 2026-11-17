@@ -589,6 +589,9 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       中较低者为顶」，agent-plugin-agents 两引擎 22/22。`1ba876e1a` 添加框提示——宽屏浮动进标题栏时按「栏给的长提示实际宽度」
       决定长短，不再按 1300px 窗口猜，add-sheet-hint 两引擎 52/52（U' 也 52/52）。TestCoreScriptBudget 绿。
       另发现 account-refresh-holds 的第二条（a sheet pressed while short rises into the room）在上游 U' 上同样红，走 issue 记录。
+- [x] 上游自有红已开 issue（均附 U' 输出）：#28 agent-details-ready（16/18）、#29 agent-switch-accounts（10/12）、
+      #30 account-arrange（fixture 在 POST /api/update/using 崩溃；owl 侧另因测试要分段按钮而超时）、
+      #31 account-refresh-holds 的 sheet 子测试。add-sheet-hint 复跑 U' 绿，未开 issue（是 owl 侧，已修）。
 - [ ] 后续项：owl 发布链加 ed25519 签名与构建证明（release.yml 生成 latest.json 的 `signed`、开启 signingOn/attestingOn、
       配 istoo/owl-releases 的 secret 与 attestation）；当前保持 signingOn=false / attestingOn=false。
 - [x] make app：Go 1.26.10 的 toolchain 在 GOMODCACHE，footprint-overlay 被 go 拒绝；改用
