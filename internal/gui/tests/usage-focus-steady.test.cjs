@@ -173,7 +173,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the tray panel's Usage tab: not dimmed, not drawn again
       const pc = { state: 0, overview: 0, requests: 0 };
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 560 }, pc, { v: 0 });
-      await panel.locator('[data-ptab="stats"]').click();
+      await panel.locator('#pHome [data-open="stats"]').click();
       const PCOL = "#panelUsage .led-chart rect.col";
       await panel.locator(PCOL).first().waitFor();
       await panel.waitForTimeout(2300); // the panel reads again on focus once 2 s have passed

@@ -65,6 +65,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         });
         const row = page.locator('.row.agent[data-id="reasonix"]');
         const open = async () => {
+          if (mode === "panel" && (await page.evaluate(() => document.body.dataset.ptab)) === "home") await page.locator('#pHome [data-open="agents"]').click();
           await row.waitFor();
           if (mode === "panel") await row.locator(".ag-sum").click();
           else if (await row.locator(':scope > .ag-link[aria-expanded="false"]').count()) {
@@ -73,6 +74,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           }
         };
         await page.goto("http://owl.test/" + (mode === "panel" ? "?mode=panel" : ""));
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await open();
         if (mode === "window") {
           // Not connected, the row says what the agent is on, its Default or

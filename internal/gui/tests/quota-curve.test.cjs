@@ -387,7 +387,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         { at: iso(p0 - 1 * H), left: 70, start: iso(p0 - 3 * H), resetsAt: iso(p0 + 2 * H) },
       ];
       const panel = await open("panel", "http://owl.test/?mode=panel", "dark", { width: 440, height: 640 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       const pcard = panel.locator(".pq-card", { hasText: "a@x.com" });
       const spark = pcard.locator(".pq-spark");
       await spark.waitFor();
@@ -401,7 +401,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const single = JSON.parse(JSON.stringify(data));
       single.quotas[0].windows[1].used = 0;
       const one = await open("one", "http://owl.test/?mode=panel", "dark", { width: 440, height: 640 }, single);
-      await one.locator('#ptabs [data-ptab="usage"]').click();
+      await one.locator('#pHome [data-open="usage"]').click();
       const ocard = one.locator(".pq-card", { hasText: "a@x.com" });
       await ocard.waitFor();
       assert.equal(await ocard.locator(".pq-pace").textContent(), " · " + w.lasts);
@@ -410,7 +410,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const quiet = JSON.parse(JSON.stringify(single));
       quiet.history[0].lines[0].points = [];
       const silent = await open("silent", "http://owl.test/?mode=panel", "dark", { width: 440, height: 640 }, quiet);
-      await silent.locator('#ptabs [data-ptab="usage"]').click();
+      await silent.locator('#pHome [data-open="usage"]').click();
       const scard = silent.locator(".pq-card", { hasText: "a@x.com" });
       await scard.waitFor();
       assert.equal(await scard.locator(".pq-pace").count(), 0, "nothing to say, nothing said");
@@ -452,7 +452,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await panel.waitForFunction(() => !document.querySelector(".pq-spark"));
       assert.ok(await pcard.locator(".pq-dial").count() > 0, "the card is still there");
       await panel.reload();
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       await pcard.locator(".pq-dial").first().waitFor();
       assert.equal(await panel.locator(".pq-spark").count(), 0, "Off is kept in the tray");
       assert.deepEqual(errors, []);

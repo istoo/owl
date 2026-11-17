@@ -87,8 +87,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", server(lang, saved, opts));
       await page.goto("http://owl.test/?mode=panel");
+      await page.locator('#pHome [data-open="agents"]').click(); // Profiles is the Agents detail's
       await page.locator("#profiles .chip, #profiles .hint").first().waitFor({ state: "attached" });
-      assert.equal(await page.locator('[data-ptab="profiles"]').count(), 0, "no Profiles tab");
+      assert.equal(await page.locator('#pHome [data-open="profiles"]').count(), 0, "no Profiles tab");
       await page.locator("#profBtn").click();
       await page.locator(".profiles.open").waitFor();
       await page.waitForTimeout(450);
@@ -175,10 +176,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.mouse.click(420, 150);
         assert.equal(await page.locator(".profiles.open").count(), 0);
         await page.locator("#profBtn").click();
-        await page.locator('[data-ptab="routing"]').click();
+        await page.keyboard.press("Escape"); // the profiles first
+        await page.keyboard.press("Escape"); // then the agents' page
+        await page.waitForFunction(() => document.body.dataset.ptab === "home");
+        await page.locator('#pHome [data-open="routing"]').click();
         assert.equal(await page.locator(".profiles.open").count(), 0);
-        assert(!(await page.locator("#profBtn").isVisible()), "Profiles is the Agents tab's");
-        await page.locator('[data-ptab="agents"]').click();
+        assert(!(await page.locator("#profBtn").isVisible()), "Profiles is the Agents detail's");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.body.dataset.ptab === "home");
+        await page.locator('#pHome [data-open="agents"]').click();
         assert(await page.locator("#profBtn").isVisible());
 
         // a profile applied closes them, the agents in sight

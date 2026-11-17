@@ -93,7 +93,6 @@ const STRINGS = ["Get started", "Add a model source", "Connect an agent", "Set u
 
 async function open(browser, layout, lang, w, posts) {
   const context = await browser.newContext({ viewport: layout.viewport, reducedMotion: "reduce" });
-  await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "agents"); } catch {} });
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   page.setDefaultNavigationTimeout(60000);
@@ -101,6 +100,9 @@ async function open(browser, layout, lang, w, posts) {
   page.on("pageerror", (e) => page.errors.push(e.message));
   await page.route("**/*", server(lang, w, posts));
   await page.goto("http://owl.test" + layout.url);
+  if (layout.name === "panel") {
+    await page.locator('#pHome [data-open="agents"]').click();
+  }
   await page.locator(".row.agent").first().waitFor();
   return { context, page };
 }
@@ -158,6 +160,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // be connected, and a routing group is a click away
         w.served = 12;
         await page.goto("http://owl.test" + layout.url);
+        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await card.waitFor();
         assert.equal(await stepDone(page, "source"), true);
         assert.match(await page.locator('.guide-step[data-step="source"] .guide-say').textContent(), /12/);
@@ -187,6 +190,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // done stays done: a reload brings no card back
         await page.goto("http://owl.test" + layout.url);
+        if (layout.name === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(".row.agent").first().waitFor();
         assert.equal(await page.locator(".guide").count(), 0);
         assert.deepEqual(page.errors, []);

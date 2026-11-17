@@ -68,13 +68,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         t.after(async () => { await browser.close(); });
         const errors = [];
         const context = await browser.newContext({ viewport: { width: 380, height: 640 }, reducedMotion: "reduce" });
-        await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "usage"); } catch {} });
         const page = await context.newPage();
         page.setDefaultTimeout(5000);
         page.setDefaultNavigationTimeout(60000);
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, c));
         await page.goto("http://owl.test/?mode=panel");
+        await page.locator('#pHome [data-open="usage"]').click();
         const want = c.panel.flat().length;
         await page.waitForFunction((n) => document.querySelectorAll("#panelQuota .pq-card[data-card]").length >= n, want);
 

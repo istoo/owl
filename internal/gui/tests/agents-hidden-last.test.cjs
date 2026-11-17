@@ -90,6 +90,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, ["agy", "commandcode"]));
         await page.goto(url);
+        if (url.includes("mode=panel")) await page.locator('#pHome [data-open="agents"]').click();
         const more = page.locator(".agent-more");
         await more.waitFor();
         const said = (await more.textContent()).trim();

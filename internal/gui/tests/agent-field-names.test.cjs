@@ -114,6 +114,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", server(lang));
       await page.goto("http://owl.test/?mode=panel");
+      await page.locator('#pHome [data-open="agents"]').click();
       await page.locator(row).waitFor();
       await page.locator(`${row} .ag-sum`).click();
       await page.locator(`${row} .ag-open .field`).first().waitFor();

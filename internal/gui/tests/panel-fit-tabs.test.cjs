@@ -65,10 +65,17 @@ function serve(page, lang, agents, held = {}) {
 // the view's overflow on each tab, after the panel was fitted
 async function overflows(page) {
   const out = {};
-  for (const tab of ["agents", "usage", "stats", "routing"]) {
-    const b = page.locator(`#ptabs [data-ptab="${tab}"]`);
-    if (!(await b.isVisible())) continue;
-    await b.click();
+  for (const tab of ["home", "agents", "usage", "stats", "routing"]) {
+    if (!(await page.locator("#pHome").isVisible())) {
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.body.dataset.ptab === "home");
+    }
+    if (tab !== "home") {
+      const b = page.locator(`#pHome [data-open="${tab}"]`);
+      if (!(await b.count())) continue;
+      await b.click();
+      await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+    }
     await page.waitForTimeout(150);
     out[tab] = await page.evaluate(() => { const v = document.querySelector("#view-agents"); return v.scrollHeight - v.clientHeight; });
   }
@@ -104,7 +111,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       for (const agents of [8, 2]) {
         const { page, fits } = await open(agents);
         await page.locator("#panelRouting .pr-req").first().waitFor({ state: "attached" });
-        await page.locator("#agents .row.agent").nth(agents - 1).waitFor();
+        await page.locator("#agents .row.agent").nth(agents - 1).waitFor({ state: "attached" });
         await settled(page, fits);
         const over = await overflows(page);
         for (const [tab, px] of Object.entries(over)) assert(px <= 0, `${agents} agents: the ${tab} tab overflows the fitted panel by ${px}px (${JSON.stringify(over)}, fits ${fits.join(" ")})`);
@@ -116,7 +123,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       let release;
       const trace = new Promise((r) => { release = r; });
       const { page, fits } = await open(2, { trace });
-      await page.locator("#agents .row.agent").nth(1).waitFor();
+      await page.locator("#agents .row.agent").nth(1).waitFor({ state: "attached" });
       await page.waitForFunction(() => /42/.test(document.querySelector("#panelRouting .pr-today")?.textContent || ""), null, { timeout: 3000 })
         .catch(() => assert.fail("today's line waited for the trace: " + JSON.stringify(fits)));
       const before = await settled(page, fits);
@@ -130,7 +137,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // a fit measured with the view scrolled leaves it where it is: a
       // panel kept shorter than its agents (a small screen) scrolled down
       await page.route("**/api/window/fit*", (route) => route.fulfill({ status: 204 }));
-      await page.locator('#ptabs [data-ptab="agents"]').click();
+      if (!(await page.locator("#pHome").isVisible())) {
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.body.dataset.ptab === "home");
+      }
+      await page.locator('#pHome [data-open="agents"]').click();
       await page.setViewportSize({ width: 380, height: 220 });
       // scrolled as a reader does, which the page's scroll guard lets be
       const box = await page.evaluate(() => { const r = document.querySelector("#view-agents").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + Math.min(r.height / 2, 40) }; });

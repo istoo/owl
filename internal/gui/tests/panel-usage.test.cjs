@@ -142,11 +142,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       const asked = [], opened = [];
       const p = await open("http://owl.test/?mode=panel", { width: 440, height: 340 }, asked, opened);
-      assert.equal((await p.locator('[data-ptab="stats"]').textContent()).trim(), w.tab);
-      assert.equal((await p.locator('[data-ptab="usage"]').textContent()).trim(), w.quota, "the allowances keep their tab");
-      await p.locator('[data-ptab="usage"][hidden]').waitFor({state:"attached"});
-      assert.equal(await p.locator("#ptabs button:not([hidden])").count(), 3, "no allowances means no allowances tab");
-      await p.locator('[data-ptab="stats"]').click();
+      assert.equal((await p.locator('#pHome [data-open="stats"]').textContent()).trim(), w.tab);
+      assert.equal(await p.locator('#pHome [data-open="usage"]').count(), 0, "no allowances means no allowance card");
+      await p.locator('#pHome [data-open="stats"]').click();
       await p.locator("#panelUsage .pu-tot").waitFor();
       assert(await p.locator("#panelUsage").isVisible());
       assert.equal(await p.locator("#panelUsage > .usage-note").textContent(), lang === "zh" ? "统计网关调用与会话日志调用；本地拒绝的请求不计入汇总。" : "Gateway and session-log calls; local rejections excluded from totals.");
@@ -265,9 +263,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const shot = await context.newPage();
         shot.setDefaultTimeout(5000);
         shot.setDefaultNavigationTimeout(60000);
-        await shot.addInitScript(() => { localStorage.setItem("owl.panelTab", "stats"); localStorage.setItem("owl.panelUsePeriod", "7d"); });
+        await shot.addInitScript(() => { localStorage.setItem("owl.panelUsePeriod", "7d"); });
         await shot.route("**/*", serve(lang, [], []));
         await shot.goto("http://owl.test/?mode=panel");
+        await shot.locator('#pHome [data-open="stats"]').click();
         await shot.locator("#panelUsage .led-day").nth(4).click();
         await shot.locator('#panelUsage .led-day[aria-pressed="true"]').waitFor();
         await shot.mouse.move(2, 2);
@@ -327,7 +326,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await days.nth(4).focus();
       await p.keyboard.press("Enter");
       await movedRequest;
-      const away = p.locator('#ptabs [data-ptab="stats"]');
+      const away = p.locator(".ph-back");
       await away.focus();
       release();
       await movedReply;
@@ -390,38 +389,39 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(edge, 0, "a control of the bar runs out of the panel");
       assert.equal(await p.locator("#panelUsage .pu-tot").evaluate((k) => getComputedStyle(k).gridTemplateColumns.split(" ").length), 2, "two totals to a row when narrow");
 
-      // a panel that opens on the Usage tab, as the reader left it: the page draws it
-      // as it loads, before what it draws with is all set, and must not fail on it
+      // the panel opens on the overview, and a detail opened from it draws
+      // as it loads, before what it draws with is all set
       const again = [];
       const q = await (await browser.newContext({ viewport: { width: 440, height: 500 }, reducedMotion: "reduce" })).newPage();
       pages.push(q);
       q.setDefaultTimeout(5000);
       q.setDefaultNavigationTimeout(60000);
       q.on("pageerror", (e) => again.push(e.message));
-      await q.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "stats"); } catch {} });
       await q.route("**/*", serve(lang, [], []));
       await q.goto("http://owl.test/?mode=panel");
+      await q.locator('#pHome [data-open="stats"]').click();
       await q.locator("#panelUsage .pu-tot").waitFor();
-      assert.equal(await q.locator('#ptabs [data-ptab="stats"]').getAttribute("aria-selected"), "true");
-      assert.deepEqual(again, [], "the panel failed to load on the Usage tab");
-      // and its other tabs still work from there
-      await q.locator('#ptabs [data-ptab="agents"]').click();
+      assert.equal(await q.evaluate(() => document.body.dataset.ptab), "stats");
+      assert.deepEqual(again, [], "the panel failed to load on the Usage detail");
+      // and its other details still work from there
+      await q.keyboard.press("Escape");
+      await q.waitForFunction(() => document.body.dataset.ptab === "home");
+      await q.locator('#pHome [data-open="agents"]').click();
       assert(await q.locator("#agents").isVisible() && !(await q.locator("#panelUsage").isVisible()));
-      // whichever tab the reader left it on, it loads without an error
-      for (const tab of ["agents", "usage", "stats", "routing", "profiles"]) {
+      // each detail opens and comes back without an error
+      for (const tab of ["agents", "stats", "routing"]) {
         const failed = [];
         const x = await (await browser.newContext({ viewport: { width: 440, height: 500 }, reducedMotion: "reduce" })).newPage();
         pages.push(x);
         x.on("pageerror", (e) => failed.push(e.message));
-        await x.addInitScript((t) => { try { localStorage.setItem("owl.panelTab", t); } catch {} }, tab);
         await x.route("**/*", serve(lang, [], []));
         await x.goto("http://owl.test/?mode=panel");
-        // the Allowances tab stays until the allowances are read and none
-        // are there (an answer not come yet isn't none)
-        await x.locator('#ptabs [data-ptab="usage"][hidden]').waitFor({ state: "attached" });
-        await x.waitForTimeout(400);
-        assert.deepEqual(failed, [], `the panel failed to load on the ${tab} tab`);
-        assert.equal(await x.locator("#ptabs button:not([hidden])").count(), 3, `the tabs are there on ${tab}`);
+        await x.locator(`#pHome [data-open="${tab}"]`).click();
+        await x.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+        await x.waitForTimeout(200);
+        assert.deepEqual(failed, [], `the panel failed to open its ${tab} detail`);
+        await x.keyboard.press("Escape");
+        await x.waitForFunction(() => document.body.dataset.ptab === "home");
       }
 
       // the window opened from the panel: the Requests tab, on that provider and agent

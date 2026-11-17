@@ -105,7 +105,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         t.after(async () => { await browser.close(); });
         const errors = [];
         const context = await browser.newContext({ viewport: { width: 380, height: 640 }, reducedMotion: "reduce" });
-        await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "usage"); } catch {} });
         const balanceWord = async (p) => p.evaluate(() => t("Balance"));
 
         if (c.panel) {
@@ -115,6 +114,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", serve(lang, c));
           await page.goto("http://owl.test/?mode=panel");
+          await page.locator('#pHome [data-open="usage"]').click();
           await page.waitForFunction((n) => document.querySelectorAll("#panelQuota .pq-card[data-card]").length >= n, c.panel.flat().length);
           const groups = await page.evaluate(() => [...document.querySelectorAll("#panelQuota > .pq-group")]
             .map((g) => [...new Set([...g.querySelectorAll(".pq-card[data-card]")].map((x) => x.dataset.card.split("|")[0]))]));

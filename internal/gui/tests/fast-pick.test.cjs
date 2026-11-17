@@ -91,6 +91,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, posts, () => refusing));
         await page.goto("http://owl.test/" + (panel ? "?mode=panel" : "?view=agents"));
+        if (panel) await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(row).waitFor();
         const field = panel ? `${row} .ag-open .field[data-key="model"]` : `${row} > .field.ag-start[data-key="model"]`;
         const openPicker = async () => {

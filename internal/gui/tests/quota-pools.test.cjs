@@ -144,7 +144,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the menu bar panel: four rings an account, 5h and 7d a pool
       const panel = await open("panel", "http://owl.test/?mode=panel", { width: 440, height: 640 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       // its second account is behind the button, as several accounts are
       await panel.locator(".pq-group", { hasText: "Antigravity" }).locator(".pq-more").click();
       const pcards = panel.locator(".pq-group", { hasText: "Antigravity" }).locator(".pq-card");

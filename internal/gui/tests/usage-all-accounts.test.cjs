@@ -165,7 +165,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // the tray panel
         const panel = await open(browser, lang, theme, "panel", "http://owl.test/?mode=panel", 360, 760);
-        await panel.page.locator('#ptabs [data-ptab="usage"]').click();
+        await panel.page.locator('#pHome [data-open="usage"]').click();
         const pq = panel.page.locator("#panelQuota .pq-group .pq-all");
         await pq.first().waitFor();
         assert.equal(await pq.count(), 2, "WorkBuddy AI's and Claude's: Codex's two plans have nothing in common");
@@ -239,7 +239,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(errors, []);
       // the tray panel
       const panel = await open(browser, lang, "light", "panel", "http://owl.test/?mode=panel", 360, 760, heldCards);
-      await panel.page.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.page.locator('#pHome [data-open="usage"]').click();
       const pq = panel.page.locator("#panelQuota .pq-group .pq-all");
       const [pfive, pweek] = await check(panel.page, pq);
       // the panel says what is used, as its settings have it

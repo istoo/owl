@@ -81,7 +81,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, data));
         await page.goto("http://owl.test/?mode=panel");
-        await page.locator('#ptabs [data-ptab="usage"]').click();
+        await page.locator('#pHome [data-open="usage"]').click();
         const pace = page.locator('.pq-card[data-card="codex|pace@example.com"]');
         await pace.locator(".pq-pace").waitFor();
         await pace.locator("> .pq-sub").first().waitFor({ state: "visible" });

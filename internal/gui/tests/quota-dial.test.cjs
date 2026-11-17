@@ -57,7 +57,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/*", serve(lang));
     await page.goto("http://owl.test/?mode=panel");
-    await page.locator('#ptabs [data-ptab="usage"]').click();
+    await page.locator('#pHome [data-open="usage"]').click();
     await page.waitForFunction(() => document.querySelectorAll("#panelQuota .pq-dial").length === 2);
     // one call in the page: the card is drawn again as a read lands, and a
     // handle found in the page before that is out of it by the read

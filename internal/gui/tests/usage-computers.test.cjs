@@ -110,7 +110,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await p.locator(".led tbody tr.led-row").count(), 2);
         assert(await p.locator("#ledComputer").isHidden(), "no Computer pick");
         const q = await open("http://owl.test/?mode=panel", { width: 440, height: 340 }, false);
-        await q.p.locator('[data-ptab="stats"]').click();
+        await q.p.locator('#pHome [data-open="stats"]').click();
         await q.p.locator("#panelUsage .pu-tot").waitFor();
         assert.equal(await q.p.locator("#panelUsage .sess-pick").count(), 1, "the provider pick alone");
         assert.deepEqual([...errors, ...q.errors], []);
@@ -162,7 +162,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await t.test(`${lang}: the panel's Computer pick`, async () => {
         const asked = [];
         const { p, errors } = await open("http://owl.test/?mode=panel", { width: 440, height: 400 }, true, asked);
-        await p.locator('[data-ptab="stats"]').click();
+        await p.locator('#pHome [data-open="stats"]').click();
         await p.locator("#panelUsage .pu-tot").waitFor();
         const pick = p.locator("#panelUsage .sess-pick", { hasText: w.all });
         await pick.waitFor();

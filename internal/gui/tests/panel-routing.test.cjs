@@ -101,9 +101,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // a short panel, so its page scrolls
       const opened = [];
       const page = await open("http://owl.test/?mode=panel", { width: 440, height: 300 }, opened);
-      const tab = page.locator('[data-ptab="routing"]');
-      assert.equal((await tab.textContent()).trim(), want[lang].tab);
-      assert.equal((await page.locator('[data-ptab="usage"]').textContent()).trim(), want[lang].quota, "the allowances' tab says what it shows");
+      const tab = page.locator('#pHome [data-open="routing"]');
+      assert.match((await tab.textContent()).trim(), new RegExp(want[lang].tab));
+      assert.equal(await page.locator('#pHome [data-open="usage"]').count(), 0, "no allowances, no allowance card");
       await tab.click();
       await page.locator(".pr-req").nth(routes.length - 1).waitFor();
       assert(await page.locator("#panelRouting").isVisible());
@@ -211,7 +211,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       let show;
       live.shown = new Promise((r) => { show = r; }); // it comes once the tab is shown
       const lp = await open("http://owl.test/?mode=panel", { width: 440, height: 640 }, [], live);
-      await lp.locator('[data-ptab="routing"]').click();
+      await lp.locator('#pHome [data-open="routing"]').click();
       await lp.locator(".pr-stage").waitFor();
       show();
       await lp.locator(".ps-dot").waitFor({ state: "attached" });

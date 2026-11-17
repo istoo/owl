@@ -62,6 +62,7 @@ async function open(engine, t, lang, web, query) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", server(lang, web, posts));
   await page.goto("http://owl.test/" + query);
+  if (query.includes("mode=panel")) await page.locator('#pHome [data-open="agents"]').click();
   return { page, errors, posts };
 }
 

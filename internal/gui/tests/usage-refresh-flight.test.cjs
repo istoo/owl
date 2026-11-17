@@ -319,7 +319,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
       await route.fulfill({ body: await fs.readFile(file), contentType });
     });
     await p.goto("http://owl.test/?mode=panel");
-    await p.locator('#ptabs [data-ptab="stats"]').click(); // the Usage tab
+    await p.locator('#pHome [data-open="stats"]').click(); // the Usage tab
     await gate.waitFor("requests", 1); // the tab's opening read, held
     gate.release("requests", "all"); // let it settle, so the picker is built
     await p.locator("#panelUsage:not(.pu-loading)").waitFor();
@@ -386,7 +386,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium"]
       await route.fulfill({ body: await fs.readFile(file), contentType });
     });
     await p.goto("http://owl.test/?mode=panel");
-    await p.locator('#ptabs [data-ptab="stats"]').click(); // the Usage tab
+    await p.locator('#pHome [data-open="stats"]').click(); // the Usage tab
     await p.waitForTimeout(400);
     const n = log.filter((r) => r.key === "requests").length;
     assert(n >= 1, "the failing read was asked for");

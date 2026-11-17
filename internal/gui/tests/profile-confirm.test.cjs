@@ -76,6 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, calls));
         await page.goto("http://owl.test/" + (panel ? "?mode=panel" : ""));
+        if (panel) await page.locator('#pHome [data-open="agents"]').click();
         const chip = (name) => page.locator("#profiles .chip", { hasText: new RegExp("^" + name) });
         await chip("work").waitFor({ state: "attached" });
         const open = page.locator(".profiles.open");
@@ -152,12 +153,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.waitForTimeout(200);
           assert.deepEqual(calls, [], "Escape on the list must not hide the panel");
           await page.keyboard.press("Escape");
+          await page.waitForFunction(() => document.body.dataset.ptab === "home");
+          assert.deepEqual(calls, [], "Escape on the Agents detail goes back to the overview");
+          await page.keyboard.press("Escape");
           await page.waitForTimeout(200);
           assert.deepEqual(calls, ["hide"]);
           calls.length = 0;
 
-          // the list closed with the details open opens on the chips, as
-          // after Apply
+          // back on the Agents detail, the list closed with the details
+          // open opens on the chips, as after Apply
+          await page.locator('#pHome [data-open="agents"]').click();
           await openList();
           await homeName.click();
           await detail.waitFor();

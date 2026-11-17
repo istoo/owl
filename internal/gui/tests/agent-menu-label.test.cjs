@@ -85,6 +85,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang).serve);
         await page.goto("http://owl.test/" + (where === "panel" ? "?mode=panel" : ""));
+        if (where === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(row).waitFor();
         const tr = (s, v) => page.evaluate(([s, v]) => t(s, v), [s, v]);
         // the button, and in the panel the row's words beside it

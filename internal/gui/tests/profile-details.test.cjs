@@ -96,6 +96,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, calls, panel ? 30 : 3));
         await page.goto("http://owl.test/" + (panel ? "?mode=panel" : ""));
+        if (panel) await page.locator('#pHome [data-open="agents"]').click();
         const chip = page.locator("#profiles .chip", { hasText: /^work/ });
         await chip.waitFor({ state: "attached" });
         if (panel) {

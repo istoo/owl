@@ -147,13 +147,20 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
       const { page, acct, errors, shows, settle, asked } = await open(browser, t, "panel", lang);
-      const tab = (v) => page.locator(`#ptabs [data-ptab="${v}"]`).click();
+      const tab = async (v) => {
+        if ((await page.evaluate(() => document.body.dataset.ptab)) === v) return;
+        if (!(await page.locator("#pHome").isVisible())) {
+          await page.keyboard.press("Escape");
+          await page.waitForFunction(() => document.body.dataset.ptab === "home");
+        }
+        await page.locator(`#pHome [data-open="${v}"]`).click();
+      };
       await shows(10);
-      assert.equal(asked(), 0, "the panel on Agents asks nothing");
-      // on Agents, the panel brought back asks nothing either
+      assert.equal(asked(), 0, "the panel on its overview asks nothing");
+      // brought back on the overview, the panel asks nothing either
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await settle();
-      assert.equal(asked(), 0, "the panel back on Agents asks nothing");
+      assert.equal(asked(), 0, "the panel back on its overview asks nothing");
 
       await tab("usage");
       await shows(40);
@@ -167,13 +174,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await settle();
       assert.equal(asked(), 1, `reopened within 30s, nothing asked: ${acct.reads}`);
 
-      // the panel brought back up on Allowances later asks, once
+      // brought back up later, the panel opens on its overview; its Allowances
+      // detail asks once
       await page.clock.fastForward(31e3);
       await settle();
       let n = asked();
       await page.evaluate(() => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); });
+      await page.waitForFunction(() => document.body.dataset.ptab === "home");
+      await tab("usage");
       await shows(55);
-      assert.equal(asked(), n + 1, `the panel back on Allowances asks once: ${acct.reads}`);
+      assert.equal(asked(), n + 1, `the panel's Allowances asks once: ${acct.reads}`);
 
       // a menu bar cell clicked later asks too
       await page.clock.fastForward(31e3);

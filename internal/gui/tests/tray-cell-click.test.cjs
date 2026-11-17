@@ -87,11 +87,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const linux = await panel.evaluate(() => /^Linux/.test(navigator.platform));
       assert.equal(await panel.locator("header.top").evaluate((e) => getComputedStyle(e).getPropertyValue("--wails-draggable").trim()), linux ? "drag" : "no-drag", "the runtime must not make the panel draggable off Linux");
       assert.equal(await panel.evaluate(() => typeof panelQuotaFocus), "function", "panelQuotaFocus is Go's to call by name");
-      assert.equal(await panel.evaluate(() => document.body.dataset.ptab), "agents", "the panel starts on its agents");
+      assert.equal(await panel.evaluate(() => document.body.dataset.ptab), "home", "the panel starts on its overview");
       await panel.evaluate(() => panelQuotaFocus("codex|x@y.z"));
       await panel.waitForFunction(() => document.body.dataset.ptab === "usage");
-      assert(await panel.locator('#ptabs [data-ptab="usage"]').evaluate((e) => e.classList.contains("on")), "the Allowances tab is the one picked");
-      assert.equal(await panel.evaluate(() => localStorage.getItem("owl.panelTab")), "usage");
+      assert(await panel.locator("#panelQuota").isVisible(), "the Allowances detail is the one opened");
       await panel.waitForFunction(() => document.querySelector('#panelQuota .pq-card[data-card="codex|x@y.z"]')?.classList.contains("flash"));
       assert.deepEqual(await panel.evaluate(() => window.__scrolled.slice(-1)), ["codex|x@y.z"], "the card is scrolled to");
       assert(await panel.locator('#panelQuota [data-card="codex|x@y.z"]').evaluate((card) => {
@@ -150,11 +149,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(await panel.evaluate(() => JSON.parse(localStorage.getItem("owl.usageAccounts"))), { "codex\nother-5@例子.test": true }, "navigation remembers the account opened");
       await panel.waitForFunction(() => !document.querySelector('#panelQuota [data-card="codex|other-5@例子.test"]').classList.contains("flash"));
 
-      // no allowances to show: no tab to pick, the panel keeps its agents
+      // no allowances to show: no detail to open, the panel stays on its overview
       const none = await open("http://owl.test/?mode=panel", { width: 440, height: 640 }, [], true);
       await none.waitForFunction(() => document.querySelectorAll("#agents").length === 1);
       await none.evaluate(() => panelQuotaFocus("codex|x@y.z"));
-      await none.waitForFunction(() => document.body.dataset.ptab === "agents");
+      await none.waitForFunction(() => document.body.dataset.ptab === "home");
+      assert(await none.locator("#pHome").isVisible());
 
       // the window: opened on its allowances (view=usage&tab=usage), the
       // Overview is the pane whatever the page was last left on, at the

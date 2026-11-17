@@ -132,9 +132,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
-        await page.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "agents"); } catch {} });
         await page.route("**/*", server(lang, ctl));
         await page.goto("http://owl.test/?mode=panel");
+        await page.locator('#pHome [data-open="agents"]').click();
         const sync = page.locator("#sync");
         await page.locator('.row.agent[data-id="codex"]').waitFor();
         assert.equal(await sync.getAttribute("title"), words[lang].agents);

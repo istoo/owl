@@ -135,7 +135,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
           // the tray panel's card
           const panel = await open("http://owl.test/?mode=panel");
-          await panel.locator('[data-ptab="stats"]').click();
+          await panel.locator('#pHome [data-open="stats"]').click();
           await panel.locator("#panelUsage .pu-tot").waitFor();
           const blk = await panel.locator("#panelUsage .pu-tot .blk").evaluateAll((bs) => bs.map((b) => b.textContent));
           assert(blk.some((x) => x.includes("90%") && x.includes(leftOut)), blk.join(" | "));

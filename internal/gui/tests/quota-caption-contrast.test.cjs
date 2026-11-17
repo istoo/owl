@@ -106,12 +106,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         }
         // the tray panel's Allowances tab
         const ctx = await browser.newContext({ viewport: { width: 360, height: 640 }, reducedMotion: "reduce", colorScheme: theme });
-        await ctx.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "usage"); } catch {} });
         const panel = await ctx.newPage();
         panel.setDefaultTimeout(15000);
         panel.setDefaultNavigationTimeout(60000);
         await panel.route("**/*", serve(lang, theme, false));
         await panel.goto("http://owl.test/?mode=panel");
+        await panel.locator('#pHome [data-open="usage"]').click();
         await panel.locator(".pq-card .pq-sub").first().waitFor();
         await panel.waitForFunction(() => {
           const c = document.querySelector(".pq-card .pq-sub");

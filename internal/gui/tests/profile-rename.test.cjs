@@ -69,6 +69,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, calls));
         await page.goto("http://owl.test/" + (panel ? "?mode=panel" : ""));
+        if (panel) await page.locator('#pHome [data-open="agents"]').click();
         const chip = (name) => page.locator("#profiles .chip", { hasText: new RegExp("^✓?" + name) });
         await chip("work").waitFor({ state: "attached" });
         if (panel) {

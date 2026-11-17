@@ -96,6 +96,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", fx.serve);
         t.after(() => browser.close());
         await page.goto("http://owl.test/" + (where === "panel" ? "?mode=panel" : ""));
+        if (where === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(cd).waitFor();
 
         let menu;

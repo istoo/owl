@@ -1988,46 +1988,84 @@ details.cx-part[open] > summary .cx-h { margin-bottom: 2px; }
   .sess-detail { padding-left: 12px; }
 }
 
-/* ---- the panel's rail: agents, allowances, usage, routing ---------------- */
-/* the panel's pages down a rail at its left, each an icon over its name, as
-   a menu bar app's panel has them; the page beside it keeps the width it
-   had (textsize.go panelWidth gives the rail its own) */
-body.panel { --prail-w: 60px; padding-left: var(--prail-w); }
-.ptabs { position: fixed; z-index: 5; left: 0; top: 0; bottom: 0; width: var(--prail-w); display: flex; flex-direction: column; gap: 2px; padding: 10px 6px; border-right: .5px solid var(--line); border-radius: 12px 0 0 12px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
-body.linux.panel .ptabs { border-radius: 0; }
+/* ---- the panel's overview, then its full pages ------------------------- */
+/* the panel opens on a glance at today: no rail, the content at the full
+   width, and a card's › opens the full list the panel had as a tab */
+body.panel { --prail-w: 0px; padding-left: 0; }
 /* the view scrolls, so it clips at its own top: the card's edge is a ring
    outside its box and needs the 2px it is given to be drawn whole */
 body.panel .view { padding-top: 2px; }
-.ptabs > .thumb { display: none; }
-.ptabs[hidden] { display: none; }
-.ptabs button { position: relative; z-index: 1; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 52px; padding: 7px 2px 6px; border-radius: 10px; font-size: 10.5px; line-height: 1.15; font-weight: 500; color: var(--muted); white-space: nowrap; transition: color .15s, background-color .15s; }
-.ptabs button > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.ptabs .ptab-ic { flex: none; width: 20px; height: 20px; color: var(--muted); }
-.ptabs button:hover:not(.on) { color: var(--fg-2); background: var(--pill); }
-/* the page open: a soft ground, in the text's own ink */
-.ptabs button.on { color: var(--fg); font-weight: 600; background: color-mix(in srgb, var(--fg) 9%, transparent); }
-.ptabs button.on .ptab-ic { color: var(--fg); }
-.ptabs button[hidden] { display: none; }
-/* a count is a badge on the icon's corner */
-.ptabs em { position: absolute; top: 3px; left: calc(50% + 4px); min-width: 16px; padding: 0 4px; border-radius: 8px; font-style: normal; font-size: 10px; line-height: 16px; font-weight: 500; text-align: center; color: var(--fg-2); background: var(--card-2); box-shadow: 0 0 0 2px var(--bg); font-variant-numeric: tabular-nums; }
-.ptabs em:empty { display: none; }
-/* a panel too narrow to give the rail its room (a large text size on a
-   small screen) has the pages as tabs across its top again, the open one
-   underlined */
-@media (max-width: 419px) {
-  body.panel { padding-left: 0; --prail-w: 0px; }
-  .ptabs { position: relative; left: auto; top: auto; bottom: auto; width: auto; flex-direction: row; gap: 0; margin: 0 14px 12px; padding: 0; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
-  .ptabs > .thumb { display: block; top: auto; bottom: -1px; height: 2px; border-radius: 2px; background: var(--fg); box-shadow: none; }
-  .ptabs button { flex: 1; flex-direction: row; gap: 5px; min-height: 0; height: 32px; padding: 0; border-radius: 0; font-size: 12.5px; font-weight: 400; }
-  .ptabs button:hover:not(.on) { background: none; }
-  .ptabs button.on { font-weight: 600; background: none; }
-  .ptabs .ptab-ic { display: none; }
-  .ptabs em { position: static; min-width: 0; padding: 0 5px; font-size: 10.5px; font-weight: 400; color: var(--muted); box-shadow: none; }
-}
+body.panel[data-ptab="home"] :is(#agents, #panelQuota, #panelRouting, #panelUsage),
 body.panel[data-ptab="usage"] :is(#agents, #panelRouting, #panelUsage),
 body.panel[data-ptab="stats"] :is(#agents, #panelRouting, #panelQuota),
 body.panel[data-ptab="routing"] :is(#agents, #panelQuota, #panelUsage),
 body.panel[data-ptab="agents"] :is(#panelQuota, #panelRouting, #panelUsage) { display: none; }
+body.panel.ph-detail #panelUpdate, body.panel.ph-detail #pHome { display: none; }
+#pHome { display: flex; flex-direction: column; gap: 10px; padding: 2px 0 14px; }
+.ph-mod { background: var(--card); border-radius: 12px; box-shadow: var(--card-edge); overflow: hidden; }
+.ph-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 14px 0; }
+.ph-head h2 { margin: 0; min-width: 0; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-head h2 em { margin-left: 6px; font-style: normal; font-weight: 400; color: var(--faint); }
+.ph-more { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-right: -4px; padding: 2px 4px; border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); }
+.ph-more:hover { color: var(--fg); background: var(--card-2); }
+.ph-chev { display: inline-flex; color: var(--faint); }
+
+/* today: the spend, the four figures, the hours so far */
+.ph-today { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 4px 18px; padding: 8px 14px 4px; }
+.ph-big { font-size: 30px; font-weight: 600; letter-spacing: -.5px; line-height: 1; color: var(--fg); font-variant-numeric: tabular-nums; }
+.ph-big small { margin-right: 1px; font-size: 15px; font-weight: 500; color: var(--muted); }
+.ph-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 16px; min-width: 0; padding-bottom: 2px; }
+.ph-fact { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; }
+.ph-fact b { font-size: 14px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.ph-fact span { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ph-fact .bad { color: var(--red); }
+.ph-spark { display: flex; align-items: flex-end; gap: 2px; height: 30px; padding: 10px 14px 0; }
+.ph-spark i { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.ph-spark i.now { background: var(--accent); }
+.ph-spark i.zero { background: var(--line); }
+.ph-axis { display: flex; justify-content: space-between; padding: 5px 14px 11px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ph-route { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 8px 14px 11px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--muted); text-align: left; }
+.ph-route:hover { color: var(--fg); background: var(--card-2); }
+
+/* allowances: one subscription a row, its tightest window the bar */
+.ph-q { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 3px 10px; width: 100%; padding: 10px 14px; text-align: left; }
+.ph-q + .ph-q { border-top: 1px solid var(--line-2); }
+.ph-q:hover { background: var(--card-2); }
+.ph-q .ic { grid-row: 1 / 3; align-self: start; width: 18px; height: 18px; margin-top: 1px; }
+.ph-q-name { min-width: 0; font-size: 13px; font-weight: 500; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-q-name em { margin-left: 6px; font-style: normal; font-size: 12px; font-weight: 400; color: var(--muted); }
+.ph-q-pct { font-size: 13px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.ph-q-bar { grid-column: 2 / 4; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.ph-q-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.ph-q-bar.full i { background: var(--amber); }
+.ph-q-say { grid-column: 2 / 4; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+
+/* agents: the connected ones, their model, today's cost */
+.ph-agent { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; width: 100%; height: 42px; padding: 0 12px 0 14px; text-align: left; }
+.ph-agent + .ph-agent { border-top: 1px solid var(--line-2); }
+.ph-agent:hover, .ph-rest:hover { background: var(--card-2); }
+.ph-agent .ic { width: 20px; height: 20px; }
+.ph-agent .ic img, .ph-agent .ic svg { width: 20px; height: 20px; }
+.ph-agent-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ph-agent-name b { max-width: 50%; font-size: 13px; font-weight: 500; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-agent-name span { min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-a-cost { font-size: 12px; color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ph-a-cost.none { color: var(--faint); }
+.ph-rest { display: flex; align-items: center; gap: 6px; width: 100%; height: 36px; padding: 0 14px 0 46px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--muted); text-align: left; }
+
+/* the title bar: the gateway's state on the overview, a back and the page's
+   name on a full one */
+body.panel .top .brand { min-width: 0; }
+.ph-status { display: inline-flex; align-items: center; gap: 7px; min-width: 0; margin-left: 2px; font-size: 12.5px; color: var(--fg-2); }
+.ph-status .ph-dot { flex: none; margin: 0; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.ph-status .ph-dot.off { background: var(--faint); box-shadow: none; }
+.ph-status-t { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-back, .ph-title { display: none; }
+body.panel.ph-detail .top .brand { display: none; }
+body.panel.ph-detail .ph-back { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 4px 8px 4px 4px; border-radius: 7px; font: inherit; font-size: 13px; color: var(--muted); }
+body.panel.ph-detail .ph-back:hover { color: var(--fg); background: var(--card-2); }
+body.panel.ph-detail .ph-title { display: block; position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; }
+@media (max-width: 419px) { body.panel .ph-status-t { display: none; } }
 
 /* ---- the panel's agents: one quiet line each, opened in place ------------ */
 /* icon · name · model · effort · chevron, the last three in columns of their

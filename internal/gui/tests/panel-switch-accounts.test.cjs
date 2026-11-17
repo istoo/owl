@@ -94,6 +94,7 @@ async function open(browser, lang, width, w) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", server(lang, w, log));
   await page.goto("http://owl.test/?mode=panel");
+  await page.locator('#pHome [data-open="agents"]').click();
   await page.locator(`${row("claude")} .ag-sum`).waitFor();
   const tr = async (k, vars = {}) => {
     const s = await page.evaluate(([k, lang]) => (lang === "en" ? k : I18N[lang]?.[k]), [k, lang]);

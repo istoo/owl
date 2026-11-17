@@ -63,6 +63,7 @@ async function open(engine, lang, platform, t) {
   const calls = [];
   await page.route("**/*", handler(lang, calls));
   await page.goto("http://owl.test/?mode=panel");
+  await page.locator('#pHome [data-open="agents"]').click();
   await page.locator("#agents .row.agent").first().waitFor();
   return { page, calls, errors };
 }

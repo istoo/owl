@@ -209,7 +209,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const posts = [];
         const panel = await open("http://owl.test/?mode=panel", { width: 360, height: 640 }, posts);
         const row = '.pq-credits[data-user="Me@example.com"]';
-        await panel.locator('#ptabs [data-ptab="usage"]').click();
+        await panel.locator('#pHome [data-open="usage"]').click();
         await panel.locator(row + " .ar-credits-first").waitFor();
         await panel.waitForFunction(() => !quotasLoading);
         assert.equal(await fits(panel, row, ".pq-card"), "", "the lines fit the panel's card at 360px");

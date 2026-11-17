@@ -83,7 +83,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const load = async (user) => {
           posted = [];
           const page = await open(url, viewport, posted, user);
-          if (url.includes("panel")) await page.locator('#ptabs [data-ptab="usage"]').click();
+          if (url.includes("panel")) await page.locator('#pHome [data-open="usage"]').click();
           return page;
         };
         let page = await load("me@example.com");

@@ -153,6 +153,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang));
         await page.goto("http://owl.test/?mode=panel");
+        await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(`${row("crush")} .ag-sum`).waitFor();
         const gone = await said(page, lang, "CLI not found");
         const sum = page.locator(`${row("hermes")} .ag-sum`);

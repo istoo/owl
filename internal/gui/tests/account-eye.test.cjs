@@ -99,6 +99,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", serve(lang, url.includes("mode=panel")));
           await page.goto(url);
+          if (url.includes("mode=panel")) await page.locator('#pHome [data-open="usage"]').click();
           return page;
         };
         const page = await open("http://owl.test/?view=providers");
@@ -210,6 +211,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", serve(lang, url.includes("mode=panel")));
           await page.goto(url);
+          if (url.includes("mode=panel")) await page.locator('#pHome [data-open="usage"]').click();
           return page;
         };
         const panel = await open("http://owl.test/?mode=panel");

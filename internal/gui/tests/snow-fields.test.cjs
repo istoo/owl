@@ -85,6 +85,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, true));
         await page.goto("http://owl.test/" + (mode === "panel" ? "?mode=panel" : ""));
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(row).waitFor();
         await open(page, mode);
         const got = await page.evaluate(keys, row);
@@ -105,6 +106,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, false));
         await page.goto("http://owl.test/" + (mode === "panel" ? "?mode=panel" : ""));
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(row).waitFor();
         await open(page, mode);
         const got = await page.evaluate(keys, row);

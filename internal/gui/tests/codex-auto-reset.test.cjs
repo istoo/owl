@@ -266,7 +266,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const panelPosts = [];
       const panel = await open("http://owl.test/?mode=panel", { width: Math.min(width, 440), height: 600 }, panelPosts);
       const psel = '.pq-autoreset[data-user="Me@example.com"]';
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       await panel.locator(psel).waitFor();
       // the tab, opened, reads the accounts again (quotasOpened) and draws
       // its cards anew when they come: a switch found before that is gone

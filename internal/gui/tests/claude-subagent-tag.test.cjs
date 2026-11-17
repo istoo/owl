@@ -238,7 +238,7 @@ for (const engine of engines) {
 
         // the tray panel's newest rows, from the live trace
         const panel = await open("http://owl.test/?mode=panel", { width: Math.min(width, 440), height: 600 });
-        await panel.locator('[data-ptab="routing"]').click();
+        await panel.locator('#pHome [data-open="routing"]').click();
         await panel.locator(".pr-req").nth(5).waitFor();
         const pr = await panel.locator(".pr-req").evaluateAll((rows) => rows.map((r) => [r.querySelector(".pr-a .kind")?.textContent || "", r.querySelector(".pr-a .kind")?.title || ""]));
         assert.deepEqual(pr, [[w.tag, w.moved], ["", ""], [w.tag, w.group], [w.tag, w.terminal], [w.tag, w.codex], [w.review, pr[5][1]]]);

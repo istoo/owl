@@ -45,6 +45,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const held = new Promise((r) => { give = r; });
     await page.route("**/*", serve(held));
     await page.goto("http://owl.test/?mode=panel");
+    await page.locator('#pHome [data-open="agents"]').click();
     await page.locator(".row.agent, #agents .empty-state").first().waitFor();
     await page.waitForTimeout(400);
     await page.reload();

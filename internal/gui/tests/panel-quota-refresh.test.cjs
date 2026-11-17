@@ -75,7 +75,7 @@ async function open(t, engine, lang, width = 440) {
   page.on("pageerror", e => errors.push(e.message));
   await page.route("**/*", serve(lang, data));
   await page.goto("http://owl.test/?mode=panel");
-  await page.locator('#ptabs [data-ptab="usage"]').click();
+  await page.locator('#pHome [data-open="usage"]').click();
   await page.locator('.pq-card[data-card="claude|a@example.com"]').waitFor();
   await page.evaluate(() => quotasLoading);
   return { page, data, errors };

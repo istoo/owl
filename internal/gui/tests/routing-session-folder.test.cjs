@@ -114,7 +114,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         panel.on("pageerror", (e) => errors.push(e.message));
         await panel.route("**/*", serve(lang, fixture()));
         await panel.goto("http://owl.test/?mode=panel");
-        await panel.locator('[data-ptab="routing"]').click();
+        await panel.locator('#pHome [data-open="routing"]').click();
         await panel.locator(".ps-ag").first().waitFor();
         assert.match(await panel.locator(".ps-ag").first().getAttribute("title"), new RegExp(`^Claude Code\\n${w.folder}: workspace/owl\\n${w.folder}: src/dial$`));
         assert.deepEqual(errors, []);

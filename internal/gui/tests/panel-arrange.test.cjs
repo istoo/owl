@@ -55,7 +55,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], posts = [], fail = { next: false };
       const context = await browser.newContext({ viewport: { width: 440, height: 300 }, reducedMotion: "reduce" });
       await context.addInitScript(() => {
-        try { localStorage.setItem("owl.panelTab", "usage"); } catch {}
         window.__scrolled = 0;
         const scroll = Element.prototype.scrollIntoView;
         Element.prototype.scrollIntoView = function (o) { window.__scrolled++; scroll.call(this, o); };
@@ -66,6 +65,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, posts, fail));
       await page.goto("http://owl.test/?mode=panel");
+      await page.locator('#pHome [data-open="usage"]').click();
       await page.waitForFunction(() => document.querySelectorAll("#panelQuota .pq-card").length >= 3);
       const tr = (s, v) => page.evaluate(([s, v]) => t(s, v), [s, v]);
       const cards = () => page.evaluate(() => [...document.querySelectorAll("#panelQuota .pq-card")].map((c) => c.dataset.card));
@@ -151,7 +151,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       for (let i = 0; i < 20; i++) {
         const [by, was] = await page.evaluate(() => {
           const d = document.querySelector("#panelQuota .pq-done").getBoundingClientRect();
-          const top = document.querySelector("#ptabs").getBoundingClientRect().bottom, v = document.querySelector("#view-agents");
+          const v = document.querySelector("#view-agents"), top = v.getBoundingClientRect().top;
           const foot = v.getBoundingClientRect().bottom;
           return [d.top < top ? d.top - top - 8 : d.bottom > foot ? d.bottom - foot + 8 : 0, v.scrollTop];
         });

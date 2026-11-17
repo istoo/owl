@@ -124,7 +124,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the menu bar panel's Balances
       const panel = await open("panel", "http://owl.test/?mode=panel", { width: 440, height: 640 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       const card = panel.locator(".pq-card.bal", { hasText: "My Relay" });
       await card.locator(".pq-amt").waitFor();
       assert.equal(await card.locator(".pq-amt").textContent(), "$2.00");

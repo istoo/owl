@@ -84,7 +84,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         "Gemini's 5-hour reading first, then its week, then Claude & GPT's");
 
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 640 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       const card = panel.locator(".pq-group", { hasText: "Antigravity" }).locator(".pq-card").first();
       await card.locator(".pq-ring").first().waitFor();
       const rings = await card.locator(".pq-rn").evaluateAll((es) => es.map((e) => e.textContent));

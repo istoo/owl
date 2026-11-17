@@ -53,7 +53,7 @@ async function open(t, engine, lang, width) {
   page.on("pageerror", e => errors.push(e.message));
   await page.route("**/*", serve(lang, data));
   await page.goto("http://owl.test/?mode=panel");
-  await page.locator('#ptabs [data-ptab="usage"]').click();
+  await page.locator('#pHome [data-open="usage"]').click();
   return { page, data, errors, release };
 }
 const card = '#panelQuota .pq-card[data-card="codex|b@example.com"]';

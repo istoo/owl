@@ -210,13 +210,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         pp.on("pageerror", (e) => errors.push(e.message));
         await pp.route("**/*", serve(lang, store, true));
         await pp.goto("http://owl.test/?mode=panel");
-        await pp.locator('[data-ptab="stats"]').click();
+        await pp.locator('#pHome [data-open="stats"]').click();
         await pp.locator("#panelUsage .pu-card .led-chart svg").waitFor();
         const wan = lang === "zh";
         await check(pp, "#panelUsage .pu-card", !wan, lang + " panel");
         assert.equal((await pp.locator("#panelUsage .pu-tot .blk .v").first().textContent()).trim(), wan ? "15.4 亿" : "1.54B");
         // Routing's "today" over its list, then in K/M/B once the default is picked again
-        await pp.locator('[data-ptab="routing"]').click();
+        await pp.keyboard.press("Escape");
+        await pp.waitForFunction(() => document.body.dataset.ptab === "home");
+        await pp.locator('#pHome [data-open="routing"]').click();
         const today = () => pp.locator(".pr-today b").nth(1).textContent();
         await pp.waitForFunction(() => /\d/.test(document.querySelectorAll(".pr-today b")[1]?.textContent || ""));
         assert.equal(await today(), wan ? "15.4 亿" : "1.54B", lang + " panel: Routing's today");
@@ -224,7 +226,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           // redrawn as the setting turns, not when a request next comes
           const now = await pp.evaluate((s) => { applyPrefs({ ...s, chineseUnits: false }); return document.querySelectorAll(".pr-today b")[1]?.textContent; }, store.cur);
           assert.equal(now, "1.54B", "zh panel: Routing's today in K/M/B again");
-          await pp.locator('[data-ptab="stats"]').click();
+          await pp.keyboard.press("Escape");
+          await pp.waitForFunction(() => document.body.dataset.ptab === "home");
+          await pp.locator('#pHome [data-open="stats"]').click();
           assert.equal((await pp.locator("#panelUsage .pu-tot .blk .v").first().textContent()).trim(), "1.54B");
           await check(pp, "#panelUsage .pu-card", true, "zh panel, K/M/B");
         }

@@ -62,12 +62,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           try {
             if (sessionStorage.getItem("seeded")) return;
             sessionStorage.setItem("seeded", "1");
-            localStorage.setItem("owl.panelTab", "usage");
             localStorage.setItem("owl.panelQuotas", JSON.stringify(kept));
           } catch {}
         }, fixtures(50));
         await page.route("**/*", serve(lang, data));
         await page.goto("http://owl.test/?mode=panel");
+        await page.locator('#pHome [data-open="usage"]').click();
 
         // the state and the read both held: the kept card is drawn, turning
         await page.locator(`${card} .pq-dial b`, { hasText: "50%" }).waitFor();

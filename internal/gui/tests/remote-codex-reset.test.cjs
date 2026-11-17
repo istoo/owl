@@ -80,7 +80,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("dialog", (d) => { errors.push("a browser dialog: " + d.message()); d.dismiss(); });
         await page.route("**/*", serve(lang, posted, answer));
         await page.goto(url);
-        if (url.includes("panel")) await page.locator('#ptabs [data-ptab="usage"]').click();
+        if (url.includes("panel")) await page.locator('#pHome [data-open="usage"]').click();
         for (const k of KEYS) assert.notEqual(await say(page, k, { computer: "x" }), "untranslated: " + k);
 
         // the remote's Codex card offers its reset; the GLM team's doesn't

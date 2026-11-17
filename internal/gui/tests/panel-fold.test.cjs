@@ -127,6 +127,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve);
       await page.goto(url);
+      if (url.includes("mode=panel")) await page.locator('#pHome [data-open="agents"]').click();
       await page.locator(".agent-more").waitFor();
       return page;
     };

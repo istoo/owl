@@ -66,7 +66,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       t.after(() => browser.close());
       const ctx = await browser.newContext({ viewport: { width: 360, height: 560 }, reducedMotion: "no-preference" });
       await ctx.addInitScript(() => {
-        try { localStorage.setItem("owl.panelTab", "routing"); } catch {}
         // the panel's window put away, as WebView2 tells a hidden page
         window.__hid = false;
         Object.defineProperty(Document.prototype, "hidden", { configurable: true, get: () => window.__hid });
@@ -80,6 +79,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.setDefaultNavigationTimeout(60000);
       await page.route("**/*", serve(lang));
       await page.goto("http://owl.test/?mode=panel");
+      await page.locator('#pHome [data-open="routing"]').click();
       await page.locator("#panelRouting .pr-req").first().waitFor();
       assert(await page.locator("#panelRouting").isVisible());
       // shown, the tab keeps up: its newest request is the one heard last
@@ -109,9 +109,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(hidden.dots, 0, "no request's dot flies in a hidden panel");
       assert.equal(hidden.shown, seqAt, "what the tab shows is left as it was");
 
-      // shown again: it asks once for what came meanwhile, and draws the
-      // newest request first
+      // shown again: the panel opens on its overview, and the Routing detail
+      // asks once for what came meanwhile and draws the newest request first
       await page.evaluate(() => window.__hide(false));
+      await page.waitForFunction(() => document.body.dataset.ptab === "home");
+      await page.locator('#pHome [data-open="routing"]').click();
       await page.waitForFunction((at) => Number(document.querySelector("#panelRouting .pr-req .pr-a .m").textContent.replace(/\D+/g, "")) >= at + 20, seqAt);
       assert(heard >= 1, "shown again, the trace is asked for");
       assert.equal(await page.locator("#panelRouting .pr-req").count(), 6);

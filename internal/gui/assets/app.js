@@ -537,7 +537,7 @@ function renderAgents() {
     list.append(e);
   }
   const { shown: used, folded } = arrangeAgents();
-  if (mode === "panel") $("#ptabN").textContent = state.agents.length || "";
+  if (mode === "panel") window.panelHomeRefresh?.();
   const agentRow = (a, inFold) => {
     const row = el("div", "row agent");
     row.dataset.id = a.id;
@@ -4350,10 +4350,10 @@ function fit(extra = 0, glide) {
   if (mode !== "panel") return;
   const body = document.body, v = $("#view-agents"), tab = body.dataset.ptab, f = parseFloat, vs = getComputedStyle(v);
   delete body.dataset.ptab;
-  const n = { agents: extra, usage: 0, stats: 0, routing: 0 };
+  const n = { home: 0, agents: extra, usage: 0, stats: 0, routing: 0 };
   for (const c of v.children) {
     const cs = getComputedStyle(c), px = cs.display == "none" ? 0 : c.offsetHeight + f(cs.marginTop) + f(cs.marginBottom);
-    const o = { agentsLead: "agents", agents: "agents", panelQuota: "usage", panelUsage: "stats", panelRouting: "routing" }[c.id];
+    const o = { pHome: "home", panelUpdate: "home", agentsLead: "agents", agents: "agents", panelQuota: "usage", panelUsage: "stats", panelRouting: "routing" }[c.id];
     for (const t in n) if (!o || o == t) n[t] += px;
   }
   const h = Math.ceil(body.clientHeight - v.offsetHeight + f(vs.paddingTop) + f(vs.paddingBottom) + Math.max(...Object.values(n)));
@@ -5903,6 +5903,7 @@ document.addEventListener("keydown", (e) => {
   if (editing !== null || importingApps) cancelEdit();
   else if (adding && !$("#view-providers").hidden && providers.providers.length) closeAddSheet();
   else if (profileEscape()) e.preventDefault();
+  else if (window.panelHomeEscape?.()) e.preventDefault();
   else if (mode === "panel") api("window/hide", {}).catch(() => {});
 });
 
@@ -16092,19 +16093,25 @@ function planSpan(q) {
 // move (panelArrange); panelPeek: the card a menu bar cell asked for, shown
 // though the tab hides it, until the panel is put away or the tab left.
 let panelArranging = false, panelPeek = "";
+// when a menu bar cell asked for a detail: showing the panel then keeps it
+let panelEntryAt = 0;
 if (mode === "panel") document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) return;
+  if (!document.hidden) {
+    // every show opens on the overview, unless a cell just named a detail
+    if (performance.now() - panelEntryAt > 1000) setPanelTab("home");
+    return;
+  }
   // an account its eye showed is hidden again once the panel is put away
   window.hideAccounts?.closed();
   if (panelPeek || panelArranging) { panelPeek = ""; panelArranging = false; renderPanelQuota(); }
 });
 
-// The tray panel is four tabs over the one page: the agents, the allowances
-// of every subscription and key (the "usage" tab, as it was named before),
-// what the requests add up to (the "stats" tab, the window's Requests made
-// small) and the gateway's latest requests (routing/client.js draws those). The saved
-// profiles open from Profiles at the Agents tab's foot, over the list (a tab
-// of their own was one too many). The tab is remembered.
+// The tray panel opens on its overview (panelhome.js): today at a glance,
+// and what each subscription, agent and the router is doing. A card's ›
+// opens the full list the panel had as its own pages — the agents, the
+// allowances ("usage"), the request totals ("stats") and the router's
+// trace ("routing", routing/client.js draws those). Profiles stay at the
+// Agents detail's foot. The panel no longer remembers a detail.
 const profBtn = $("#profBtn"), profBox = $(".profiles");
 function placeProfiles() {
   if (!profBox.classList.contains("open")) return;
@@ -16136,29 +16143,22 @@ if (mode === "panel") {
   // Escape closes them in profileEscape, and the name field's is its own
   addEventListener("resize", placeProfiles);
 }
-let panelTab = "agents";
-try { panelTab = localStorage.getItem("owl.panelTab") || "agents"; } catch {}
+let panelTab = "home";
 function setPanelTab(tab) {
-  const tabs = $("#ptabs");
-  // no usage to show, no tab for it (nor for profiles: they open from the
-  // foot), nor for a page a built-in plugin switched off (Routing)
-  const b = tabs.querySelector(`[data-ptab="${tab}"]`);
-  if (!b || b.hidden || featureHides(b)) tab = "agents";
+  // a page a built-in plugin switched off (Routing) has no detail
+  if (!["home", "agents", "usage", "stats", "routing"].includes(tab)) tab = "home";
+  if (tab === "routing" && featureHides($("#panelRouting"))) tab = "home";
   closeProfiles();
   if (tab !== "usage") panelPeek = "";
   panelTab = tab;
-  try { localStorage.setItem("owl.panelTab", tab); } catch {}
   document.body.dataset.ptab = tab;
-  for (const b of tabs.querySelectorAll("button")) {
-    b.classList.toggle("on", b.dataset.ptab === tab);
-    b.setAttribute("aria-selected", String(b.dataset.ptab === tab));
-  }
-  // the card under the tab picked glides to it, as on every other pill
-  slide(tabs, "ptabs");
+  document.body.classList.toggle("ph-detail", tab !== "home");
+  if (tab === "usage") quotasOpened();
   panelAge();
   syncTitle();
   window.panelRoutingShown?.();
-  // the tab remembered is drawn before its content is set: a microtask later
+  window.panelHomeRefresh?.();
+  // the detail is drawn before its content is set: a microtask later
   queueMicrotask(panelUseShown);
   fit();
 }
@@ -16250,6 +16250,7 @@ function focusQuotaCard() {
 // Go calls this when a menu-bar quota cell opens the panel.
 function panelQuotaFocus(id) {
   if (mode !== "panel") return;
+  panelEntryAt = performance.now();
   quotaFocus = id;
   quotaFocusUntil = performance.now() + 5000;
   // a cell for a subscription the tab hides shows its card all the same
@@ -16265,6 +16266,7 @@ function panelQuotaFocus(id) {
 // period
 function panelUseFocus(per) {
   if (mode !== "panel" || !PANEL_USE_PERIODS.some(([id]) => id === per)) return;
+  panelEntryAt = performance.now();
   const moved = per !== panelUsePeriod;
   if (moved) {
     panelUsePeriod = per;
@@ -16276,18 +16278,10 @@ function panelUseFocus(per) {
 }
 
 if (mode === "panel") {
-  const tabs = $("#ptabs");
-  tabs.hidden = false;
-  tabs.setAttribute("role", "tablist");
-  tabs.setAttribute("aria-orientation", "vertical"); // a rail down the panel's left
-  for (const b of tabs.querySelectorAll("button")) {
-    b.setAttribute("role", "tab");
-    // Allowances picked is the reader opening them (#1588)
-    b.onclick = () => { setPanelTab(b.dataset.ptab); if (panelTab === "usage") quotasOpened(); };
-  }
-  // the bar drawn before the panel has its width: slide's thumbFit puts
-  // the card again, still, once it has one
   setPanelTab(panelTab);
+  // the overview's cards, its header line and its details (panelhome.js):
+  // loaded only in the panel, so the window's core carries none of it
+  import("./panelhome.js").then((m) => m.start()).catch(() => {});
 }
 
 // The panel's Usage tab: what the requests of a period add up to — four
@@ -16499,18 +16493,13 @@ function renderPanelUse() {
 function renderPanelQuota(lazy) {
   const box = $("#panelQuota");
   if (mode !== "panel" || !box) return;
+  window.panelHomeRefresh?.();
   const drawn = JSON.stringify([quotas, quotaHistV, quotaLeft, quotaRange, [...panelOptsFolded], state?.settings, locale, panelTab, panelPeek, panelArranging, usageArranging, Math.floor(Date.now() / 60e3)]);
   if (lazy && renderPanelQuota.drawn === drawn) return;
   renderPanelQuota.drawn = drawn;
   const subs = byUsageOrder(keyCards(quotas || []).filter((q) => q.balance || q.error || q.windows?.length));
   const none = !!quotas && !subs.length;
-  const usageTab = $('#ptabs [data-ptab="usage"]');
-  if (usageTab.hidden !== none) {
-    usageTab.hidden = none;
-    // the tabs part the row anew: the card goes where its tab is now
-    if (!(none && panelTab === "usage")) slide($("#ptabs"), "ptabs");
-  }
-  if (none && panelTab === "usage") setPanelTab("agents");
+  if (none && panelTab === "usage") setPanelTab("home");
   box.hidden = none;
   // a row held in the arranging: drawn when it's let go
   if (usageArranging && box.querySelector(".pq-arow")) { usageRenderPending = true; return; }
@@ -22409,7 +22398,7 @@ function applyFeatures(list) {
   if (off.size === featuresOff.size && [...off].every((id) => featuresOff.has(id))) return;
   featuresOff = off;
   featureStyle();
-  if (mode === "panel" && panelTab !== "agents") setPanelTab(panelTab); // its tab may be gone
+  if (mode === "panel" && panelTab !== "home") setPanelTab(panelTab); // its page may be gone
   if (mode !== "window") return;
   navHides();
   fitTop(); // the fit changed
@@ -22511,7 +22500,7 @@ $("#prefs").onclick = () => { openSettings(); $("#prefs").blur(); };
 // usage and the allowances now, and elsewhere it refreshes the model lists.
 // A newer owl is looked for on its own, and from Settings › About's Check.
 function refreshKind() {
-  if (mode === "panel") return { agents: "agents", usage: "allowances", stats: "requests" }[panelTab] || "models";
+  if (mode === "panel") return { home: "agents", agents: "agents", usage: "allowances", stats: "requests" }[panelTab] || "models";
   return { agents: "agents", usage: "usage" }[view] || "models";
 }
 // syncTitle: the refresh's tooltip says what it reads on the page shown.

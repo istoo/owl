@@ -57,7 +57,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const read = { asks: 0, stale: 2 };
         await page.route("**/*", serve(lang, read));
         await page.goto(surface === "panel" ? "http://owl.test/?mode=panel" : "http://owl.test/?view=usage");
-        if (surface === "panel") await page.locator('button[data-ptab="usage"]').click();
+        if (surface === "panel") await page.locator('#pHome [data-open="usage"]').click();
         const card = surface === "panel" ? ".pq-card" : ".subscription-card";
         await page.waitForFunction((s) => document.querySelector(s)?.textContent.includes("40%"), card);
         // no click, no focus: the new reading comes by itself
@@ -78,7 +78,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const read = { asks: 0, stale: Infinity };
       await page.route("**/*", serve(lang, read));
       await page.goto("http://owl.test/?mode=panel");
-      await page.locator('button[data-ptab="usage"]').click();
+      await page.locator('#pHome [data-open="usage"]').click();
       await page.waitForFunction(() => document.querySelector(".pq-card")?.textContent.includes("40%"));
       const first = read.asks;
       for (let i = 0; i < 40; i++) { await page.clock.runFor(1500); await page.waitForTimeout(30); }

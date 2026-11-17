@@ -81,7 +81,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve(lang, posts));
         const show = async () => {
           await page.goto("http://owl.test/?mode=panel");
-          await page.locator('#ptabs [data-ptab="usage"]').click();
+          await page.locator('#pHome [data-open="usage"]').click();
           await page.locator(".pq-card .pq-opts-fold").first().waitFor();
           await page.waitForFunction(() => !quotasLoading);
         };

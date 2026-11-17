@@ -196,7 +196,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const posts = [];
         const panel = await open("http://owl.test/?mode=panel", { width, height: 640 }, posts);
         const psel = '.pq-credits[data-user="Me@example.com"]';
-        await panel.locator('#ptabs [data-ptab="usage"]').click();
+        await panel.locator('#pHome [data-open="usage"]').click();
         await panel.locator(psel).waitFor();
         // the tab, opened, reads the accounts again and draws its cards anew
         // when they come: what follows is about the cards drawn from that

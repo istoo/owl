@@ -174,7 +174,7 @@ for (const engine of engines) {
 
         // the tray panel's rows, from the live trace
         const panel = await open("http://owl.test/?mode=panel", { width: Math.min(width, 440), height: 600 });
-        await panel.locator('[data-ptab="routing"]').click();
+        await panel.locator('#pHome [data-open="routing"]').click();
         await panel.locator(".pr-req").nth(routes.length - 1).waitFor();
         const pr = await panel.locator(".pr-req").evaluateAll((rows) => rows.map((r) => [r.querySelector(".pr-a .kind")?.textContent || "", r.querySelector(".pr-a .kind")?.title || ""]));
         same(pr, "panel");

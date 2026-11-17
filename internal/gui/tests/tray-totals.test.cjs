@@ -203,7 +203,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", server(lang, [], asked, true));
         await page.goto("http://owl.test/?mode=panel");
-        await page.locator('[data-ptab="agents"].on').waitFor();
+        await page.locator("#pHome .ph-mod").first().waitFor();
         await page.evaluate(() => panelUseFocus("7d"));
         await page.waitForFunction(() => document.body.dataset.ptab === "stats");
         for (let i = 0; i < 60 && !asked.some((a) => a.includes("period=7d")); i++) await page.waitForTimeout(40);

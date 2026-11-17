@@ -92,7 +92,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, feed));
         await page.goto("http://owl.test/?mode=panel");
-        await page.locator('[data-ptab="routing"]').click();
+        await page.locator('#pHome [data-open="routing"]').click();
         await page.locator(".pr-req").nth(first.length - 1).waitFor();
         await page.locator(".pr-stage .ps-dst").first().waitFor();
 

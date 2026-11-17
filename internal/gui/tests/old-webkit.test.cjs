@@ -167,7 +167,7 @@ test("compat.js is the first of the page's own scripts", async () => {
   // it (where a dragged Usage card's neighbours stand), pmorder.js when
   // the Plugins page is drawn (Discover's kinds and order); the checks above
   // still read them
-  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "panelupdate.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quitask.js", "checkinnow.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "aboutrows.js", "providerserr.js", "navmore.js", "palette.js", "editor.js", "phonetabs.js", "navkeys.js", "pagehead.js", "usagelayout.js", "pmorder.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
+  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "panelupdate.js", "panelhome.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quitask.js", "checkinnow.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "aboutrows.js", "providerserr.js", "navmore.js", "palette.js", "editor.js", "phonetabs.js", "navkeys.js", "pagehead.js", "usagelayout.js", "pmorder.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
 });
 
 test("the styles hold up in Safari 15.0", async () => {
@@ -255,17 +255,23 @@ test("with Safari 15.0's built-ins, the panel and the window draw every page", a
       await page.addInitScript(TAKEN);
       await page.route("**/*", serve);
       await page.goto(`http://owl.test/?mode=${mode}`);
-      await page.locator("#agents .row").first().waitFor();
+      if (mode === "panel") await page.locator("#pHome").waitFor();
+      else await page.locator("#agents .row").first().waitFor();
       assert.equal(await page.evaluate(() => [1, 2, 3].findLast((x) => x < 3)), 2, "compat.js fills findLast in");
       assert.deepEqual(await page.evaluate(() => { const a = { b: [1] }, c = structuredClone(a); return [c.b[0], c !== a && c.b !== a.b]; }), [1, true]);
       assert.equal(await page.evaluate(() => [1, 2, 3].at(-1)), 3);
       if (mode === "panel") {
-        assert(await page.locator("#ptabs").isVisible(), "the panel's tabs are the page's own, drawn by app.js");
-        for (const tab of ["usage", "routing", "agents"]) {
-          const b = page.locator(`#ptabs [data-ptab="${tab}"]`);
-          if (await b.isVisible()) await b.click();
-          await page.waitForTimeout(150);
+        assert.equal(await page.locator("#ptabs").count(), 0, "the panel has no icon rail");
+        assert(await page.locator("#pHome").isVisible(), "the panel opens on its overview");
+        for (const tab of ["stats", "routing", "agents"]) {
+          const b = page.locator(`#pHome [data-open="${tab}"]`);
+          if (!(await b.count())) continue;
+          await b.click();
+          await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+          await page.keyboard.press("Escape");
+          await page.waitForFunction(() => document.body.dataset.ptab === "home");
         }
+        await page.locator('#pHome [data-open="agents"]').click();
         await page.locator("#profBtn").click();
         await page.locator("#save").click();
         assert(await page.locator(".profiles.naming > .chip-input").isVisible(), "Save current opens the name field");

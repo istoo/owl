@@ -91,6 +91,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", server(lang));
           await page.goto("http://owl.test/?mode=panel");
+          await page.locator('#pHome [data-open="agents"]').click();
           for (const id of IDS) await page.locator(`${row(id)} .ag-sum`).waitFor();
           for (const hovered of [false, true]) {
             if (hovered) {

@@ -94,7 +94,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the menu bar panel: five rings, Claude's among them, Argon's named for it
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 640 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       const card = panel.locator(".pq-group", { hasText: "Antigravity" }).locator(".pq-card").first();
       await card.locator(".pq-ring").first().waitFor();
       assert.deepEqual(await card.locator(".pq-rn").evaluateAll((es) => es.map((e) => [...e.children].map((c) => c.textContent).join(" "))),

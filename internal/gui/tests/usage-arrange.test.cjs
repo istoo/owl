@@ -123,7 +123,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await handle("kimi").waitFor();
       assert.deepEqual(await order(), ["kimi", "codex", "claude", "zai"]);
       const panel = await open("panel", "http://owl.test/?mode=panel", { width: 400, height: 680 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       await panel.locator("#panelQuota .pq-gn").first().waitFor();
       assert.deepEqual(await panel.locator("#panelQuota .pq-gn").allTextContents(), ["Kimi", "Codex", "Claude", "Z.ai"]);
       assert.deepEqual(errors, []);

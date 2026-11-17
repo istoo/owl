@@ -137,7 +137,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await check(page, ".quota-resets");
       }
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 600 });
-      await panel.locator('#ptabs [data-ptab="usage"]').click();
+      await panel.locator('#pHome [data-open="usage"]').click();
       await check(panel, ".pq-resets");
       assert.deepEqual(errors, []);
     });

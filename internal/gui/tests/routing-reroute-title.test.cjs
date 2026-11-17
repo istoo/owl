@@ -90,7 +90,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the tray panel's Routing tab
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 600 });
-      await panel.locator('[data-ptab="routing"]').click();
+      await panel.locator('#pHome [data-open="routing"]').click();
       await panel.locator(".pr-req").nth(routes.length - 1).waitFor();
       const prows = await panel.locator(".pr-req").evaluateAll((rs) => rs.map((r) => ({ title: r.title, where: r.querySelector(".pr-where").textContent })));
       assert.deepEqual(prows.map((r) => r.title), want[lang]);

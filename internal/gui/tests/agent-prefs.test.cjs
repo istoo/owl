@@ -173,6 +173,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const { page, errors } = await newPage(engine, t, 360, lang);
       const w = want[lang];
       await page.goto("http://owl.test/?mode=panel&view=agents");
+      await page.locator('#pHome [data-open="agents"]').click();
       // the panel shows a row's controls once it's opened
       await page.locator('.row.agent[data-id="codex"] .ag-sum').click();
       const line = page.locator('.row.agent[data-id="codex"] .agent-prefs-open');

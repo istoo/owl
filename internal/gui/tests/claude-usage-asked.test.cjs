@@ -87,7 +87,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve([], { on: false }, [quota], lang, true));
         const open = async () => {
           await page.goto(surface === "panel" ? "http://owl.test/?mode=panel" : "http://owl.test/?view=providers");
-          if (surface === "panel") await page.locator('button[data-ptab="usage"]').click();
+          if (surface === "panel") await page.locator('#pHome [data-open="usage"]').click();
           else await page.locator(".row.provider", { hasText: "Claude" }).first().click();
         };
         await open();
@@ -130,7 +130,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const balance = { provider: "deepseek", name: "DeepSeek", kind: "key", asOf, balance: "$10", windows: [] };
       await page.route("**/*", serve([], { on: false }, [quota, balance], lang, true));
       await page.goto("http://owl.test/?mode=panel");
-      await page.locator('button[data-ptab="usage"]').click();
+      await page.locator('#pHome [data-open="usage"]').click();
       const card = page.locator(".pq-card:not(.bal)");
       const reading = card.locator(".pq-asof");
       await reading.waitFor();

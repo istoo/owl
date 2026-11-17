@@ -152,7 +152,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const web = k.mode === "window" && width < 560;
         const viewport = k.mode === "panel" ? { width: Math.min(width, 440), height: 640 } : { width, height: 760 };
         const ctx = await browser.newContext({ viewport, reducedMotion: "reduce" });
-        if (k.tab) await ctx.addInitScript((tab) => { try { localStorage.setItem("owl.panelTab", tab); } catch {} }, k.tab);
         const page = await ctx.newPage(), errors = [];
         page.setDefaultTimeout(8000);
         page.setDefaultNavigationTimeout(60000);
@@ -160,6 +159,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         try {
           await page.route("**/*", serve(lang, web));
           await page.goto("http://owl.test/?" + (web ? "" : `mode=${k.mode}&`) + (k.view ? `view=${k.view}` : ""));
+          if (k.mode === "panel") await page.locator(`#pHome [data-open="${k.tab || "agents"}"]`).click();
           if (k.open) await k.open(page);
           const row = page.locator(k.row).first();
           await row.waitFor();

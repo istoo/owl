@@ -98,13 +98,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // the tray panel's Allowances tab: the same words
         const context = await browser.newContext({ viewport: { width: 380, height: 640 }, reducedMotion: "reduce" });
-        await context.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "usage"); } catch {} });
         const panel = await context.newPage();
         panel.setDefaultTimeout(5000);
         panel.setDefaultNavigationTimeout(60000);
         panel.on("pageerror", (e) => errors.push(e.message));
         await panel.route("**/*", serve(lang, left));
         await panel.goto("http://owl.test/?mode=panel");
+        await panel.locator('#pHome [data-open="usage"]').click();
         const daily = panel.locator(".pq-card.bal", { hasText: "Custom" });
         await daily.waitFor();
         assert.equal(await figure(daily.locator(".pq-lead")), said[lang][left].daily);
