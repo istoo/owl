@@ -19423,8 +19423,8 @@ function renderSettings() {
     ["minimax", "minimax", t("Claims each signed-in MiniMax Code account's check-in credits once a day"), t("As checking in from MiniMax Code itself does")],
     ["qoder", "qoder", t("Claims each signed-in Qoder account's daily credits once a day"), t("As claiming the daily credits in Qoder does")]]) {
     const on = k + "Checkin", sub = $(`#${id}CheckinSub`), list = $(`#${id}List`);
-    $("#warmTab-" + id).hidden = !s[k] && !s[on];
-    $(`#${id}CheckinSegs`).replaceChildren(settingSwitch(t("Daily check-in"), !!s[on], (v) => savePrefs({ ...keep, [on]: v })));
+    list.hidden = !s[k] && !s[on];
+    $(`#${id}CheckinSegs`).replaceChildren(segs([["off", t("Off")], ["on", t("On")]], s[on] ? "on" : "off", (v) => savePrefs({ ...keep, [on]: v === "on" })));
     sub.textContent = [say, ...ciLines(s[on + "s"])].filter(Boolean).join(" · ");
     sub.title = as;
     list.querySelectorAll(".ci-acct, .ci-now-row, .ci-at-row").forEach((x) => x.remove());
