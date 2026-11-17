@@ -602,4 +602,10 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       `PATH=/opt/homebrew/Cellar/go/1.27.3/bin:$PATH GOTOOLCHAIN=local make app` 成功。沙箱 HOME（/tmp/owl-sync/home）启动
       `owl web --no-open --addr 127.0.0.1:0`：/api/state 200（JSON 有 agents）、/?mode=panel 200、/v1/models 403（无 key，网关在）。
 - [x] 分支 `sync/upstream-4f94b8a`：99083ade1（sync）、1ed4b427e（owl 规则）、db97ba705（owl 自有文件补回）、
-      6aee4f947 + 194ce27e2 + 5b4b5b708 + 1ba876e1a（owl 侧 GUI 红）。未 push、未打 tag、未改 main。
+      6aee4f947 + 194ce27e2 + 5b4b5b708 + 1ba876e1a（owl 侧 GUI 红）、f60d5dece（恢复 owl 的 account-weight 测试）。
+      已 push 到 origin（头 8eda249cb），未打 tag、未改 main。
+- [x] push 与 CI：本机到 GitHub 的 git 上传约 20KB/s，82MB 的 pack 连续三次 HTTP 408。用 1MB 分块把 HEAD 的全部新对象
+      先挂到临时 ref `sync-upload`（106 个中间版本旧 blob 另做 14 块），再把真实分支推上去（只剩提交/树对象），
+      临时 ref 与探测 ref 已删。`test.yml` 不在分支 push 上触发，已手动调度；两个 run：
+      Test https://github.com/istoo/owl/actions/runs/44134964830 ；
+      GUI full/both https://github.com/istoo/owl/actions/runs/44134989128 。
