@@ -24,6 +24,7 @@ const AGENTS = [
   agent("gemini", "Gemini CLI", "geminicli-color", false, ""),
   agent("opencode", "OpenCode", "opencode", false, ""),
 ];
+const PROFILES = [{ name: "home", summary: "", agents: [{ id: "codex", name: "Codex", fields: [{ key: "model", label: "model", value: "gpt-6-sol" }] }] }];
 const inHours = (h) => new Date(Date.now() + h * 3600e3).toISOString();
 const QUOTAS = [
   { provider: "claude-max", name: "Claude", icon: "claude-color", plan: "Max 20x", windows: [{ name: "5 hours", used: 42, resetsAt: inHours(2.3) }, { name: "7 days", used: 68, resetsAt: inHours(70) }] },
@@ -36,10 +37,21 @@ const SERIES = CALLS.map((n, i) => ({
   label: String(i), time: new Date(MIDNIGHT.getTime() + i * 3600e3).toISOString(),
   calls: n, errors: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, cost: 0,
 }));
-const GROUP = (name, calls, cost) => ({ name, calls, cost, errors: 0, input: calls * 10e3, output: calls * 1e3, cache_read: 0, cache_write: 0 });
+// the same answer the panel's Usage detail draws: its totals, its hours and
+// each agent's share (by id), so the overview and the detail can't part
 const TODAY = {
-  calls: 41, errors: 3, retried: 9, input: 1e6, output: 4e5, cache_read: 11.8e6, cache_write: 5e5, cost: 13.7, unpriced: 0,
-  agents: [GROUP("Claude Code", 20, 11.7), GROUP("Codex", 15, 2), GROUP("Pi", 6, 0)], bucket: "hour", series: SERIES,
+  period: "today", rows: [], offset: 0, total: 41, calls: 41, errors: 3, retried: 9,
+  input: 1e6, output: 4e5, cache_read: 11.8e6, cache_write: 5e5, cost: 13.7, unpriced: 0, reasoning: 0,
+  bucket: "hour", series: SERIES,
+  by: {
+    agent: [
+      { id: "claude", name: "Claude Code", calls: 20, cost: 11.7 },
+      { id: "codex", name: "Codex", calls: 15, cost: 2 },
+      { id: "pi", name: "Pi", calls: 6, cost: 0 },
+    ],
+    provider: [], model: [],
+  },
+  agents: [], providers: [], purposes: [],
 };
 
 function server(lang, { theme = "light", left = false, quotas = QUOTAS, featuresOff = [], asked = [] } = {}) {
@@ -49,12 +61,12 @@ function server(lang, { theme = "light", left = false, quotas = QUOTAS, features
     const json = (d) => route.fulfill({ json: d });
     if (p === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"${theme}",web:false,featuresOff:${JSON.stringify(featuresOff)}};` });
     if (p === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
-    if (p === "/api/state") return json({ agents: AGENTS, profiles: [], settings, served: 42 });
+    if (p === "/api/state") return json({ agents: AGENTS, profiles: PROFILES, settings, served: 42 });
     if (p === "/api/settings") return json(settings);
     if (p === "/api/settings/quota-left") return json({ ...settings, quotaLeft: true });
     if (p === "/api/usage/quotas") return json(quotas);
-    if (p === "/api/usage/requests") { asked.push(url.searchParams); return json({ period: url.searchParams.get("period"), rows: [], offset: 0, total: 0, calls: 0, errors: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, cost: 0, bucket: "hour", series: [], by: {}, providers: [] }); }
-    if (p === "/api/usage") return json({ ...TODAY, models: [], accounts: [] });
+    if (p === "/api/usage/requests") { asked.push(url.searchParams); return json(TODAY); }
+    if (p === "/api/usage") return json({ models: [], accounts: [] });
     if (p === "/api/groups") return json({ groups: [], models: [] });
     if (p === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, window: true } });
     if (p === "/api/gateway/trace") return json({ mine: true, now: new Date().toISOString(), seq: 0, totals: { requests: 412, rerouted: 9, errors: 3 }, routes: [] });
@@ -98,6 +110,15 @@ const noSideways = (page) => page.evaluate(() => {
   }
   return bad;
 });
+// one figure on the overview, and one in the Usage detail's totals
+const fact = (page, label) => page.evaluate((label) => {
+  const f = [...document.querySelectorAll("#pHome .ph-fact")].find((x) => x.querySelector("span")?.textContent.trim() === t(label));
+  return f?.querySelector("b")?.textContent.trim() || "";
+}, label);
+const block = (page, label) => page.evaluate((label) => {
+  const b = [...document.querySelectorAll("#panelUsage .pu-tot .blk")].find((x) => x.querySelector(".k")?.textContent.trim() === t(label));
+  return b?.querySelector(".v")?.textContent.trim() || "";
+}, label);
 
 const LANGS = ["en", "zh", "zh-TW", "ja", "de"];
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -133,9 +154,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await first.locator(".ph-q-bar i").evaluate((e) => e.style.width), "68%");
       assert.deepEqual(await noSideways(page), [], "nothing runs sideways");
 
+      // what the overview says today was, the Usage detail says the same:
+      // both draw the day's own page, so no figure can part
+      const seen = {
+        cost: (await page.locator("#pHome .ph-big").textContent()).trim(),
+        requests: await fact(page, "Requests"), tokens: await fact(page, "Tokens"), hit: await fact(page, "Cache hit rate"),
+      };
+
       // today's › opens the request totals; Escape comes back
       await detail(page, "stats");
       assert(await page.locator("#panelUsage").isVisible());
+      await page.locator("#panelUsage .pu-tot .blk").first().waitFor();
+      assert.equal((await block(page, "Cost")).replace(/^≈/, ""), seen.cost, "the detail's cost is the overview's");
+      assert.equal(await block(page, "Requests"), seen.requests, "the detail's requests are the overview's");
+      assert.equal(await block(page, "Tokens"), seen.tokens, "the detail's tokens are the overview's");
+      assert.equal(await block(page, "Cache hit rate"), seen.hit, "the detail's hit rate is the overview's");
       assert.equal(await page.locator(".ph-back").getAttribute("aria-label"), await page.evaluate(() => t("Back to overview")));
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.body.dataset.ptab === "home");
@@ -202,6 +235,34 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert(await page.locator("#panelUsage").isVisible());
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.body.dataset.ptab === "home");
+    assert.deepEqual(errors, []);
+    await page.context().close();
+  });
+
+  test(`${engine} en: Profiles opens from the overview and the Agents detail`, async (t) => {
+    const { page, errors } = await open(t, engine, "en");
+    const btn = page.locator("#profBtn"), list = page.locator(".profiles.open");
+    assert(await btn.isVisible(), "the overview keeps Profiles");
+    await btn.click();
+    await list.locator("#profiles .chip").first().waitFor();
+    assert.equal(await btn.getAttribute("aria-expanded"), "true");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector(".profiles.open"));
+    assert(await page.locator("#pHome").isVisible(), "Escape closes the list, not the panel");
+
+    await page.locator('#pHome [data-open="agents"]').click();
+    await page.waitForFunction(() => document.body.dataset.ptab === "agents");
+    assert(await btn.isVisible(), "the Agents detail keeps Profiles");
+    await btn.click();
+    await list.locator("#profiles .chip").first().waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector(".profiles.open"));
+
+    // a detail with nothing of the reader's to pick from leaves it out, as before
+    await page.locator(".ph-back").click();
+    await page.waitForFunction(() => document.body.dataset.ptab === "home");
+    await detail(page, "usage");
+    assert(!(await btn.isVisible()), "Allowances leaves Profiles out");
     assert.deepEqual(errors, []);
     await page.context().close();
   });

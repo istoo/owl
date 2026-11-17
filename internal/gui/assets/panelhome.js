@@ -6,7 +6,7 @@
 // panel (panelhome.js), so the window's core carries none of it.
 const TITLES = { usage: "Allowances", stats: "Usage", routing: "Routing", agents: "Agents" };
 let home = null, status = null, statusDot = null, statusText = null, back = null, title = null;
-let today = null, todayAt = 0, todayFlight = null;
+let today = null;
 let gateway = window.bootPrefs?.sideGateway || null, gatewayKnown = !!gateway;
 let drawn = "";
 
@@ -64,14 +64,12 @@ function readGateway() {
   }, () => {});
 }
 
+// the panel's own Usage detail reads today's page (app.js's panelTodayPage):
+// the overview shows that very answer, so the two never part
 function readToday(force) {
-  if (todayFlight || (!force && performance.now() - todayAt < 5e3)) return todayFlight;
-  let tz = "";
-  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* none named */ }
-  todayFlight = api("usage?period=today" + (tz ? "&tz=" + encodeURIComponent(tz) : ""))
-    .then((u) => { today = u; todayAt = performance.now(); draw(); }, () => {} /* a failed read is unknown: keep the last */)
-    .finally(() => { todayFlight = null; });
-  return todayFlight;
+  const p = window.panelTodayPage?.(force);
+  if (!p) return;
+  p.then((u) => { if (!u) return; today = u; draw(); }, () => {} /* a failed read is unknown: keep the last */);
 }
 
 // the overview as it stands, redrawn only when what it shows changed
@@ -139,9 +137,8 @@ function todayCard() {
     f.append(el("b", bad ? "bad" : "", v), el("span", "", t(label)));
     return f;
   };
-  const zero = { input: 0, output: 0, cache_read: 0, cache_write: 0 };
-  const hit = cacheHitOf({ ...zero, ...d });
-  facts.append(fact(fmtN(d.calls || 0), "Requests"), fact(fmtN(allTokens({ ...zero, ...d })), "Tokens"), fact(hit === null ? "—" : hitPct(hit), "Cache hit rate"));
+  const hit = cacheHitOf(d);
+  facts.append(fact(fmtN(d.calls || 0), "Requests"), fact(fmtN(allTokens({ input: 0, output: 0, cache_read: 0, cache_write: 0, ...d })), "Tokens"), fact(hit === null ? "—" : hitPct(hit), "Cache hit rate"));
   if (d.errors) facts.append(fact(fmtN(d.errors), "Failed", true));
   row.append(big, facts);
   const spark = el("div", "ph-spark");
@@ -197,7 +194,7 @@ function quotaCard() {
       const fill = el("i");
       fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
       bar.append(fill);
-      if (pct >= 90) bar.classList.add("full");
+      if (to100(tight.used) >= 90) bar.classList.add("full");
       const others = ws.filter((w) => w !== tight).map((w) => Math.round(quotaFill(w)) + "%");
       const say = [t(tight.name), tight.resetsAt ? resetInText(new Date(tight.resetsAt)) : "", others.join(" · ")].filter(Boolean).join(" · ");
       parts.push(el("span", "ph-q-pct", pct + "%"), bar, el("span", "ph-q-say", say));
@@ -229,7 +226,8 @@ function agentCard() {
     b.setAttribute("aria-label", t("Open {name}", { name: a.name }));
     const name = el("span", "ph-agent-name");
     name.append(el("b", "", a.name), el("span", "", modelOf(a)));
-    const u = today && (today.agents || []).find((g) => g.name === a.name);
+    const shares = today?.by?.agent || [];
+    const u = shares.find((s) => s.id === a.id) || shares.find((s) => s.id === a.name) || shares.find((s) => s.name === a.name);
     const cost = u && u.cost > 0 ? fmtCost(u) : "";
     b.append(icon(a.icon), name, el("span", "ph-a-cost" + (cost ? "" : " none"), cost || "—"), chev());
     b.onclick = () => openTab("agents", a.id);

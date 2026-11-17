@@ -168,7 +168,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert(await page.locator(".profiles.open").isVisible(), "Escape in the field closes the field alone");
 
         // Escape closes them, the button opens them again, a click outside
-        // closes them, and so does another tab (where the button isn't)
+        // closes them, and so does a detail where the button isn't
         await page.keyboard.press("Escape");
         assert.equal(await page.locator(".profiles.open").count(), 0);
         await page.locator("#profBtn").click();
@@ -181,7 +181,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.waitForFunction(() => document.body.dataset.ptab === "home");
         await page.locator('#pHome [data-open="routing"]').click();
         assert.equal(await page.locator(".profiles.open").count(), 0);
-        assert(!(await page.locator("#profBtn").isVisible()), "Profiles is the Agents detail's");
+        assert(!(await page.locator("#profBtn").isVisible()), "a detail with nothing to pick from leaves Profiles out");
         await page.keyboard.press("Escape");
         await page.waitForFunction(() => document.body.dataset.ptab === "home");
         await page.locator('#pHome [data-open="agents"]').click();

@@ -16110,8 +16110,9 @@ if (mode === "panel") document.addEventListener("visibilitychange", () => {
 // and what each subscription, agent and the router is doing. A card's ›
 // opens the full list the panel had as its own pages — the agents, the
 // allowances ("usage"), the request totals ("stats") and the router's
-// trace ("routing", routing/client.js draws those). Profiles stay at the
-// Agents detail's foot. The panel no longer remembers a detail.
+// trace ("routing", routing/client.js draws those). Profiles open from the
+// foot, on the overview and the Agents detail. The panel no longer
+// remembers a detail.
 const profBtn = $("#profBtn"), profBox = $(".profiles");
 function placeProfiles() {
   if (!profBox.classList.contains("open")) return;
@@ -16281,6 +16282,7 @@ if (mode === "panel") {
   setPanelTab(panelTab);
   // the overview's cards, its header line and its details (panelhome.js):
   // loaded only in the panel, so the window's core carries none of it
+  window.panelTodayPage = panelTodayPage;
   import("./panelhome.js").then((m) => m.start()).catch(() => {});
 }
 
@@ -16349,9 +16351,38 @@ function loadPanelUse(quiet = false) {
   panelUseFlight = flight;
   return flight;
 }
+// The overview's day is the panel's Usage detail's own page for today: one
+// read serves both, so the two can't part (cost, requests, tokens, cache hit
+// rate, failures, the hours and each agent's share). A filtered answer, or
+// another period's, is not that page: the overview reads the unfiltered one.
+let panelToday = null, panelTodayAt = 0, panelTodayFlight = null;
+function panelTodayPage(force) {
+  if (panelUse && panelUsePeriod === "today" && !panelUseProvider && !panelUseComputer && !panelUseDay) {
+    panelToday = panelUse;
+    panelTodayAt = panelUseAt;
+  }
+  if (panelTodayFlight) return panelTodayFlight;
+  if (!force && panelToday && performance.now() - panelTodayAt < 5e3) return Promise.resolve(panelToday);
+  const flight = api("usage/requests?period=today&limit=1").then((l) => {
+    panelToday = l;
+    panelTodayAt = performance.now();
+    return l;
+  }).finally(() => {
+    if (panelTodayFlight === flight) panelTodayFlight = null;
+  });
+  panelTodayFlight = flight;
+  return flight;
+}
 // the tab is shown: what it has is drawn, and read again if it is old
 function panelUseShown() {
   if (mode !== "panel" || panelTab !== "stats") return;
+  // the overview's today page is this detail's own, when nothing narrows it:
+  // opened from the overview, it draws what the overview just drew
+  if (!panelUse && panelToday && panelUsePeriod === "today" && !panelUseProvider && !panelUseComputer && !panelUseDay
+    && performance.now() - panelTodayAt < 5e3) {
+    panelUse = panelToday;
+    panelUseAt = panelTodayAt;
+  }
   renderPanelUse();
   if (!panelUse || performance.now() - panelUseAt > 5e3) loadPanelUse().catch(() => {});
 }

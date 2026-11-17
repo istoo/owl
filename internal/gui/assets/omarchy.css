@@ -41,9 +41,9 @@ html.omarchy .brand { letter-spacing: 0; font-weight: 700; }
 /* the tabs: no track, the chosen one a faint square with its text in the accent */
 html.omarchy .seg { background: transparent; }
 html.omarchy .seg > .thumb { background: var(--om-sel); }
-html.omarchy :is(.seg button.on, .ptabs button.on, .opt.on) { color: var(--accent); }
-html.omarchy :is(.segs, .ptabs) { background: transparent; }
-html.omarchy :is(.segs, .ptabs) > .thumb { background: var(--om-sel); box-shadow: inset 0 0 0 1px var(--om-sel-line); }
+html.omarchy :is(.seg button.on, .opt.on) { color: var(--accent); }
+html.omarchy .segs { background: transparent; }
+html.omarchy .segs > .thumb { background: var(--om-sel); box-shadow: inset 0 0 0 1px var(--om-sel-line); }
 
 /* lists: a hairline frame, rows picked out by a faint fill */
 html.omarchy .list { border: 1px solid var(--line); background: transparent; }
