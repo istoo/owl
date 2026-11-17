@@ -269,9 +269,9 @@ function serve(lang, theme, panel, data) {
 }
 
 const words = {
-  en: { head: "Left over time", two: "2 days", cycle: "Cycle", off: "Off", trend: (r) => "Trends: " + r, five: "5 hours", week: "Weekly", dashes: /Dashed: an even pace/,
+  en: { head: "Left over time", two: "2 days", cycle: "Cycle", off: "Off", seven: "7 days", thirty: "30 days", other: "Other number of days…", trend: (r) => "Trends: " + r, five: "5 hours", week: "Weekly", dashes: /Dashed: an even pace/,
     lasts: "Lasts past the reset at this pace", runsOut: /^Runs out .+ at this pace$/ },
-  zh: { head: "剩余额度走势", two: "2 天", cycle: "本周期", off: "关闭", trend: (r) => "走势：" + r, five: "5 小时", week: "每周", dashes: /虚线：匀速用量/,
+  zh: { head: "剩余额度走势", two: "2 天", cycle: "本周期", off: "关闭", seven: "7 天", thirty: "30 天", other: "其他天数…", trend: (r) => "走势：" + r, five: "5 小时", week: "每周", dashes: /虚线：匀速用量/,
     lasts: "按此速度，能撑到重置", runsOut: /^按此速度，预计 .+ 用完$/ },
 };
 
@@ -344,12 +344,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const second = card.locator(".subscription-account", { hasText: "b@x.com" });
           // (after the curve, a Codex account's Auto-use row, #719, then its
           // Use credits row, which closes its section)
-          assert.deepEqual(await second.evaluate((e) => [e.previousElementSibling.previousElementSibling.previousElementSibling.className, e.previousElementSibling.previousElementSibling.className, e.previousElementSibling.className]), ["quota-curve", "quota-autoreset ar-split", "quota-credits on"]);
-          assert.notEqual(await second.evaluate((e) => getComputedStyle(e).borderTopStyle), "none", "a rule between the accounts");
+          // (the account's name comes first, then its windows, then the curve, a
+          // Codex account's Auto-use row (#719), then its Use credits row)
+          assert.deepEqual(await second.evaluate((e) => { const c = e.parentElement.children, k = [...c].indexOf(e); return [c[k + 2].className, c[k + 3].className, c[k + 4].className]; }), ["quota-curve", "quota-autoreset ar-split", "quota-credits on"]);
+          assert.notEqual(await second.evaluate((e) => getComputedStyle(e.parentElement).borderTopStyle), "none", "a rule between the accounts");
           const choose = async (name) => {
             await pick.click();
             const items = page.locator(".sess-menu .pm-item");
-            assert.deepEqual(await items.locator(".pm-name").allTextContents(), [w.off, w.two, w.cycle]);
+            assert.deepEqual(await items.locator(".pm-name").allTextContents(), [w.off, w.two, w.cycle, w.seven, w.thirty, w.other]);
             await items.filter({ hasText: name }).click();
           };
           // 2 days: the range turns, the page doesn't move, the pick is kept
@@ -580,9 +582,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const row = page.locator("#colorblindRow");
       await row.waitFor();
       assert.equal(await row.locator(".name").innerText(), w.label);
-      assert.equal(await row.locator("#colorblindSegs [role=switch]").getAttribute("aria-checked"), "false", "off by default");
+      assert.equal(await row.locator('#colorblindSegs [data-seg="on"]').getAttribute("aria-pressed"), "false", "off by default");
       const scroll0 = await page.locator("#view-settings").evaluate((v) => v.scrollTop);
-      await row.locator("#colorblindSegs [role=switch]").click();
+      await row.locator('#colorblindSegs [data-seg="on"]').click();
       for (let i = 0; i < 50 && !posts.length; i++) await page.waitForTimeout(40);
       assert.equal(posts.at(-1)?.colorblind, true);
       assert.equal(await page.locator("#view-settings").evaluate((v) => v.scrollTop), scroll0, "toggling colorblind mode never scrolls");
@@ -664,8 +666,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://owl.test/?view=settings&tab=general");
       await row.waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.dataset.colorblind), "1", "kept across reload via boot.js");
-      assert.equal(await row.locator("#colorblindSegs [role=switch]").getAttribute("aria-checked"), "true");
-      await row.locator("#colorblindSegs [role=switch]").click();
+      assert.equal(await row.locator('#colorblindSegs [data-seg="on"]').getAttribute("aria-pressed"), "true");
+      await row.locator('#colorblindSegs [data-seg="off"]').click();
       for (let i = 0; i < 50 && posts.at(-1)?.colorblind !== false; i++) await page.waitForTimeout(40);
       assert.equal(posts.at(-1)?.colorblind, false);
       await page.waitForFunction(() => !document.documentElement.dataset.colorblind);
