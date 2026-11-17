@@ -75,7 +75,7 @@ curl -fsSL https://github.com/istoo/owl/releases/latest/download/install.sh | sh
 </picture>
 
 - **一个 key。** 选预设，粘贴进去。模型清单由供应商提供，名称和推理档位从 [models.dev](https://models.dev) 补全，今早发布的模型，下次刷新就在选择器里。任何 OpenAI 或 Anthropic 兼容的 URL 也行。
-- **一个订阅。** 你已经登录的 agent 会带着它的模型出现，其他每个 agent 都能用。Claude 驱动本机真实的 `claude` 二进制，并通过 MCP 桥接你 agent 的工具；ChatGPT、GitHub Copilot、Gemini Code Assist、Antigravity、SuperGrok 也一样。多加几个账号，owl 就在它们之间切换。
+- **一个订阅。** 你已经登录的 agent 会带着它的模型出现，其他每个 agent 都能用。Claude 驱动本机真实的 `claude` 二进制，并通过 MCP 桥接你 agent 的工具；ChatGPT、GitHub Copilot、Gemini Code Assist、SuperGrok 也一样。多加几个账号，owl 就在它们之间切换。Antigravity 通过你自己的 agy CLI 使用（Antigravity (local agy CLI) 插件）：Google 会封禁经 Antigravity 自家客户端访问 Code Assist 的账号，owl 的内置直连和旧插件都曾这样做。
 - **一个插件。** npm 上的任何 OpenCode 认证插件或 pi 包，都能在 owl 里登录、列模型、发请求（见[插件](#插件)）。
 
 **导入** 能把 CC Switch、Claude Code、Codex 和 Alma 里的供应商搬过来。**[Add to owl](https://github.com/istoo/owl/blob/main/site/public/docs/zh/import.html)** 链接让供应商官网一键把配置交给 owl。每个 key、每个账号都可以单独走代理。**每日预热** 在你选的时间开启每个 Claude 和 ChatGPT 账号的 5 小时窗口。
@@ -167,7 +167,7 @@ export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:3425 GEMINI_API_KEY=owl
 
 ```sh
 owl plugin add opencode-gemini-auth   # npm 上的 OpenCode 插件
-owl plugin add pi-antigravity         # pi 包，同样方式
+owl plugin add @magpie-community/opencode-agy-cli-auth  # 通过你自己的 agy CLI 使用 Antigravity
 owl plugin login google-plugin        # 它自己的登录流程，在 owl 里完成
 ```
 

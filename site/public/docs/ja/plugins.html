@@ -970,7 +970,7 @@ document.getElementById(<span class="s">"calls"</span>).textContent = `${s.calls
     </div>
     <p><code>menu</code> は <code>provider</code> か <code>agent</code> です。<code>id</code> は小文字、数字、ハイフンで、40 文字まで。項目はプラグインごとに最大 8 個で、<code>title</code> のない項目はページのタイトルを使います。ページのないプラグインは項目を加えません。「プラグイン」ページには、プラグインがどのメニューに項目を加えるかが表示されます。</p>
     <h2 id="pi"><a class="anchor" href="#pi">pi パッケージ</a></h2>
-    <p>owl は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように owl で動き、ほかのプラグインと同じ方法で追加できます（<code>owl plugin add pi-antigravity</code>）。</p>
+    <p>owl は <a href="https://github.com/earendil-works/pi">pi</a> のパッケージも動かします。<code>pi.registerProvider</code> でプロバイダを登録する pi 拡張は、何も変えずに pi と同じように owl で動き、ほかのプラグインと同じ方法で追加できます。</p>
     <ul>
       <li><b>pi のパッケージとみなす条件。</b><code>package.json</code> に <code>pi</code> マニフェスト（<code>"pi": { "extensions": [...] }</code>）があるか、<code>pi-package</code> キーワードがあるか、<code>dependencies</code> か <code>peerDependencies</code> に <code>@earendil-works/pi-coding-agent</code>（または旧名の <code>@mariozechner/pi-coding-agent</code>）があること。単体のファイルは pi を import していれば該当します。</li>
       <li><b>読み込み。</b>owl はパッケージの隣に pi をインストールし、pi 自身のローダーで同じプラグインホストに読み込みます。登録されたプロバイダは owl のプロバイダになり、モデルは pi がそれぞれに挙げるもの（pi がアカウントごとの一覧を取得できるときはその一覧）です。コマンド、ツール、レンダラー、イベントハンドラは使いません。</li>

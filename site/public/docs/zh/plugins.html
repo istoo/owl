@@ -970,7 +970,7 @@ document.getElementById(<span class="s">"calls"</span>).textContent = `${s.calls
     </div>
     <p><code>menu</code> 是 <code>provider</code> 或 <code>agent</code>。<code>id</code> 由小写字母、数字和短横线组成，最长 40 个字符。一个插件最多 8 个菜单项，没写 <code>title</code> 的用它页面的标题。没有页面的插件不加菜单项。「插件」页面会写出插件往哪些菜单里加了菜单项。</p>
     <h2 id="pi"><a class="anchor" href="#pi">pi 扩展包</a></h2>
-    <p>owl 也运行 <a href="https://github.com/earendil-works/pi">pi</a> 的扩展包。用 <code>pi.registerProvider</code> 注册了供应商的 pi 扩展，在 owl 里和在 pi 里一样工作，不用改任何东西，添加方式和其他插件相同（<code>owl plugin add pi-antigravity</code>）。</p>
+    <p>owl 也运行 <a href="https://github.com/earendil-works/pi">pi</a> 的扩展包。用 <code>pi.registerProvider</code> 注册了供应商的 pi 扩展，在 owl 里和在 pi 里一样工作，不用改任何东西，添加方式和其他插件相同。</p>
     <ul>
       <li><b>怎样算 pi 的包。</b><code>package.json</code> 里有 <code>pi</code> 清单（<code>"pi": { "extensions": [...] }</code>）、有 <code>pi-package</code> 关键词，或者 <code>dependencies</code>、<code>peerDependencies</code> 里有 <code>@earendil-works/pi-coding-agent</code>（或旧的 <code>@mariozechner/pi-coding-agent</code>）。单个文件导入了 pi 也算。</li>
       <li><b>加载。</b>owl 在包旁边装好 pi，用 pi 自己的加载器在同一个插件宿主里加载它。它注册的供应商成为 owl 的供应商，模型就是 pi 为它们列出的那些（pi 能拉取账号自己的列表时用那份）。它的命令、工具、渲染器和事件处理器都不会用到。</li>

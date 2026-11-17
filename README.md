@@ -98,8 +98,11 @@ and gives the install command for the ones you don't have.
 - **A subscription.** An agent you're already signed in to shows up with its
   models, and every other agent can use them. Claude drives the real local
   `claude` binary and bridges your agent's tools over MCP; ChatGPT, GitHub
-  Copilot, Gemini Code Assist, Antigravity and SuperGrok work the same way.
-  Add more accounts and owl moves between them.
+  Copilot, Gemini Code Assist and SuperGrok work the same way.
+  Add more accounts and owl moves between them. Antigravity runs through
+  your own agy CLI (the Antigravity (local agy CLI) plugin): Google
+  suspends accounts it sees on Code Assist through Antigravity's own
+  client, which owl's built-in route and its old plugin both were.
 - **A plugin.** Any OpenCode auth plugin or pi package from npm signs in,
   lists models and makes requests in owl (see [Plugins](#plugins)).
 
@@ -234,7 +237,7 @@ export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:3425 GEMINI_API_KEY=owl
 
 ```sh
 owl plugin add opencode-gemini-auth   # an OpenCode plugin from npm
-owl plugin add pi-antigravity         # a pi package, the same way
+owl plugin add @magpie-community/opencode-agy-cli-auth  # Antigravity through your own agy CLI
 owl plugin login google-plugin        # its own sign-in, inside owl
 ```
 
