@@ -19324,6 +19324,8 @@ function renderAboutRows(s, keep) {
   import("./aboutrows.js").then((m) => {
     aboutRowsDraw = m.aboutRows;
     if (about.isConnected) run();
+    // rows drawn now answer a search made while they were on their way
+    if (setQuery) findSettings();
   }).catch(statusErr);
 }
 
@@ -20916,6 +20918,7 @@ function sideEffortChip(val, levels, saved, now, cls, dflt, save) {
   const b = el("button", "rt-cond on side-effort " + cls);
   b.type = "button";
   b.setAttribute("aria-haspopup", "menu");
+  b.setAttribute("aria-expanded", "false");
   const shown = saved ? now || saved : "";
   b.setAttribute("aria-label", t("Thinking") + ": " + (shown ? t(shown) : t("Default")));
   b.title = t("How hard this model thinks");
