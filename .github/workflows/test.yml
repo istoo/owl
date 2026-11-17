@@ -18,11 +18,23 @@ permissions:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.os }}${{ matrix.part && format(', {0}', matrix.part) || '' }})
     strategy:
       fail-fast: false
+      # macOS runs in four parts at once: the packages but the gateway in
+      # three shares (build/pkg-shards.sh), and the gateway as its own part;
+      # the race detector's steps run in the race job beside this one. In one
+      # job it took ~93 minutes on a 3-core runner, and its Test step met the
+      # 75m cap with no test failing (#6903): the cap was set when that step
+      # took 31. Ubuntu and Windows run whole.
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+          - {os: macos-latest, part: '1/3'}
+          - {os: macos-latest, part: '2/3'}
+          - {os: macos-latest, part: '3/3'}
+          - {os: macos-latest, part: gateway}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -55,21 +67,47 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          # shellcheck disable=SC2046 # one Go file per word
           bad=$(gofmt -l $(git ls-files '*.go'))
           if [ -n "$bad" ]; then echo "not gofmt'd:"; echo "$bad"; exit 1; fi
 
       - name: Vet
+        if: matrix.part == '' || matrix.part == '1/3'
         run: go vet -tags "${{ steps.tags.outputs.tags }}" ./...
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
 
-      # internal/gateway takes 450-600s on macOS runners, and go test's
-      # default 10m timed it out in 3 of 8 finished main runs (#2108).
+      # A step cap: on 0dbdc7481's macOS run internal/library printed
+      # nothing for 44 minutes past go test's own -timeout 30m (no panic, no
+      # stack, #5267), and main's later runs queued behind it until it was
+      # cancelled by hand. A share of macOS's packages takes ~20 minutes, and
+      # ubuntu's whole run ~11.
       - name: Test
-        if: runner.os != 'Windows'
-        run: go test -timeout 30m -tags "${{ steps.tags.outputs.tags }}" ./...
+        if: runner.os != 'Windows' && matrix.part != 'gateway'
+        timeout-minutes: 45
+        shell: bash
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          go list -tags "${{ steps.tags.outputs.tags }}" ./... | grep -v '/internal/gateway$' |
+            if [ -n "$PART" ]; then build/pkg-shards.sh "${PART%/*}" "${PART#*/}"; else cat; fi |
+            xargs go test -timeout 30m -tags "${{ steps.tags.outputs.tags }}"
+
+      # internal/gateway's tests run one at a time (t.Setenv rules out
+      # t.Parallel): 892s on mote for 4286 tests on 11-15, none over 20s,
+      # 965s on macOS CI, and past the 30m alarm on f1c9014cd with no test
+      # hung (#2191). It grew from 450-600s on 10-28, so a longer timeout
+      # would only be met again. Its plain run goes in chunks, one process
+      # per core, as the race job's Race step does.
+      - name: Gateway
+        if: runner.os != 'Windows' && (matrix.part == '' || matrix.part == 'gateway')
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          go test -c -o "$RUNNER_TEMP/gateway.test" -tags "${{ steps.tags.outputs.tags }}" ./internal/gateway/
+          build/race-shards.sh internal/gateway "$RUNNER_TEMP/gateway.test" "$(getconf _NPROCESSORS_ONLN)" -test.timeout=20m
 
       # Windows skips the Test step above, so the two plugin stderr tests run
       # here. The end-to-end one needs bun on PATH; without it it skips.

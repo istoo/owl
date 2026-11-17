@@ -120,6 +120,7 @@ jobs:
           # in the search list, or codesign finds no identity there: the
           # certificate isn't Apple's, so none of it is "valid" on its own
           # (v0.2.6's release: "no identity found"); named by its SHA-1
+          # shellcheck disable=SC2046 # the keychains are this one and the defaults
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           codesign --force --deep --sign 0EF43D03A1ACFA3FBE4219CDB53645D279C2EA00 --keychain "$kc" owl.app
           codesign --verify --deep --strict owl.app
@@ -178,8 +179,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
+          # GitHub marks the release published last Latest unless told
+          # otherwise. Two tags can finish close together, and the older
+          # then takes the mark the update feed and the tap read (the same
+          # failure as LESSONS' 10-28, fixed upstream for the handoff
+          # pipeline): a release is Latest only when no published one is
+          # higher, and the highest has the mark once this one is out.
+          newest() {
+            gh release list --repo "$GITHUB_REPOSITORY" -L 100 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName' |
+              { grep -E '^v[0-9]+(\.[0-9]+)*$' || true; } | sort -V | tail -1
+          }
+          top=$(newest)
+          if [ -z "$top" ] || [ "$(printf '%s\n%s\n' "$top" "$TAG" | sort -V | tail -1)" = "$TAG" ]; then
+            latest=true
+          else
+            latest=false
+            echo "$top is newer: $TAG is released here without the Latest mark"
+          fi
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Owl $TAG" \
             --notes-file NOTES.md \
+            --latest="$latest" \
             owl-darwin-arm64.zip dist/owl-cli-* dist/owl-linux-* dist/latest.json dist/notes.json dist/install.sh
+          # two copies at once can each decide before the other is out
+          top=$(newest)
+          now=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .tag_name 2>/dev/null || true)
+          if [ -n "$top" ] && [ "$now" != "$top" ]; then
+            echo "Latest here was ${now:-none}: giving the mark to $top"
+            gh release edit "$top" --repo "$GITHUB_REPOSITORY" --latest >/dev/null
+          fi

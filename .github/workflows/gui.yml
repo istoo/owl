@@ -139,6 +139,7 @@ jobs:
           fi
           if [ "$browser" != both ]; then export BROWSER="$browser"; fi
           set +e
+          # shellcheck disable=SC2046 # one test file per word
           node --test --test-concurrency=2 --test-shard="$SHARD/$SHARDS" \
             $(tr '\n' ' ' < "$RUNNER_TEMP/files.txt") 2>&1 | tee "$RUNNER_TEMP/gui.log"
           status=${PIPESTATUS[0]}
