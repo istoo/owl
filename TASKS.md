@@ -634,3 +634,8 @@ U' 树 `sync/baseline-u-4f94b8a` run 44171505378（206 文件 / 1896 对）。�
 仍红（①，下一轮按序处理）：usage-* 群（all-fold/card-menu-room/focus-steady/model-speed/reads-note/unpriced-sum）、
 form-align、group-note、group-member-line、warm-at-times/now、nav-pages-order 的 Alt+ArrowUp 移动、key-own-balance 的 de 400px。
 ② 每文件已在上游基线 run 44171505378 复现；已知 #31（account-refresh-holds 的 sheet 子测试）已存在，余下按文件查重后补 issue。
+- 2026-11-18 第二轮（分工决定后）：Groups 页不是 owl 取舍，是合流漏掉的上游 80ae904c2。本轮补回 `index.html` 的 Groups 导航行
+  （页面与路由插件早已在），`routing-groups-back`、`routing-groups-page` 取消 skip，chromium 两文件合计 33/33；
+  `gateway-mode`、`nav-pages-order` 恢复含 groups 的上游预期。上游树自身红的跟踪 issue 为 #32（206 文件 / 1896 对，
+  基线 run 44171505378，#28–#31 在正文引用）。form-align 在 U' 树 5/5、本分支仍 5 红：两树同一 DOM 顺序（Base URL 先 segs 后输入框），
+  差异在 CSS 对 segs 行的处理，下一轮按上游为准调 owl 编辑器样式，不改测试。
