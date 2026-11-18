@@ -128,12 +128,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await phone.goto(BASE);
       await phone.evaluate((o) => { localStorage.setItem("owl.navOrder", JSON.stringify(o)); localStorage.setItem("owl.navHidden", '["sessions"]'); }, want);
       await phone.goto(BASE + "?view=providers");
-      await phone.waitForSelector("#nav .nav-more");
+      // owl draws its own More beside the one the markup carries hidden
+      await phone.waitForSelector("#nav .nav-more:visible");
       await arranged(phone, want);
       const bar = await phone.$$eval("#nav > button", (bs) => bs.filter((b) => getComputedStyle(b).display !== "none" && b.getBoundingClientRect().width > 0).map((b) => b.dataset.view || "more"));
       const shown = want.filter((v) => v !== "sessions" && v !== "groups");
       assert.deepEqual(bar, [...shown.slice(0, 4), "more"], "the bar: " + JSON.stringify(bar));
-      await phone.locator("#nav .nav-more").tap();
+      await phone.locator("#nav .nav-more:visible").tap();
       const rest = await phone.$$eval(".nav-more-menu .pm-item", (rs) => rs.length);
       assert.ok(rest >= shown.length - 4, "More has the rest");
       // the order is set on the phone too, where its pages are hidden
