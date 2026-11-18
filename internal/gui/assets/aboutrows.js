@@ -111,8 +111,10 @@ export function aboutRows(ctx) {
     row(t("Uninstall owl"), t("Disconnects every agent, putting back what each had, then removes owl's service and files"), "", go).id = "uninstallRow";
   }
   // gateway mode leaves out what is written into this computer's agents'
-  // files, and the alerts its desktop would show
-  for (const r of [$("#plainNamesSegs").parentElement, $("#usageAlertRow"), $("#balanceAlertRow"), $("#resetReminderRow"), $("#turnDoneRow")]) r.hidden = gatewayMode;
+  // files, and the alerts its desktop would show: the section's head and its
+  // list, not each row, so no empty "Alerts" heading is left standing
+  // (bare-ids.test.cjs asks the list itself)
+  for (const r of [$("#plainNamesSegs").parentElement, $("#alertHead"), $("#alertList")]) r.hidden = gatewayMode;
   // the parts' tabs, one gone whose rows are all hidden here
   setSetTab(setTab);
 }
