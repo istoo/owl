@@ -616,3 +616,21 @@ Go 存活 235 + GC 余量与碎片 85 + 空闲未归还 118 + 图形 155（GPU 1
       actionlint 1.7.12 全部 workflow exit 0（补了 4 处既有 shellcheck disable，删掉 checkout@v4 不认识的
       allow-unsafe-pr-checkout）；`go list ./...` 127 包，pkg-shards 1/2/3 = 42/43/42，并集完全相等、无重叠。
       新 Test run：https://github.com/istoo/owl/actions/runs/44159644833 （头 5d5355e31）。GUI 44134989128 未被取消。
+
+## GUI 合流分诊（2026-11-18，sync/upstream-4f94b8a）
+
+基线：分支 full/both run 44134989128（头 8eda249cb，206 文件 / 2736 对）；owl main 44170924525（65 文件 / 265 对）；
+U' 树 `sync/baseline-u-4f94b8a` run 44171505378（206 文件 / 1896 对）。按文件分类（旧头）：① 合流引入 90 文件 / 1471 对，
+② 上游自身 172 / 1162，③ owl main 也红而 U' 绿 31 / 28，双红 34 / 75。
+
+本轮修（全部本地 chromium 复跑；WebKit 交 CI full/both）：
+- `d4f2166b8` 外观：`--mark` 恢复上游的选中文案着色（app.css、`.side-status #prefs.on`），面板无页签的测试按 owl 设计适配；appearance-look 22/22。
+- `fadf2d704` 脱敏页：redact `page.js` 与上游三方合并，补回 checked 带、agent 过滤、值菜单与空列表行；i18n 补回 ja/de/zh-TW 的 "Also sync"；mask-value-menu 11/11、masking-records 34/34、i18n-keys 4/4。
+- `e7f522090` 面板/导航测试按 owl 设计：panel-* 十文件 111/111，agy-effort 15/15、kimi-thinking 15/15、mcp 20/20、gateway-mode 3/3、model-key-tag 7/7、gui-zh-tw 3/3（webkit）。
+- `bbff11c62` 资产：gateway/settings.js 三方合并（LazyCat 名称、Join、Gateway keys 链接，保留 owl 的共享密码行）；app.js 补回 `owl uninstall --window` 立即询问与 withdrawn 新文案；lan-lazycat 10/10、uninstall-settings 18/18、providers-withdrawn 10/10。
+- `0c1b42016` 侧栏/面板/Advanced 折叠适配：currency-provider 11/11、routing-js 4/4、omp-advisor、lan-lazycat。
+- `3425a4935` Routing 单页设计：routing-advanced 5/5、routing-caller-key-node 11/11、sessions-said 7/7；routing-groups-back/page 各 15 条按 owl 无 Groups 页跳过并写明原因。
+
+仍红（①，下一轮按序处理）：usage-* 群（all-fold/card-menu-room/focus-steady/model-speed/reads-note/unpriced-sum）、
+form-align、group-note、group-member-line、warm-at-times/now、nav-pages-order 的 Alt+ArrowUp 移动、key-own-balance 的 de 400px。
+② 每文件已在上游基线 run 44171505378 复现；已知 #31（account-refresh-holds 的 sheet 子测试）已存在，余下按文件查重后补 issue。
