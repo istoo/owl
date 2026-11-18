@@ -649,3 +649,7 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   后续点击为越过菜单滚动 95px。改为焦点只回退到同类控件（`e199f5838`，上游测试未改）。
   提交：`d49ccb06f` `a1e06853d` `e199f5838` `f9128cf53` `ff8f57cae` `11ca62be0` `e60226da0` `aab5f6bb4`。
   CI：run 44217173859（上一头 4a8fd5519）查询时 GitHub API/443 全部超时，尚未拿到分片日志；推送后按同样方式比 U' 得出完整①清单。
+- 2026-11-18 第三轮（WebKit 补充）：13 文件在本地 webkit 由 4 红到 0。warm-at-times 在 440px 的“按住不动的 +”每约两次跑一次被 WebKit 在 cap 之后 ~12ms 原生调回滚动（+ 下移一行高）。
+  修法：对话框滚动时只有读者自己的滚轮/手指（purposeUntil）才重新标记按住点，其余把 cap 设定的 scrollTop 放回（`modalHold.held`，`9bd508aec`）；
+  webkit 整文件 5/5、chromium 2/2、13 文件 chromium 103/103，warm-now/key-own-balance 两引擎通过（account-refresh-holds 的 sheet 子测试两引擎都红，
+  与 U' 相同，仍属 #31）。gui-shell 文档补了两处：焦点回退同类型控件、对话框 hold 放回非读者滚动。
