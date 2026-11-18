@@ -88,7 +88,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           p.on("pageerror", (e) => errors.push(e.message));
           await p.route("**/*", server(lang, true));
           await p.goto("http://owl.test/");
-          await p.locator('[data-view="usage"]').first().click();
+          // owl's sidebar puts Usage under More at a phone's width: navTo
+        // takes the row as the reader does, drawn or under More
+        await reader.navTo(p, "usage");
           await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
           await p.locator("#ledWrap .led tbody tr.led-row").first().waitFor();
 
@@ -148,7 +150,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           p.setDefaultNavigationTimeout(60000);
           await p.route("**/*", server(lang, "big"));
           await p.goto("http://owl.test/");
-          await p.locator('[data-view="usage"]').first().click();
+          // owl's sidebar puts Usage under More at a phone's width: navTo
+        // takes the row as the reader does, drawn or under More
+        await reader.navTo(p, "usage");
           await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
           await p.locator("#ledKpi .led-io").waitFor();
           const io = p.locator("#ledKpi .led-io");
@@ -168,7 +172,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         p.setDefaultNavigationTimeout(60000);
         await p.route("**/*", server(lang, false));
         await p.goto("http://owl.test/");
-        await p.locator('[data-view="usage"]').first().click();
+        // owl's sidebar puts Usage under More at a phone's width: navTo
+        // takes the row as the reader does, drawn or under More
+        await reader.navTo(p, "usage");
         await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
         await p.locator("#ledWrap .led tbody tr.led-row").first().waitFor();
         await p.locator("#ledKpi .blk").first().waitFor();

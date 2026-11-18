@@ -13,6 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { navTo } = require("./reader.cjs");
 
 const assets = process.env.OWL_SPEED_ALL_ASSETS || path.resolve(__dirname, "../assets");
 const D = 86400e3, H = 3600e3, now = Date.now();
@@ -93,7 +94,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const answered = [];
         await p.route("**/*", server(lang, answered));
         await p.goto("http://owl.test/");
-        await p.locator('[data-view="usage"]').first().click();
+        // owl's sidebar puts Usage under More at a phone's width: navTo
+        // takes the row as the reader does, drawn or under More
+        await navTo(p, "usage");
         await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
         await p.locator("#ledChart .plot svg").waitFor();
         for (const style of ["columns", "lines"]) for (const period of ["today", "7d", "30d"]) {

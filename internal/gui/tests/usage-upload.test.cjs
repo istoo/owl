@@ -78,7 +78,9 @@ async function open(browser, lang, width, sent, storage) {
   p.on("pageerror", (e) => errors.push(e.message));
   await p.route("**/*", server(lang, sent));
   await p.goto("http://owl.test/");
-  await p.locator('[data-view="usage"]').first().click();
+  // owl's sidebar puts Usage under More at a phone's width: navTo
+  // takes the row as the reader does, drawn or under More
+  await reader.navTo(p, "usage");
   await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
   await p.locator("#ledWrap .led tbody tr.led-row").first().waitFor();
   await p.locator("#ledKpi .blk").first().waitFor();
