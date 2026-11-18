@@ -20,7 +20,8 @@ function navPagesSave(k, list) {
   navHides();
   if (offView(view) !== view) show(offView(view));
   else if (!sideNav()) slide($("#nav"), "nav");
-  navSubsAt = "";
+  // owl's navSubs draws afresh each time: the sidebar keeps no page's tab
+  // list, so there is no cached signature to clear (upstream's navSubsAt)
   navSubs();
   window.renderNavPages();
 }
