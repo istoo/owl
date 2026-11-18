@@ -1016,7 +1016,7 @@ function renderUsage() {
     // why it is empty, and the two ways to fill it. Rebuilt of parts, the
     // words stay whole in a language that orders them otherwise.
     const box = el("div", "none");
-    box.append(el("b", "", t(none)), el("span", "why", t("Point an agent at a catalog model and use it; every call through the gateway is counted here.")));
+    box.append(el("b", "", t(none)), el("span", "why", t("Calls through the gateway and the calls Claude Code's and Codex's own session files record are counted here, with no provider set up.")));
     const acts = el("div", "none-acts");
     const connect = el("button", "text primary", t("Connect an agent"));
     connect.onclick = () => show("agents");
@@ -1025,6 +1025,8 @@ function renderUsage() {
     acts.append(connect, add);
     box.append(acts);
     stats.append(box);
+    // the agents' own session files count too, once the reader allows them
+    readsNote(stats);
     $("#usageNote").textContent = "";
     $("#usageClear").hidden = true;
     return;

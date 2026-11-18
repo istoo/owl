@@ -34,11 +34,13 @@ function serve(lang) {
 }
 
 const words = {
-  en: { title: "No calls today.", why: "Point an agent at a catalog model", connect: "Connect an agent", add: "Add a provider" },
-  zh: { title: "今天没有调用。", why: "让某个 Agent 使用目录中的模型", connect: "接入一个 agent", add: "添加供应商" },
-  "zh-TW": { title: "今天沒有呼叫。", why: "讓某個 Agent 使用目錄中的模型", connect: "接入一個 agent", add: "新增供應商" },
-  ja: { title: "今日の呼び出しはありません。", why: "エージェントにカタログのモデルを", connect: "エージェントを接続", add: "プロバイダを追加" },
-  de: { title: "Heute keine Aufrufe.", why: "Richten Sie einen Agenten auf ein Katalogmodell", connect: "Einen Agenten verbinden", add: "Anbieter hinzufügen" },
+  // the page says the agents' own session files count too, not only a
+  // provider's catalog models (usage-reads-note.test.cjs)
+  en: { title: "No calls today.", why: "Calls through the gateway and the calls Claude Code's and Codex's own session files", connect: "Connect an agent", add: "Add a provider" },
+  zh: { title: "今天没有调用。", why: "经过网关的调用，以及 Claude Code 和 Codex 自己会话文件", connect: "接入一个 agent", add: "添加供应商" },
+  "zh-TW": { title: "今天沒有呼叫。", why: "經過閘道的呼叫，以及 Claude Code 和 Codex 自己會話檔案", connect: "接入一個 agent", add: "新增供應商" },
+  ja: { title: "今日の呼び出しはありません。", why: "ゲートウェイ経由の呼び出しと、Claude Code や Codex 自身のセッションファイル", connect: "エージェントを接続", add: "プロバイダを追加" },
+  de: { title: "Heute keine Aufrufe.", why: "Aufrufe über das Gateway und die in den Sitzungsdateien von Claude Code und Codex", connect: "Einen Agenten verbinden", add: "Anbieter hinzufügen" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
