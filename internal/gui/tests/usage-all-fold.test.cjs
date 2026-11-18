@@ -90,6 +90,13 @@ async function open(browser, lang, tray, url, width, height) {
   return { page, errors };
 }
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew #ptabs
+async function goTab(page, tab) {
+  await page.locator(`#pHome [data-open="${tab}"]`).click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 // where the strip is on screen, and the view's scroll
 const at = (page, strip, view) => page.evaluate(([s, v]) => ({ top: Math.round(document.querySelector(s).getBoundingClientRect().top), scroll: document.querySelector(v).scrollTop }), [strip, view]);
 
@@ -161,7 +168,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the tray panel: folded the same way, and a menu bar cell opens them
       const panel = await open(browser, lang, "panel", "http://owl.test/?mode=panel", 360, 760);
       const p = panel.page;
-      await p.locator('#ptabs [data-ptab="usage"]').click();
+      await goTab(p, "usage");
       const pstrip = '#panelQuota .quota-all[data-fold="codex"]';
       await p.waitForSelector(pstrip);
       const group = (sel) => p.evaluate(([s, sel]) => document.querySelector(s).closest(".pq-group").querySelectorAll(sel).length, [pstrip, sel]);
