@@ -19406,7 +19406,6 @@ function renderSettings() {
     (v) => setGatewayPaused(v === "paused")));
   // quitask.js's question
   $("#quitAskSegs").replaceChildren(settingSwitch(t("Ask before quitting"), !s.quitNoAsk, (on) => savePrefs({ ...keep, quitNoAsk: !on })));
-  $("#quitAskSegs").replaceChildren(segsOO(!s.quitNoAsk, (v) => savePrefs({ ...keep, quitNoAsk: !v })));
   // agents put back as they were at a quit, connected again at the start
   $("#restoreQuitSegs").replaceChildren(segsOO(s.restoreOnQuit, (v) => savePrefs({ ...keep, restoreOnQuit: v })));
   // WSL's distros, looked in on Windows unless turned off (#1264)
