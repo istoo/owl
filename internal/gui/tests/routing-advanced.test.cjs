@@ -60,19 +60,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.goto("http://owl.test/?view=providers");
           await page.locator(".row.provider", { hasText: p.name }).first().click();
           await page.locator(".editor .accts").first().waitFor();
-          const adv = page.locator(".editor details.advanced");
+          // owl's roomy editor keeps Routing, Rate limited and Stays as rows
+          // of their own rather than under an Advanced fold: each is drawn,
+          // and the routing shows even when nothing is set
           const said = await page.evaluate(() => [t("Routing"), t("Rate limited"), t("Stays")]);
-          // each label is Advanced's, the first of its fields
           const where = await page.evaluate((said) => {
-            const adv = document.querySelector(".editor details.advanced");
             const labels = [...document.querySelectorAll(".editor label")];
-            return { inside: said.map((s) => !!labels.find((l) => l.textContent === s && adv.contains(l))), first: adv.querySelector(".inner > label")?.textContent };
+            return { inside: said.map((s) => !!labels.find((l) => l.textContent === s)) };
           }, said);
           assert.deepEqual(where.inside, [true, true, true], `${at}: ${JSON.stringify(where)}`);
-          assert.equal(where.first, said[0], `${at}: Routing first under Advanced`);
-          assert.equal(await adv.evaluate((d) => d.open), set !== "nothing", `${at}: Advanced open`);
-          const routing = page.locator(".editor details.advanced .route-pick").first();
-          assert.equal(await routing.isVisible(), set !== "nothing", `${at}: Routing shown`);
+          const routing = page.locator(".editor .route-pick").first();
+          assert.equal(await routing.isVisible(), true, `${at}: Routing shown`);
           assert.deepEqual(errors, [], at);
           await page.context().close();
         }

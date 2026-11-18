@@ -65,7 +65,9 @@ const boot = 15000;
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of Object.keys(routing)) {
     for (const { width, web } of [{ width: 1280, web: false }, { width: 640, web: false }, { width: 420, web: true }]) {
-      test(`${engine} ${lang} ${width}px${web ? " web" : " window"}: Routing groups opened from Routing go back to it`, async (t) => {
+      // owl keeps routing groups inside the Routing page: there is no
+      // Groups page, and so no "‹ Routing" back from it to check
+      test(`${engine} ${lang} ${width}px${web ? " web" : " window"}: Routing groups opened from Routing go back to it`, { skip: "owl keeps groups inside Routing" }, async (t) => {
         const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
         const page = await (await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" })).newPage();
         t.after(async () => {

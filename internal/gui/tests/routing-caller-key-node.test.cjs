@@ -115,6 +115,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.setDefaultNavigationTimeout(60000);
     await page.route("**/*", serve("en"));
     await page.goto("http://owl.test/?mode=panel");
+    // owl's panel opens on its overview; Routing is a card's page
+    await page.locator('#pHome [data-open="routing"]').click();
+    await page.waitForFunction(() => document.body.dataset.ptab === "routing");
     await page.locator("#panelRouting .pr-req").nth(3).waitFor();
     const who = await page.locator("#panelRouting .pr-who").allTextContents();
     // the panel reads no key list: a key by the name its route kept

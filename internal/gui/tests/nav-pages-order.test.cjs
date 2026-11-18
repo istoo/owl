@@ -16,7 +16,8 @@ const { chromium, webkit } = require("playwright");
 
 const assets = path.resolve(__dirname, "../assets");
 const BASE = "http://owl.test/";
-const HOME = ["agents", "sessions", "library", "providers", "routing", "groups", "gateway", "usage", "masking", "plugins"];
+// owl keeps groups inside Routing: no Groups row of its own
+const HOME = ["agents", "sessions", "library", "providers", "routing", "gateway", "usage", "masking", "plugins"];
 const RESET = { en: "Default order", zh: "恢复默认顺序", "zh-TW": "恢復預設順序", ja: "既定の順に戻す", de: "Standardreihenfolge" };
 
 function server(lang, web) {
@@ -131,7 +132,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await phone.waitForSelector("#nav .nav-more");
       await arranged(phone, want);
       const bar = await phone.$$eval("#nav > button", (bs) => bs.filter((b) => getComputedStyle(b).display !== "none" && b.getBoundingClientRect().width > 0).map((b) => b.dataset.view || "more"));
-      const shown = want.filter((v) => v !== "sessions" && v !== "groups");
+      const shown = want.filter((v) => v !== "sessions");
       assert.deepEqual(bar, [...shown.slice(0, 4), "more"], "the bar: " + JSON.stringify(bar));
       await phone.locator("#nav .nav-more").tap();
       const rest = await phone.$$eval(".nav-more-menu .pm-item", (rs) => rs.length);
