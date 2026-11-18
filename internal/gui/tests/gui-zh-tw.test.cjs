@@ -95,6 +95,10 @@ for (const [name, engine] of [["webkit", webkit], ["chromium", chromium]]) {
         await page.goto("http://owl.test/");
         await page.locator("#prefs").click();
         await page.locator("#langPick span").first().waitFor();
+        // owl's Settings keeps its own head above the rows: put the pick in
+        // the middle of the view, clear of the window's header
+        await page.locator("#langPick").evaluate((b) => b.scrollIntoView({ block: "center" }));
+        await page.waitForTimeout(100);
         const fit = await page.evaluate(() => {
           const b = document.querySelector("#langPick"), row = b.closest(".row").getBoundingClientRect(), box = b.getBoundingClientRect();
           return {

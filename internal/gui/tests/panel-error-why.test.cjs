@@ -14,6 +14,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = process.env.OWL_QUOTA_ASSETS || path.resolve(__dirname, "../assets");
 const LANGS = ["en", "zh", "zh-TW", "ja", "de"];
 const WHY = "Get \"https://api.deepseek.com/user/balance\": dial tcp: lookup api.deepseek.com: no such host";
@@ -74,7 +82,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, posts));
         await page.goto("http://owl.test/?mode=panel");
-        await page.locator('#ptabs [data-ptab="usage"]').click();
+        await goTab(page, "usage");
         const card = page.locator('.pq-card[data-card="deepseek|main"]');
         const say = card.locator(".pq-say");
         await say.waitFor();

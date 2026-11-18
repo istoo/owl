@@ -15,6 +15,15 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openPage } = require("./reader.cjs");
+
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
 
 const assets = process.env.OWL_ASSETS || path.resolve(__dirname, "../assets");
 const midnight = new Date();
@@ -116,6 +125,7 @@ for (const engine of BROWSERS) {
         await p.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "stats"); localStorage.setItem("owl.panelUseSplit", "provider"); localStorage.setItem("owl.panelUseMetric", "tokens"); } catch {} });
         await p.route("**/*", serve(lang, asked, "usd"));
         await p.goto("http://owl.test/?mode=panel");
+        await goTab(p, "stats");
         const box = "#panelUsage";
         await p.locator(box + " .pu-card .led-rank .rk").first().waitFor();
 
@@ -170,7 +180,9 @@ for (const engine of BROWSERS) {
         // totals in yuan this time: OpenAI's stays in dollars
         await p.route("**/*", serve(lang, asked, "cny"));
         await p.goto("http://owl.test/");
-        await p.locator('[data-view="usage"]').first().click();
+        // owl leaves the page that doesn't fit in the row under More:
+        // reader.cjs's openPage takes that way as a reader does
+        await openPage(p, "usage");
         await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
         await p.locator("#ledRank button.rk").first().waitFor();
         await p.waitForTimeout(200);
@@ -194,7 +206,8 @@ for (const engine of BROWSERS) {
         // OpenAI picked: the whole page is its calls, in dollars
         await p.locator("#ledSplit .opt").nth(2).click();
         await p.locator(box + " button.rk", { hasText: "OpenAI" }).click();
-        await p.waitForFunction(() => document.querySelector("#usageCost b")?.textContent === "$2.00");
+        // owl marks a converted cost with ≈ (panel-home's convention)
+        await p.waitForFunction(() => document.querySelector("#usageCost b")?.textContent === "≈$2.00");
         assert.equal(asked.at(-1).get("provider"), "openai");
         await p.waitForFunction(() => /^\$/.test(document.querySelector("#ledChart svg text.axis")?.textContent || ""));
         assert.deepEqual(errors, []);

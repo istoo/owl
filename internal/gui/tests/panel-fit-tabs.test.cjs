@@ -85,6 +85,17 @@ async function overflows(page) {
   return out;
 }
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  if (!(await page.locator("#pHome").isVisible())) {
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.body.dataset.ptab === "home");
+  }
+  await page.locator(`#pHome [data-open="${tab}"]`).click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 // a fit that has settled: no new height asked for a while
 async function settled(page, fits) {
   let n = -1;
@@ -129,7 +140,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#agents .row.agent").nth(1).waitFor({ state: "attached" });
       await page.waitForFunction(() => /42/.test(document.querySelector("#panelRouting .pr-today")?.textContent || ""), null, { timeout: 3000 })
         .catch(() => assert.fail("today's line waited for the trace: " + JSON.stringify(fits)));
-      await page.locator('#ptabs [data-ptab="routing"]').click();
+      await goTab(page, "routing");
       const before = await settled(page, fits);
       release();
       await page.locator("#panelRouting .pr-req").first().waitFor({ state: "attached" });
@@ -180,16 +191,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const s = serve(page, lang, 2);
         await page.route("**/*", s.handler);
         await page.goto("http://owl.test/?mode=panel");
+        await goTab(page, "agents");
         await page.locator("#panelRouting .pr-req").first().waitFor({ state: "attached" });
         await page.locator("#agents .row.agent").nth(1).waitFor();
         const short = await settled(page, s.fits);
-        await page.locator('#ptabs [data-ptab="routing"]').click();
+        await goTab(page, "routing");
         const tall = await settled(page, s.fits);
         assert(tall > short, `${motion}: Routing asked no taller a panel than two agents: ${s.fits.join(" ")}`);
         const over = await page.evaluate(() => { const v = document.querySelector("#view-agents"); return v.scrollHeight - v.clientHeight; });
         assert(over <= 0, `${motion}: Routing overflows by ${over}px`);
         const n = s.asks.length;
-        await page.locator('#ptabs [data-ptab="agents"]').click();
+        await goTab(page, "agents");
         const back = await settled(page, s.fits);
         assert.equal(back, short, `${motion}: back on two agents the panel kept ${back}, not ${short}: ${s.fits.join(" ")}`);
         // the tab picked glides the edge on app.css's ease-out, a jump when

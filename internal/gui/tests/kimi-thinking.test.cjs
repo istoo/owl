@@ -77,6 +77,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, sets));
         await page.goto("http://owl.test/" + (mode ? "?mode=" + mode : ""));
+        // owl's panel opens on its overview; the agents are a card's page
+        if (mode) {
+          await page.locator('#pHome [data-open="agents"]').click();
+          await page.waitForFunction(() => document.body.dataset.ptab === "agents");
+        }
         await page.locator(row).waitFor();
         return page;
       };

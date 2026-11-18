@@ -81,6 +81,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       const editor = page.locator("#modal:not([hidden]) .editor");
       await page.locator(".row.provider", { hasText: "Relay" }).click();
+      // owl's editor keeps the models in its Advanced fold, closed until a
+      // route there is set: open it as a reader does
+      const adv = editor.locator("details.more.advanced");
+      if (await adv.count() && !(await adv.evaluate((d) => d.open))) await adv.locator("summary").click();
       const chips = editor.locator(".mchips .mchip");
       await chips.first().waitFor();
       const drawn = await chips.evaluateAll((cs) => cs.map((c) => {

@@ -16,6 +16,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = path.resolve(process.env.OWL_PANEL_FIT_ORDER_ASSETS || path.join(__dirname, "../assets"));
 const H = 3600e3;
 const iso = (ms) => new Date(ms).toISOString();
@@ -115,6 +123,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const panel = trayPanel(page);
       await page.route("**/*", serve(page, lang, panel));
       await page.goto("http://owl.test/?mode=panel");
+      await goTab(page, "usage");
 
       // the card drawn with its rings and curve, and the page done asking
       // while its first fit is still on its way

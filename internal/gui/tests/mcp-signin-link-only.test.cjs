@@ -11,6 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openPage } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const MCP_LINK = "https://dash.cloudflare.com/oauth2/auth?client_id=c1&state=" + "y".repeat(80);
@@ -83,7 +84,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", server(lang, web, st));
           await page.goto("http://owl.test/");
-          await page.locator('button[data-view="library"]').click();
+          // owl puts a page past the row's room under More; openPage takes
+          // that way as a reader does
+          await openPage(page, "library");
           await page.locator("#view-library .lib-row", { has: page.locator(".name", { hasText: /^cloudflare-api/ }) }).click();
           const lib = page.locator("#modal .lib-signin");
           await Promise.all([page.waitForResponse((r) => r.url().endsWith("/api/library/mcp-signin")), lib.getByRole("button", { name: w.signIn, exact: true }).click()]);

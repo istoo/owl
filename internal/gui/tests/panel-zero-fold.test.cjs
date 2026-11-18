@@ -11,6 +11,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = path.resolve(process.env.OWL_ZERO_ASSETS || path.resolve(__dirname, "../assets"));
 const quotas = [
   // at 0: used up, a balance of nothing, a balance below nothing
@@ -70,6 +78,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("**/*", serve(lang));
       const open = async () => {
         await page.goto("http://owl.test/?mode=panel");
+        await goTab(page, "usage");
         await page.waitForFunction(() => document.querySelectorAll("#panelQuota .pq-card").length >= 3 && document.querySelector("#panelQuota .pq-foot"));
       };
       await open();

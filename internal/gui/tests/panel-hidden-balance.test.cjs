@@ -11,6 +11,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = path.resolve(__dirname, "../assets");
 const quotas = [
   { provider: "stepfun", name: "StepFun", icon: "stepfun-color", user: "s@x.y", plan: "Plus", windows: [{ name: "5-hour", used: 12 }] },
@@ -64,6 +72,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, posts, settings));
       await page.goto("http://owl.test/?mode=panel");
+      await goTab(page, "usage");
       await page.waitForSelector("#panelQuota .pq-foot .pq-arrange");
       const drawn = () => page.evaluate(() => [...document.querySelectorAll("#panelQuota .pq-card")].map((c) =>
         (c.classList.contains("bal") ? "bal " : "plan ") + c.dataset.card + (c.querySelector(".quota-balance") ? " +balance" : "")));

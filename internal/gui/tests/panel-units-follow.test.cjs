@@ -15,6 +15,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = path.resolve(process.env.OWL_PANEL_UNITS_ASSETS || path.join(__dirname, "../assets"));
 const midnight = new Date();
 midnight.setHours(0, 0, 0, 0);
@@ -101,7 +109,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         p.on("pageerror", (e) => errors.push(e.message));
         await p.route("**/*", serve(lang, store));
         await p.goto("http://owl.test/?mode=panel");
-        await p.locator('[data-ptab="stats"]').click();
+        await goTab(p, "stats");
         await p.locator("#panelUsage .pu-card .led-chart svg").waitFor();
         let s = await shown(p);
         assert.equal(s.tokens, "1.54B", lang + ": K/M/B at first");
@@ -156,8 +164,8 @@ async function openPanel(browser, lang, store, width, tab) {
     if (store.slowState && new URL(route.request().url()).pathname === "/api/state") await new Promise((r) => setTimeout(r, 400));
     return plain(route);
   });
-  await p.addInitScript((tab) => { try { localStorage.setItem("owl.panelTab", tab); } catch {} }, tab);
   await p.goto("http://owl.test/?mode=panel");
+  await goTab(p, tab);
   return { ctx, p, errors };
 }
 const costShown = (p) => p.evaluate(() => document.querySelectorAll("#panelUsage .pu-tot .blk .v")[2]?.textContent.trim() || "");
@@ -207,7 +215,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         store.cur = { ...store.cur, currency: "cny" };
         await hideAndShow(o.p, store);
         await o.p.waitForTimeout(100);
-        await o.p.locator('[data-ptab="stats"]').click();
+        // owl's panel has no tab strip: Escape goes back to its overview,
+        // whose Usage card opens the page
+        await o.p.keyboard.press("Escape");
+        await o.p.waitForFunction(() => document.body.dataset.ptab === "home");
+        await goTab(o.p, "stats");
         await o.p.locator("#panelUsage .pu-card .led-chart svg").waitFor();
         await costBecomes(o.p, "¥184.80", lang + ": its Usage tab picked after ¥");
         assert.deepEqual(o.errors, []);

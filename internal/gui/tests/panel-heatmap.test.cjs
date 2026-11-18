@@ -13,6 +13,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = process.env.OWL_ASSETS || path.resolve(__dirname, "../assets");
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const today = new Date();
@@ -84,6 +92,7 @@ async function open(browser, lang, theme, width, empty) {
   await p.addInitScript(() => { try { localStorage.setItem("owl.panelTab", "stats"); localStorage.setItem("owl.panelUseMetric", "tokens"); localStorage.setItem("owl.panelUseSplit", "provider"); } catch {} });
   await p.route("**/*", serve(lang, theme, heats, empty));
   await p.goto("http://owl.test/?mode=panel");
+  await goTab(p, "stats");
   await p.locator("#panelUsage .pu-card .led-rank .rk").first().waitFor();
   return { ctx, p, errors, heats };
 }

@@ -15,6 +15,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
+// owl's panel opens on its overview; a page is a card's › (panelhome.js),
+// where upstream's tab strip drew a row of tabs
+async function goTab(page, tab) {
+  const b = page.locator(`#pHome [data-open="${tab}"]`);
+  await b.click();
+  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+}
+
 const assets = path.resolve(process.env.OWL_ASSETS || path.join(__dirname, "../assets"));
 const iso = (n) => new Date(n).toISOString();
 const USERS = ["a@example.com", "b@example.com", "c@example.com", "d@example.com"];
@@ -107,7 +115,7 @@ async function open(browser, lang, width, w) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", server(lang, w, log));
   await page.goto("http://owl.test/?mode=panel");
-  await page.locator('#ptabs [data-ptab="usage"]').click();
+  await goTab(page, "usage");
   await page.locator(`${group("codex")} .pq-pick`).waitFor();
   const tr = async (k, vars = {}) => {
     const s = await page.evaluate(([k, lang]) => (lang === "en" ? k : I18N[lang]?.[k]), [k, lang]);
