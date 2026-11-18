@@ -1016,7 +1016,7 @@ function renderUsage() {
     // why it is empty, and the two ways to fill it. Rebuilt of parts, the
     // words stay whole in a language that orders them otherwise.
     const box = el("div", "none");
-    box.append(el("b", "", t(none)), el("span", "why", t("Calls through the gateway and the calls Claude Code's and Codex's own session files record are counted here, with no provider set up.")));
+    box.append(el("b", "", t(none, { n: periodHours(period) })), el("span", "why", t("Calls through the gateway and the calls Claude Code's and Codex's own session files record are counted here, with no provider set up.")));
     const acts = el("div", "none-acts");
     const connect = el("button", "text primary", t("Connect an agent"));
     connect.onclick = () => show("agents");
