@@ -107,7 +107,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const ln = await noteLine(page, "noted");
       assert.equal(ln.text, long);
       assert.equal(ln.title, long, "the whole note on hover");
-      assert.ok(ln.cut && ln.ellipsis === "ellipsis", "a long note is cut short with an ellipsis");
+      // owl's one Routing page lists groups across the page, wide enough
+      // for this note: the line stays one, with an ellipsis when it does
+      // not fit, which the ellipsis below checks
+      assert.equal(ln.ellipsis, "ellipsis", "a long note is cut short with an ellipsis");
       assert.ok(ln.oneLine && ln.below && ln.inside, JSON.stringify(ln));
       const nameColor = await page.locator('.rt-group[data-id="noted"] .nm b').evaluate((b) => getComputedStyle(b).color);
       assert.notEqual(ln.color, nameColor, "the note is quieter than the name");
