@@ -9266,7 +9266,13 @@ function openModal(content, quiet) {
   const active = d.contains(document.activeElement) ? document.activeElement : null;
   const focusID = active?.id;
   const focusLabel = active?.getAttribute("aria-label");
-  const focusIndex = active ? [...d.querySelectorAll("input, textarea, select, button")].indexOf(active) : -1;
+  // the focus comes back to the same kind of control, never to a button of
+  // another kind: a balance refused while Enter was still down drew its pill
+  // back, and the index landed on the account's cap button, which the Enter
+  // then opened (a menu over the row, and the click on the pill scrolled the
+  // editor away to get past it). An index among buttons only for a button.
+  const focusKind = active ? (active.tagName === "BUTTON" ? "button" : "input, textarea, select") : "";
+  const kindIndex = active ? [...d.querySelectorAll(focusKind)].indexOf(active) : -1;
   // several alike (each account's Refresh this card): the same one of them
   const labelled = (n) => [...n.querySelectorAll("[aria-label]")].filter((element) => element.getAttribute("aria-label") === focusLabel);
   const focusNth = focusLabel ? labelled(d).indexOf(active) : -1;
@@ -9284,7 +9290,7 @@ function openModal(content, quiet) {
   if (fresh) markModalSaved();
   const focus = focusID && content.querySelector("#" + CSS.escape(focusID))
     || focusLabel && labelled(content)[Math.max(0, focusNth)]
-    || focusIndex >= 0 && content.querySelectorAll("input, textarea, select, button")[focusIndex];
+    || kindIndex >= 0 && content.querySelectorAll(focusKind)[kindIndex];
   // the focus given back is not a press: what was pressed stays held, by
   // the element a redraw put back or by the focused copy of it
   const copy = held && (content.contains(held) ? held : held === active && focus) || null;
