@@ -741,8 +741,10 @@ function renderLAN(s) {
       box.append(ask);
     }
   }
-  if (sub) row(t("In a container"), sub, "").classList.add("lan-container");
+  if (sub) row(head || t("In a container"), sub, "").classList.add("lan-container");
+  renderJoin(s, box);
 }
+
 // renderJoin: Join with a password (EV_John_Liu on X), under the shared
 // address. With a password set, another computer opens <address>/join,
 // types it, and gets a gateway key of its own, named for it in Gateway

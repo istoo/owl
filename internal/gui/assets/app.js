@@ -6676,7 +6676,7 @@ function renderMovable() {
     if (agy && w.id === "antigravity") continue;
     const go = el("button", "text action", t("Use {name}", { name: w.instead }));
     go.onclick = () => openPlugins("agy");
-    box.append(depLine("withdrawn", t("{name}'s plugin can get your account suspended", { name: w.name }), t("Google suspends accounts it sees used outside its own app. Use {name} instead, which runs your own agy.", { name: w.instead }), go));
+    box.append(depLine("withdrawn", t("{name}'s plugin can get your account suspended", { name: w.name }), t("Google suspends accounts it sees used outside its own app. {name} runs your own agy instead.", { name: w.instead }), go));
   }
   if (!ps.length || hid === ids) return;
   const names = ps.map((p) => p.name).join(t(", "));
@@ -19318,6 +19318,13 @@ function renderAboutRows(s, keep) {
   const run = () => {
     about.replaceChildren();
     aboutRowsDraw({ about, s, keep, web, setTab, UPDATE_EVERY, GITHUB_SVG, gatewayMode });
+    // `owl uninstall --window` asks at once, once, and nothing goes before
+    // the reader says Uninstall (uninstall.go)
+    if (mode === "window" && params.has("uninstall")) {
+      params.delete("uninstall");
+      const b = $("#uninstallRow button");
+      if (b) uninstallOwl(b);
+    }
   };
   if (aboutRowsDraw) return run();
   about.replaceChildren();
