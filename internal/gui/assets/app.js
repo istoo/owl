@@ -9084,7 +9084,7 @@ $("#modal").addEventListener("keydown", (e) => {
 });
 // A dialog stays centred while it fills in, until the reader's first press
 // or key (the owner 10-24); then it holds what was last pressed in place.
-const modalHold = { off: 0, at: null, y: 0, cap: null, capSet: "", touched: false, copy: null };
+const modalHold = { off: 0, at: null, y: 0, cap: null, capSet: "", touched: false, copy: null, held: null };
 // openModal giving a redraw's focus back: not a new place to hold
 let modalRefocus = false;
 // how far down the dialog an element sits, its animation left out: one
@@ -9201,6 +9201,9 @@ function holdModal(later) {
     for (let x = at.parentElement; x && x !== m; x = x.parentElement) {
       if (x.scrollHeight <= x.clientHeight || !/auto|scroll/.test(getComputedStyle(x).overflowY)) continue;
       x.scrollTop += by;
+      // the place the hold put the pressed element at, for a scroll that
+      // takes it back without the reader (the scroll handler below)
+      modalHold.held = [x, x.scrollTop];
       modalHold.y = modalDepth(at, d) ?? modalHold.y;
       modalHold.screen = modalHold.off + modalHold.y + modalScrolled(at);
       return;
@@ -9233,7 +9236,18 @@ function holdModal(later) {
   }, true);
   // a scroll moves the marked element, not the dialog; one held low with
   // its fields cut short takes the room above as they scroll
-  m.addEventListener("scroll", (e) => { modalClimb(e.target); modalMark(modalHold.at); }, true);
+  m.addEventListener("scroll", (e) => {
+    modalClimb(e.target);
+    // A wheel or a finger sets purposeUntil: the reader's own scroll moves
+    // what the hold holds. Any other scroll came from the dialog itself (a
+    // redraw putting the fields back), and the hold's cap has already put
+    // the pressed element where it was; a scroll that takes that back
+    // afterwards is put back too. WebKit adjusted the scroll 12ms after the
+    // cap at 440px, and the pressed + fell a row's height down the screen
+    // (warm-at-times.test.cjs).
+    if (performance.now() < purposeUntil) modalMark(modalHold.at);
+    else if (modalHold.held && modalHold.held[0] === e.target && modalHold.at?.isConnected && Math.abs(e.target.scrollTop - modalHold.held[1]) >= 1) e.target.scrollTop = modalHold.held[1];
+  }, true);
 }
 // A dialog held low rises as its fields scroll, its foot staying, to the room it needs.
 function modalClimb(body) {
