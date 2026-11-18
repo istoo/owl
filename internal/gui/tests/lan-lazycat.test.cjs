@@ -57,7 +57,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             out.push([(await rows.nth(i).locator(".gw-url-label").textContent()).trim(), (await rows.nth(i).locator("code").textContent()).trim()]);
           return out;
         };
-        const side = (page) => page.locator("#sideGw span").textContent();
+        // owl's row carries a chevron of its own beside the words
+        const side = (page) => page.locator("#sideGw span:not(.side-gw-chev)").textContent();
 
         // on the box's network: the box's address first, then the domain
         {

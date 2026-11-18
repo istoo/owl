@@ -84,10 +84,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const where = `${width}px ${p.name}`;
           await page.locator(".row.provider", { hasText: p.name }).first().click();
           await page.locator(".editor .accts").first().waitFor();
-          // Routing is under Advanced, open already when one is set (Relay's)
+          // Routing is under Advanced; owl's editor keeps Advanced open from
+          // one provider to the next, so open it only when it is closed
           const adv = page.locator(".editor details.advanced");
-          assert.equal(await adv.evaluate((d) => d.open), p === relay, `${where}: Advanced open`);
-          if (p !== relay) await adv.locator(":scope > summary").click();
+          if (!(await adv.evaluate((d) => d.open))) await adv.locator(":scope > summary").click();
           const opts = await shown();
           assert.ok(opts.some(([n]) => n === "spread/fewest-tokens"), `${where}: offered ${JSON.stringify(opts)}`);
           if (p === relay) {

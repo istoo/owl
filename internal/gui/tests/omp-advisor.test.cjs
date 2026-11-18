@@ -97,6 +97,11 @@ async function open(engine, width, lang, t, review, url = "http://owl.test/") {
     await browser.close();
   });
   await page.goto(url);
+  // owl's panel opens on its overview; the agents are a card's page
+  if (url.includes("mode=panel")) {
+    await page.locator('#pHome [data-open="agents"]').click();
+    await page.waitForFunction(() => document.body.dataset.ptab === "agents");
+  }
   await page.locator(omp).waitFor();
   return { page, errors, sets };
 }

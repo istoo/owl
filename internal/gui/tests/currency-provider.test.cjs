@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { openPart } = require("./reader.cjs");
+const { openPart, openPage } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -76,11 +76,15 @@ const LANGS = [
   ["de", "Je Anbieter", "Summen in", "Erweitert", "Währung in der Menüleiste", "Wie Summen"],
 ];
 
-const modelCost = (page, name) => page.locator("#usageModels .row", { hasText: name }).locator(".cost").textContent().then((s) => s.trim());
-const totalCost = (page) => page.locator("#usageCost b").textContent().then((s) => s.trim());
+// owl marks a converted figure with ≈ (panel-home's convention): the
+// tests below name the currency, and strip the mark
+const cost = (s) => s.trim().replace(/^≈/, "");
+const modelCost = (page, name) => page.locator("#usageModels .row", { hasText: name }).locator(".cost").textContent().then(cost);
+const totalCost = (page) => page.locator("#usageCost b").textContent().then(cost);
 
 async function toUsage(page) {
-  await page.locator('[data-view="usage"]').click();
+  // owl puts the page past the row's room under More at a narrow width
+  await openPage(page, "usage");
   await page.locator("#usageModels .row").first().waitFor();
   await page.waitForTimeout(200);
 }
