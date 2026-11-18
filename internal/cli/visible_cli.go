@@ -36,19 +36,6 @@ const visibleUsage = `usage:
        owl group set gpt-plus-auto family=relay
        owl visible zcode relay,ocgo`
 
-// names is every name a visibility can hold: the families, and the
-// providers' and groups' ids.
-func visibleNames() []string {
-	names := provider.Families()
-	for _, p := range provider.All() {
-		names = append(names, p.ID)
-	}
-	for _, g := range provider.Groups() {
-		names = append(names, g.ID)
-	}
-	return names
-}
-
 func visibleCmd(args []string) error {
 	if len(args) > 0 && slices.Contains([]string{"help", "-h", "--help"}, args[0]) {
 		fmt.Println(visibleUsage)
@@ -101,6 +88,7 @@ func visibleCmd(args []string) error {
 		return models([]string{id})
 	}
 	list := splitList(strings.Join(args[1:], ","))
+	var dropped []string
 	if len(list) == 1 && strings.EqualFold(list[0], "all") {
 		delete(s.Visible, id)
 		// all is the recovery the hints point at (owl models, the
@@ -110,25 +98,46 @@ func visibleCmd(args []string) error {
 		delete(s.HiddenModels, id)
 		delete(s.PickedModels, id)
 	} else {
-		known := visibleNames()
-		for i, n := range list {
+		known := provider.VisibilityNames()
+		was := s.Visible[id]
+		keep := make([]string, 0, len(list))
+		for _, n := range list {
 			n = strings.TrimPrefix(provider.CanonicalRef(n), provider.GroupPrefix)
-			if !slices.ContainsFunc(known, func(k string) bool { return strings.EqualFold(k, n) }) {
-				return fmt.Errorf("%s is no family, provider or group (families: %s; owl provider set <id> family=%s makes one)",
-					n, orNone(provider.Families()), n)
+			if slices.ContainsFunc(known, func(k string) bool { return strings.EqualFold(k, n) }) {
+				keep = append(keep, n)
+				continue
 			}
-			list[i] = n
+			// a name the agent's visibility holds already, of a provider
+			// or group deleted since: taken out with a word, not refused,
+			// so the whole list needn't be mended by hand first
+			if slices.ContainsFunc(was, func(k string) bool { return strings.EqualFold(k, n) }) {
+				dropped = append(dropped, n)
+				continue
+			}
+			return fmt.Errorf("%s is no family, provider or group (families: %s; owl provider set <id> family=%s makes one)",
+				n, orNone(provider.Families()), n)
 		}
-		if s.Visible == nil {
-			s.Visible = map[string][]string{}
+		list = keep
+		// every name given was one the list held and has gone: nothing is
+		// left to narrow it to, and an empty list would show the agent
+		// nothing at all, so it is narrowed no more
+		if len(list) == 0 {
+			delete(s.Visible, id)
+		} else {
+			if s.Visible == nil {
+				s.Visible = map[string][]string{}
+			}
+			s.Visible[id] = list
 		}
-		s.Visible[id] = list
 	}
 	if err := settings.Save(s); err != nil {
 		return err
 	}
 	if catalog.Changed != nil {
 		catalog.Changed() // the agents' files follow
+	}
+	if len(dropped) > 0 {
+		fmt.Println(amber.Render("dropped " + strings.Join(dropped, ", ") + ": no such provider or group"))
 	}
 	fmt.Println(green.Render("✓"), "saved")
 	return models([]string{id})

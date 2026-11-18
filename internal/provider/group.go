@@ -1741,6 +1741,17 @@ func DeleteGroup(id string) error {
 		}
 	}
 	found := false
+	// a found group's removal is a hiding, kept to come back with
+	// ShowGroup: what names it stays, and is right again when it does
+	hidden := slices.ContainsFunc(foundGroups(providerEntries()), func(g Group) bool { return g.ID == id })
+	var refs []string
+	if !hidden {
+		for _, e := range groupEntries(providerEntries()) {
+			if e.Group == id {
+				refs = append(refs, e.ID, PublicRef(e.ID))
+			}
+		}
+	}
 	f.Groups = slices.DeleteFunc(f.Groups, func(g Group) bool {
 		if g.ID == id {
 			found = true
@@ -1748,14 +1759,22 @@ func DeleteGroup(id string) error {
 		}
 		return false
 	})
-	if slices.ContainsFunc(foundGroups(providerEntries()), func(g Group) bool { return g.ID == id }) {
+	if hidden {
 		f.Groups = append(f.Groups, Group{ID: id, Hidden: true})
 		found = true
 	}
 	if !found {
 		return fmt.Errorf("no group %q", id)
 	}
-	return store(f)
+	if err := store(f); err != nil {
+		return err
+	}
+	if hidden {
+		return nil
+	}
+	// a visibility or a pick that names it would keep a group added under
+	// its id out of an agent's lists
+	return forgetGroup(id, refs)
 }
 
 // DeleteGroups removes several groups at once, as DeleteGroup does each

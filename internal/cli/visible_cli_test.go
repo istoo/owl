@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/istoo/owl/internal/agent"
@@ -128,4 +131,78 @@ func TestWSLAgentByIDInModelsAndVisible(t *testing.T) {
 			t.Errorf("visible %q: %v", q, err)
 		}
 	}
+}
+
+// owl visible checks the names it is given now, not the ones the agent's
+// visibility holds already: a provider deleted since is dropped with a
+// word rather than refusing the whole list, as the user's list of
+// providers added after their narrowing makes them meet (ark, neolix).
+func TestVisibleDropsStaleNames(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	for _, id := range []string{"relay", "late"} {
+		if err := provider.Save(provider.Provider{ID: id, Name: id, Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"m1"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		provider.Delete("relay")
+		provider.Delete("late")
+	})
+	s := settings.Load()
+	s.Visible = map[string][]string{"codex": {"relay", "ark"}}
+	if err := settings.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	out, err := visibleOut(t, "codex", "relay,late,ark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "dropped ark: no such provider or group") {
+		t.Fatalf("no word of the dropped name: %q", out)
+	}
+	if v := settings.Load().Visible["codex"]; !slices.Equal(v, []string{"relay", "late"}) {
+		t.Fatalf("visibility: %v", v)
+	}
+	// every name left was a stale one: nothing is left to narrow it to, so
+	// the agent is shown every model again, not none
+	s = settings.Load()
+	s.Visible = map[string][]string{"codex": {"ark"}}
+	if err := settings.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := visibleOut(t, "codex", "ark"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := settings.Load().Visible["codex"]; ok {
+		t.Fatalf("nothing left to narrow it to, yet: %v", v)
+	}
+	// a name the visibility never held, and that names nothing, is still
+	// refused
+	if err := visibleCmd([]string{"codex", "nope"}); err == nil || !strings.Contains(err.Error(), "no family, provider or group") {
+		t.Fatalf("a new unknown name: %v", err)
+	}
+}
+
+// visibleOut runs owl visible and gives what it printed.
+func visibleOut(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	var out strings.Builder
+	read := make(chan struct{})
+	go func() {
+		b, _ := io.ReadAll(r)
+		out.Write(b)
+		close(read)
+	}()
+	err = visibleCmd(args)
+	w.Close()
+	os.Stdout = old
+	<-read
+	r.Close()
+	return out.String(), err
 }

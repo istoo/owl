@@ -41,6 +41,19 @@ func VisibleTo(agent string) ([]string, bool) {
 	return slices.Clone(names), ok
 }
 
+// VisibilityNames is every name a visibility can hold: the families, and
+// the providers' and groups' ids.
+func VisibilityNames() []string {
+	names := Families()
+	for _, p := range All() {
+		names = append(names, p.ID)
+	}
+	for _, g := range Groups() {
+		names = append(names, g.ID)
+	}
+	return names
+}
+
 // Shows reports whether a visibility shows e.
 func Shows(names []string, e Entry) bool {
 	for _, n := range e.Names() {

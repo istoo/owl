@@ -1527,6 +1527,11 @@ func Delete(id string) error {
 	if err := store(f); err != nil {
 		return err
 	}
+	// a visibility or a pick that names it would keep a provider added
+	// under its id out of an agent's lists
+	if err := forgetProvider(id); err != nil {
+		return err
+	}
 	// its StepFun sign-in goes with it, not to a provider added later
 	// under the same id
 	return forgetStepFun(id)
