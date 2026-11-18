@@ -661,3 +661,14 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   `fdc87008b` usage-sum-whole 恢复 owl main 的 `≈$0.001` 断言（owl 头部总价带 ≈；合流带进上游的 `$0.001`，87 个宽度各等 3s，每语言 262s），4/4 绿。
   验证：usage-hours + usage-sum-whole chromium 6/6；usage-empty-acts + i18n-keys 两引擎 26/26；U' 树 usage-hours 2/2（确认该文件本机在两树一致，问题只在 owl 空态）。
   已 push 到 fdc87008b；新 GUI full/both run 44270368065、Test run 44270373181（头 fdc87008b），旧 GUI 44260617570 已取消。
+- 2026-11-18 第四轮（完整清单核对，重要修正）：CI 产物（Azure blob）在本机已可下载，用 `gh api repos/istoo/owl/actions/runs/<id>/artifacts`
+  列出、`actions/artifacts/<id>/zip` 下载。U' 基线 run 44171505378 的四份 gui.log 解析出 206 文件 / 1283 个失败测试（与 issue #32 的 206 文件一致）。
+  本分支 full/both run 44270368065（头 fdc87008b）在 4 个分片的 200 分钟上限被 kill（分片日志写到一半，totals 未写，run 结论 failure）：
+  部分是上游自身慢红（view-open-wheel 单条 125s）叠加本分支更多红。对比两份日志（同一解析器，按“test at → ✖”配对）：
+  本分支已跑到的部分 856 红，其中 409 个名字在 U' 同一次 run 里是绿的（chromium 191 / webkit 217），涉及 101 个测试标题、约 95 个文件
+  —— 第三轮以为只剩 13 个已知①，实际远不止；旧 CI run 44217173859 日志一直取不到，这是第一次拿到可核对的清单。
+  本轮已修：`3716c71a9` 网关模式设置页隐藏整个 Alerts 头与列表（合流保留了 owl 逐行隐藏 + 上游新结构的混合），bare-ids.test.cjs 由 5/10 到 10/10。
+  本地确认到的其他①样例：phone-tabs 在 420px 的 tab 栏、segs-press-redraw 的 Settings 重绘按压（owl 的 lightweight 行是开关，上游测试按 `.segs > .opt` 取）、
+  segs-press-redraw 的 “every Settings option…” 两树都红（②，U' 8/25 红）、settings-switch（owl 自己的测试，分支上 `#reduceMotionSegs [role=switch]` 不出现，待查是否 ③）。
+  已触发完整 GUI full/chromium run 44304266649（both 版会再次撞 200 分钟上限，chromium 版是同一套文件、约一半时长，用来拿完整清单）与 Test run 44304271586（头 3716c71a9）。
+  下一步：按 44304266649 的完整清单对 U' 逐文件核对，按根因分批修（设置页重绘/开关、tab 栏、网关模式等），再跑 full/both 收尾。
