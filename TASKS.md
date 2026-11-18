@@ -672,3 +672,13 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   segs-press-redraw 的 “every Settings option…” 两树都红（②，U' 8/25 红）、settings-switch（owl 自己的测试，分支上 `#reduceMotionSegs [role=switch]` 不出现，待查是否 ③）。
   已触发完整 GUI full/chromium run 44304266649（both 版会再次撞 200 分钟上限，chromium 版是同一套文件、约一半时长，用来拿完整清单）与 Test run 44304271586（头 3716c71a9）。
   下一步：按 44304266649 的完整清单对 U' 逐文件核对，按根因分批修（设置页重绘/开关、tab 栏、网关模式等），再跑 full/both 收尾。
+- 2026-11-18 第四轮（完整 chromium 清单）：GUI full/chromium run 44304266649（头 3716c71a9）完整结束（exit 0 是 full 模式的设计）：
+  4 分片合计 14,568 个测试、737 红。与 U' 基线（同解析器）按“文件+测试名”比对：本分支多出的红名 233 个、53 文件。
+  其中标题在 U' 树里也有（真·合流引入①）144 对 / 36 文件；owl 自有标题且 main 里也有 4 对 / 3 文件（owl 测试在分支上回归）；
+  标题是模板或改写、两边源码都搜不到字面 85 对 / 15 文件（多为 owl 自己的多语言测试名拼接，需逐文件核）。
+  最大的①文件：quit-ask-setting 20（已修 `b569e5e0a`，25/25）、segs-press-redraw 16、phone-tabs 11、panel-quota-wallet 10、rotate-figure 10、
+  claude-statusline 5、desktop-model-kept 5、lan-docker 5、panel-usage-models 5、plan-name-fits 5、sidebar 5、account-alias 5。
+  已修根因样例：`3716c71a9` 网关模式 Alerts 区、`b569e5e0a` quit-ask 被 segsOO 覆盖（合流同时留下 settingSwitch 与 segsOO 两行）。
+  Test：run 44304271586 的 gateway job 红在 TestClaudeBridgeSafeguardContextUpdates（10s 内 Claude Code 未答 initialize），
+  与本次改动无关，已开 issue #33（附输出），rerun --failed 后 success；其余 9 个 job 全绿。
+  both 版 full run 在本分支红数下会再撞 200 分钟上限，故用 chromium 版做完整清单；webkit-only 的①尚未完整核对（上一份 both 半程日志里 217 个 webkit 红名不在 U'）。
