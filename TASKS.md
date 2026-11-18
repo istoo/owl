@@ -639,3 +639,13 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   `gateway-mode`、`nav-pages-order` 恢复含 groups 的上游预期。上游树自身红的跟踪 issue 为 #32（206 文件 / 1896 对，
   基线 run 44171505378，#28–#31 在正文引用）。form-align 在 U' 树 5/5、本分支仍 5 红：两树同一 DOM 顺序（Base URL 先 segs 后输入框），
   差异在 CSS 对 segs 行的处理，下一轮按上游为准调 owl 编辑器样式，不改测试。
+- 2026-11-18 第三轮（接手）：已知①13 文件本地 chromium 由 44 红到 0（103/103），另 usage-empty-acts + i18n-keys 15/15。
+  根因与修法：form-align——合流保留了 owl 的 `.modal .editor.framed > .ebody { align-items: start }`，上游是 `first baseline`，
+  按上游改（`d49ccb06f`、`a1e06853d` 两个 CSS 提交）；usage-card-menu-room——上游后来改为“⋯ 始终留 18px 空位”，owl 留下的是旧版条件留位，按上游改；
+  usage-all-fold / usage-focus-steady / usage-model-speed / nav-pages-order——面板页从 panelhome 总览的卡片 › 进、手机/窄屏的 More 取可见的那个、费用标记 owl 的 ≈（测试适配，预期不变）；
+  usage-reads-note——合流丢了空态里的 `readsNote(stats)` 与上游新文案（“会话文件也计入”），补回并把 usage-empty-acts 的期望改成新文案；
+  nav-pages-order 的 Alt+↑/↓ 与拖动——navpages.js 仍写上游的 `navSubsAt`，owl 的 navSubs 没有该缓存，抛 ReferenceError，删除；
+  key-own-balance de 400——非法金额按 Enter 触发重绘，焦点按“第 N 个控件”落到账户的额度按钮，Enter 的默认动作打开了额度菜单盖住余额胶囊，
+  后续点击为越过菜单滚动 95px。改为焦点只回退到同类控件（`e199f5838`，上游测试未改）。
+  提交：`d49ccb06f` `a1e06853d` `e199f5838` `f9128cf53` `ff8f57cae` `11ca62be0` `e60226da0` `aab5f6bb4`。
+  CI：run 44217173859（上一头 4a8fd5519）查询时 GitHub API/443 全部超时，尚未拿到分片日志；推送后按同样方式比 U' 得出完整①清单。
