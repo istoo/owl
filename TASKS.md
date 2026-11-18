@@ -653,3 +653,11 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   修法：对话框滚动时只有读者自己的滚轮/手指（purposeUntil）才重新标记按住点，其余把 cap 设定的 scrollTop 放回（`modalHold.held`，`9bd508aec`）；
   webkit 整文件 5/5、chromium 2/2、13 文件 chromium 103/103，warm-now/key-own-balance 两引擎通过（account-refresh-holds 的 sheet 子测试两引擎都红，
   与 U' 相同，仍属 #31）。gui-shell 文档补了两处：焦点回退同类型控件、对话框 hold 放回非读者滚动。
+- 2026-11-18 第三轮（usage 收尾）：usage 组剩余红全部归位。`66feb8880` 五个测试改走 reader.cjs 的 navTo（owl 420px 把 Usage 收进 More，
+  点 `[data-view="usage"]` 落到隐藏行）；usage-ledger-bytes/search/traffic/upload 全绿，usage-speed-all-models 仍红，但该文件在 U' 树本机复跑 0/11、
+  同一断言（asked for 7d: <lang> 1100/420 columns 7d），属上游自有（#32），只记录。
+  `f7fb0cb6d` 空 Usage 页“最近 {n} 小时没有调用”中的 {n} 未替换：上游 `noCallsIn` 返回模板、调用处 `t(none, { n: periodHours(period) })`，
+  合流取了 owl 的富空态 `t(none)` 丢了参数；usage-hours 由 en/zh 0/2 到 2/2。
+  `fdc87008b` usage-sum-whole 恢复 owl main 的 `≈$0.001` 断言（owl 头部总价带 ≈；合流带进上游的 `$0.001`，87 个宽度各等 3s，每语言 262s），4/4 绿。
+  验证：usage-hours + usage-sum-whole chromium 6/6；usage-empty-acts + i18n-keys 两引擎 26/26；U' 树 usage-hours 2/2（确认该文件本机在两树一致，问题只在 owl 空态）。
+  已 push 到 fdc87008b；新 GUI full/both run 44270368065、Test run 44270373181（头 fdc87008b），旧 GUI 44260617570 已取消。
