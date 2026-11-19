@@ -153,10 +153,13 @@ jobs:
           # none before it in its history: the first tag after the history
           # was squashed into one commit, whose tags are not its ancestors;
           # every commit since that one is the release's
+          # English from each commit's subject, Chinese from its Notes-zh
+          # trailer below <!-- lang:zh -->, so the app shows them in its
+          # own language (scripts/release_notes.py)
           if [ -n "$PREV" ]; then
-            git log --no-merges --pretty='- %s' "$PREV..$TAG" > NOTES.md
+            python3 scripts/release_notes.py "$PREV..$TAG" --out NOTES.md
           else
-            git log --no-merges --pretty='- %s' "$TAG" > NOTES.md
+            python3 scripts/release_notes.py "$TAG" --out NOTES.md
           fi
 
       - name: Feed files
