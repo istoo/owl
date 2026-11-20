@@ -1618,9 +1618,17 @@ function connectRow(a, row, who, { fields, extras, fieldBtn, sw, kind }) {
     else if (menuFromList(a)) row.append(menuButton(a));
     row.append(sw);
   } else if (kind === "empty") {
-    const add = el("button", "ag-add", t("Add a provider"));
-    add.type = "button";
-    add.onclick = (e) => { e.stopPropagation(); addProviderFromAgents(); };
+    // no model source and the Get started card is in sight: the card is the
+    // one place the first action belongs, and every row here says its own
+    // state instead (a screen of the same Add a provider read as six
+    // buttons with nothing to choose). Put the card away and the rows get
+    // their way in back.
+    if (!guideShown()) {
+      const add = el("button", "ag-add", t("Add a provider"));
+      add.type = "button";
+      add.onclick = (e) => { e.stopPropagation(); addProviderFromAgents(); };
+      row.append(add);
+    }
     const off = el("button", "lib-switch ag-conn");
     off.type = "button";
     off.disabled = true;
@@ -1629,7 +1637,7 @@ function connectRow(a, row, who, { fields, extras, fieldBtn, sw, kind }) {
     off.setAttribute("aria-label", t("Connect {agent} to owl", { agent: a.name }));
     off.title = t("Add a key or a subscription first; then there are models to connect");
     off.append(el("i"));
-    row.append(add, off);
+    row.append(off);
   } else if (kind === "link") {
     // its link where the others' model stands, and nothing to switch: the
     // switch's room kept, so the button lines up with the pickers (the
@@ -1837,6 +1845,11 @@ function guideCard(g) {
       else api("window/main?view=providers", {}).catch(statusErr);
     };
     one.body.append(add);
+    // a key or a relay this computer's own agents already use: offered
+    // here, where a new user looks first, before they type one in again
+    discoverLocalProviders();
+    const fresh = providerDiscovery.filter((c) => !discoveryIgnored.has(c.fingerprint));
+    if (fresh.length) import("./guideimport.js").then((m) => m.localEntry(one.body, fresh)).catch(() => {});
   }
   list.append(one.li);
 
@@ -9531,7 +9544,11 @@ function fetchImportIcon(p, head, ed) {
 // cannot put the pre-import hint back. Ignored configurations stay quiet
 // across launches; new or changed ones can still be offered.
 async function discoverLocalProviders(force = false) {
-  if (mode !== "window" || view !== "providers" || providers?.fileError) return;
+  // Providers lists them above its own rows; the first screen (Agents, with
+  // the Get started card up and no model yet) offers the same configurations
+  // in the card's first step, so they are looked for there too
+  const guiding = mode === "window" && view === "agents" && !!guideShown() && !anyOwlModels();
+  if (mode !== "window" || (view !== "providers" && !guiding) || providers?.fileError) return;
   if (!force && (discoveryPending || Date.now() - discoveryAt < 60000)) return;
   const run = ++discoveryRun;
   discoveryPending = true;
@@ -9546,7 +9563,9 @@ async function discoverLocalProviders(force = false) {
     if (run === discoveryRun) {
       discoveryPending = false;
       discoveryAt = Date.now();
-      renderProviderDiscovery();
+      if (view === "providers") renderProviderDiscovery();
+      // the card's first step says what was found, once it is known
+      if (guiding && view === "agents") guideRedraw();
     }
   }
 }
