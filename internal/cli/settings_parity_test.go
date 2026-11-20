@@ -255,6 +255,8 @@ var cliForRoute = map[string]string{
 	"GET /api/sessions/said":               "owl sessions search",
 	"GET /api/sessions/transcript":         "owl sessions show",
 	"POST /api/uninstall":                  "owl uninstall",
+	"GET /api/agents/install":              "owl install",
+	"POST /api/agents/install":             "owl install",
 	"GET /api/usage":                       "owl usage",
 	"GET /api/usage/quotas":                "owl quota",
 	"GET /api/usage/quotas/history":        "owl quota history",
@@ -276,7 +278,6 @@ var notYet = map[string]string{
 	"POST /api/agent-fast":                       A,  // agent_models.go
 	"POST /api/agent-models/{id}":                A,  // agent_models.go
 	"GET /api/agents/cli":                        A,  // api.go
-	"GET /api/agents/install":                    A,  // api.go
 	"GET /api/agents/preview/{id}":               A,  // api.go
 	"GET /api/cli":                               A,  // api.go
 	"GET /api/drift":                             A,  // api.go
@@ -295,6 +296,8 @@ var notYet = map[string]string{
 	"GET /api/state":                             W,  // api.go
 	"POST /api/agents/{action}/{id}":             A,  // api.go
 	"POST /api/agents/arrange":                   W,  // api.go
+	"GET /api/agents/install/run":                W,  // api.go: the window polls the install it started; owl install runs in the foreground and prints as it goes
+	"POST /api/agents/install/cancel":            W,  // api.go: Cancel in the window; Ctrl+C ends owl install
 	"POST /api/agents/here":                      A,  // api.go
 	"POST /api/agents/cli/{id}":                  A,  // api.go
 	"POST /api/agents/disconnect-offline/{id}":   A,  // api.go

@@ -70,7 +70,7 @@ func TestInstallsOnlyMissing(t *testing.T) {
 func TestInstallCommandsWithoutNode(t *testing.T) {
 	nvm := `export NVM_DIR="$HOME/.nvm" && mkdir -p "$NVM_DIR" && ` +
 		`t=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/` + nvmVersion +
-		`/install.sh -o "$t" && bash "$t" && . "$NVM_DIR/nvm.sh" && nvm install --lts && npm install -g `
+		`/install.sh -o "$t" && [ -s "$t" ] && bash "$t" && . "$NVM_DIR/nvm.sh" && nvm install --lts && npm install -g `
 	winget := "winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements; $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); npm.cmd install -g "
 	for _, c := range []struct {
 		id, goos string

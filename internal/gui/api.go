@@ -1471,6 +1471,35 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	mux.HandleFunc("GET /api/agents/install", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, agent.Installs())
 	})
+	// runs one of those commands, asked for by agent and number: never by
+	// the command itself (agent/installrun.go); one at a time
+	mux.HandleFunc("POST /api/agents/install", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct {
+			ID    string `json:"id"`
+			Index int    `json:"index"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&in); err != nil {
+			http.Error(rw, "bad body", http.StatusBadRequest)
+			return
+		}
+		run, err := agent.StartInstall(in.ID, in.Index)
+		switch {
+		case errors.Is(err, agent.ErrInstallBusy):
+			http.Error(rw, err.Error(), http.StatusConflict)
+		case err != nil:
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+		default:
+			writeJSON(rw, run)
+		}
+	})
+	// the install last started: running with the end of its output, or how it ended
+	mux.HandleFunc("GET /api/agents/install/run", func(rw http.ResponseWriter, r *http.Request) {
+		writeJSON(rw, agent.InstallStatus())
+	})
+	mux.HandleFunc("POST /api/agents/install/cancel", func(rw http.ResponseWriter, r *http.Request) {
+		agent.CancelInstall()
+		writeJSON(rw, agent.InstallStatus())
+	})
 	// Aside's explicit offline model write. Normal model changes require its runtime.
 	mux.HandleFunc("POST /api/agents/stage/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		a, err := agent.Find(r.PathValue("id"))

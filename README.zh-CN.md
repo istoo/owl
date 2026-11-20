@@ -65,7 +65,7 @@ curl -fsSL https://github.com/istoo/owl/releases/latest/download/install.sh | sh
 
 打开一个 agent 的「接入」，owl 知道的所有模型就出现在这个 agent 自己的模型选择里；也可以直接在这里选。owl 只改决定模型的那一项设置，文件其余部分连注释和排版都不动。每张卡片显示今天的调用数、token 和花费。**方案** 把整页存成一个名字（Work、Cheap、Review），以后一键切回来。
 
-这个页面还显示每个 CLI 的版本，按它当初的安装方式更新，没装的给出安装命令。
+这个页面还显示每个 CLI 的版本，按它当初的安装方式更新，没装的给出安装命令；点「安装」会先显示确切命令和来源，确认后在本机运行（终端里用 `owl install <agent>`）。
 
 ### 供应商：key、订阅、插件
 
