@@ -345,7 +345,7 @@ func TestClassifierTimeoutSetting(t *testing.T) {
 // the wait is logged as owl stopping, a failure.
 func TestReasoningClassifierAnswersInTheWaitUnset(t *testing.T) {
 	was := classifyUnit
-	classifyUnit = 50 * time.Millisecond // 10 seconds are 500ms
+	classifyUnit = 100 * time.Millisecond // 10 seconds are 1s, and the 15 unset are 1.5s
 	t.Cleanup(func() { classifyUnit = was })
 	s, _, _, c := intented(t, provider.Rule{Use: "b/big", Intent: "refactoring"})
 	c.set("1", 0)
