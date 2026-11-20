@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -53,7 +52,7 @@ func codexBodyLimit() int64 {
 	defer codexLimit.Unlock()
 	if codexLimit.goos != memGOOS || codexLimit.root != memRoot || codexLimit.n == 0 {
 		limit, _ := memLimit(memGOOS, memRoot)
-		if limit <= 0 && memGOOS == runtime.GOOS {
+		if limit <= 0 && memOwn() {
 			limit = proc.MemTotal()
 		}
 		codexLimit.goos, codexLimit.root = memGOOS, memRoot
@@ -163,6 +162,18 @@ func decodedBody(r *http.Request) (io.ReadCloser, error) {
 			return nil, err
 		}
 		rd = &pooledZstd{d}
+	case "dcz":
+		// against a body another owl sent before (remote_dict.go),
+		// only one keptBodyRequests found for this request
+		dict := dictOf(r.Context())
+		if dict == nil {
+			return nil, fmt.Errorf("%w: owl can't read a %q body; send it as identity, gzip or zstd", errBodyEncoding, enc)
+		}
+		d, err := dczReader(r.Body, dict)
+		if err != nil {
+			return nil, err
+		}
+		rd = d
 	case "gzip", "x-gzip":
 		g, err := gzip.NewReader(r.Body)
 		if err != nil {
@@ -283,11 +294,13 @@ const sizedReadFirst = 1 << 20
 // copies them into a slice of their sum, two copies of every body, and an
 // agent sends its whole conversation, ~1 MB, on every turn (yg6888 on X:
 // ~1 GB). Content-Length is not trusted for the allocation: room grows by
-// doubling, from sizedReadFirst, up to what was declared, so an honest body
-// of 1 MB or less is read into one slice of its own size, a larger one into
-// a final slice of its own size, and a body shorter than it said costs at
-// most about twice what it sent. A body longer than it said reads on, as
-// io.ReadAll would. The error is io.ReadAll's: nil at io.EOF.
+// doubling, from sizedReadFirst, up to what was declared, and straight to
+// it once that is within a quarter, so an honest body of 1 MB or less is
+// read into one slice of its own size, and a larger one into a final slice
+// of its own size, with at most 2.6 times the body allocated in all (a
+// doubling that fell just short of it made that 3). A body shorter than it
+// said is held in at most two and a half times what it sent. A body longer
+// than it said reads on, as io.ReadAll would. The error is io.ReadAll's: nil at io.EOF.
 func readSized(r io.Reader, declared int64) ([]byte, error) {
 	if declared <= 0 {
 		return io.ReadAll(r)
@@ -310,13 +323,15 @@ func readSized(r io.Reader, declared int64) ([]byte, error) {
 				}
 				continue
 			}
-			// four times, not twice: a body of tens of MB grew through
-			// five copies of what was read so far (1, 2, 4, 8, 16 MB for
-			// a 24 MB request), each one zeroing and copying its
-			// predecessor; the first MB is still the most trusted before
-			// a byte has come, which is what the doubling was for (see
-			// sizedReadFirst)
-			b = append(make([]byte, 0, min(int64(cap(b))*4, declared)), b...)
+			next := min(int64(cap(b))*2, declared)
+			if declared-next < next/4 {
+				// within a quarter of what it said: a doubling that
+				// fell just short would copy the whole body again for
+				// its last few bytes (a 516 MB turn read into 512 MB,
+				// then all of it into 516 MB, #5281)
+				next = declared
+			}
+			b = append(make([]byte, 0, next), b...)
 		}
 		n, err := r.Read(b[len(b):cap(b)])
 		b = b[:len(b)+n]

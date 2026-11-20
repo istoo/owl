@@ -33,6 +33,7 @@ func TestModelNamedLimitRestsTheModelNotTheKey(t *testing.T) {
 		status     int
 	}{
 		{"groq tpd", groqModelTPD, 429},
+		{"gemini per-model day quota", geminiModelDay, 429},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())

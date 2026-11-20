@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // Claude run with CLAUDE_CONFIG_DIR set to a folder of each account's
-// (~/.claude-work beside the one magpie runs with) is counted too, a session
+// (~/.claude-work beside the one owl runs with) is counted too, a session
 // kept in both folders once, and a folder with no projects/ is no Claude
 // folder (@fivesmallq on X: only one Claude folder's token use counted).
 func TestCallsReadEveryClaudeFolder(t *testing.T) {
@@ -55,9 +56,10 @@ func TestListReadsEveryClaudeFolderOnce(t *testing.T) {
 	}
 }
 
-// Claude folders' files are listed first and the answer made at their total:
-// grown file by file, a pass with a few folders allocated ~1 MB, and the
-// Sessions page runs a pass every 10 s.
+// Every Claude folder's files are listed into one slice made at their
+// size, not grown file by file on every pass (a pass every 10 s while
+// the Sessions page is open), a pass like the last gives the last one's
+// list, and a session kept in two folders is still listed once.
 func TestClaudeFilesMadeAtTheirSize(t *testing.T) {
 	d := setupCalls(t)
 	home, _ := os.UserHomeDir()
@@ -79,7 +81,10 @@ func TestClaudeFilesMadeAtTheirSize(t *testing.T) {
 	if len(fs) != 40 {
 		t.Fatalf("%d files, want 40", len(fs))
 	}
-	if cap(fs) != 41 {
-		t.Fatalf("listed into room for %d, want the 41 listed", cap(fs))
+	if cap(fs) != 40 {
+		t.Fatalf("listed into room for %d, want the 40 kept", cap(fs))
+	}
+	if again := claudeFiles(); unsafe.SliceData(again) != unsafe.SliceData(fs) {
+		t.Fatal("an unchanged pass made its list again")
 	}
 }

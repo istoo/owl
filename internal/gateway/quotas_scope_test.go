@@ -223,8 +223,9 @@ func seedKeptBalances(t *testing.T) {
 
 // #2216 from the other side: a owl with that owl as its provider,
 // through a key let see its quotas, shows the cards of what the key may
-// use beside the key's own; a key told none shows its own card alone, not
-// "nothing read on that owl yet", which a refresh wouldn't change.
+// use beside the key's own; a key told none is answered as held, so it
+// shows its own card and the remote's saying why (yi_time), not "nothing
+// read on that owl yet", which a refresh wouldn't change.
 func TestRemoteOwlShowsHeldKeyItsQuotas(t *testing.T) {
 	fresh(t)
 	t.Setenv("OWL_ADDR", "")
@@ -278,7 +279,8 @@ func TestRemoteOwlShowsHeldKeyItsQuotas(t *testing.T) {
 	if got := shown(secrets[0]); !slices.Equal(got, []string{"office/alpha:two:", "office/~keys:"}) {
 		t.Errorf("a key held to alpha's Two: %v", got)
 	}
-	if got := shown(secrets[1]); !slices.Equal(got, []string{"office/~keys:"}) {
+	if got := shown(secrets[1]); len(got) != 2 || got[0] != "office/~keys:" ||
+		!strings.HasPrefix(got[1], "office::remote owl tells this key none of its quotas") {
 		t.Errorf("a key told no card: %v", got)
 	}
 }

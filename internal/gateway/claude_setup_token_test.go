@@ -65,7 +65,7 @@ func TestClaudeSetupTokenReachesItsOwnRunsOnly(t *testing.T) {
 		"{ printf 'args:'; for a in \"$@\"; do printf '[%s]' \"$a\"; done; echo; echo \"dir:$CLAUDE_CONFIG_DIR\"; echo \"token:$CLAUDE_CODE_OAUTH_TOKEN\"; } >> " + log + "\n" +
 		"cat " + filepath.Join(bin, "out") + "\n"
 	testenv.Program(t, filepath.Join(bin, "claude"), script)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+stdPath())
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "leaked")
 
 	run := func(configDir string) string {

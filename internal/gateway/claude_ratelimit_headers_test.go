@@ -119,7 +119,7 @@ while read -r line; do
   echo '{"type":"result","subtype":"success","is_error":false,"result":"pong"}'
 done
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	provider.ForgetAccounts()
 	t.Cleanup(provider.ForgetAccounts)
 	s := New()

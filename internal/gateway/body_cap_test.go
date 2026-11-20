@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/istoo/owl/internal/provider"
 )
@@ -102,7 +103,6 @@ func underCap(t *testing.T, sent []byte) {
 // again with its oldest screenshots left out, and Codex gets the model's
 // summary.
 func TestCompactionOverByteCapLeavesOutOldImages(t *testing.T) {
-	roomForRace(t)
 	for _, proto := range []provider.Protocol{provider.Responses, provider.Chat} {
 		t.Run(string(proto), func(t *testing.T) {
 			up := &capped{proto: proto, most: commandCodeMost, status: 400, ctype: "application/json", body: commandCodeCap}
@@ -126,7 +126,6 @@ func TestCompactionOverByteCapLeavesOutOldImages(t *testing.T) {
 // A turn of the same session is fitted as its compaction is, and the next
 // turn to the same provider goes fitted at once: the cap is learned.
 func TestTurnOverByteCapLeavesOutOldImages(t *testing.T) {
-	roomForRace(t)
 	fresh(t)
 	up := &capped{proto: provider.Responses, most: commandCodeMost, status: 400, ctype: "application/json", body: commandCodeCap}
 	cappedOn(t, up)
@@ -155,7 +154,6 @@ func TestTurnOverByteCapLeavesOutOldImages(t *testing.T) {
 // byte cap (context_length_exceeded, its cue to compact), with the size
 // and the cap; another client gets a 413 saying so.
 func TestOverByteCapNothingToLeaveOut(t *testing.T) {
-	roomForRace(t)
 	var b strings.Builder
 	b.WriteString(`{"model":"fake/m1","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"all of these"}`)
 	for i := range 20 {
@@ -239,10 +237,42 @@ func TestWithoutOldImagesEachProtocol(t *testing.T) {
 // compaction is asked as text and then made without a model, not sent
 // again into the compaction guard's hold.
 func TestCompactionOverByteCapEveryTime(t *testing.T) {
-	roomForRace(t)
+	compactionOverByteCapEveryTime(t)
+	t.Run("codex", func(t *testing.T) {
+		// with Codex's own User-Agent, whose turns are told a 413 in the
+		// stream (compactsInStream): the summary ask still gets its status,
+		// or every Codex compaction refused so failed 502 (#4862)
+		compactionOverByteCapEveryTime(t, "User-Agent", codexUA)
+	})
+}
+
+// The same, with the fitting tries past keepHeldAfter, as a 40 MB upload
+// asked four times is on a slow uplink, and as each try is under -race
+// (#4862): the summary ask's recorder was sent the held stream's 200 and
+// a keepalive, the last 413 then came as the stream's error, and the
+// compaction failed 502 "so there is no summary" instead of being made
+// without a model.
+func TestCompactionOverByteCapSlowFitting(t *testing.T) {
+	k, w := keepHeldAfter, watchEvery
+	keepHeldAfter, watchEvery = time.Millisecond, time.Millisecond
+	t.Cleanup(func() { keepHeldAfter, watchEvery = k, w })
+	compactionOverByteCapEveryTime(t)
+	t.Run("codex", func(t *testing.T) { compactionOverByteCapEveryTime(t, "User-Agent", codexUA) })
+}
+
+func compactionOverByteCapEveryTime(t *testing.T, header ...string) {
+	t.Helper()
 	up := &capped{proto: provider.Responses, most: 0, status: 400, ctype: "application/json", body: commandCodeCap}
 	cappedOn(t, up)
-	code, body := codexPost(t, screenshotSession(true))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(screenshotSession(true)))
+	req.Header.Set("Authorization", "Bearer chatgpt-token")
+	req.Header.Set("chatgpt-account-id", "acct-1")
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+	New().Handler().ServeHTTP(rec, req)
+	code, body := rec.Code, rec.Body.String()
 	if code != 200 {
 		t.Fatalf("Codex's compaction failed: %d %.400s", code, body)
 	}

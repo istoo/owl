@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,11 +23,13 @@ var upstreamTLS *tls.Config
 // upstreamTransport is the gateway's transport to the vendors: a provider
 // with a proxy of its own is sent through a transport kept for that proxy
 // (#237), and the ChatGPT backend over HTTP/1.1 (netproxy.HTTP1), a
-// streamed turn to it over its WebSocket (codexSocket). Every
+// streamed turn to it over its WebSocket (codexSocket), as one to a
+// Responses provider whose Socket is set is (#5781). Every
 // other vendor is spoken HTTP/2 to wherever it offers it. A large body
 // whose connection was dropped for a lost ping goes again through a
 // transport that does not ping (#3909), and so do the large bodies after
-// it for a while (slowFor). A request that
+// it for a while (slowFor). A connection a vendor refused a request on
+// for where it comes from is not used again (regionFresh). A request that
 // finds its kept-alive connection dropped is sent again on a new one
 // (replayable). A vendor is given upstreamHeaderWait to begin answering,
 // but for a drawing, which an images API answers only once it has drawn:
@@ -34,12 +37,12 @@ var upstreamTLS *tls.Config
 // Image generation timeout gives it (drawWithin), up to 60 minutes.
 func upstreamTransport() http.RoundTripper {
 	return drawsApart{
-		any: codexSocket{replayable{netproxy.Dispatch(vendorTransport(upstreamHeaderWait))}},
+		any: codexSocket{replayable{freshAfterRegion(stallGuard{netproxy.Dispatch(vendorTransport(upstreamHeaderWait))})}},
 		large: newUploadLanes(uploadLaneCount, func() http.RoundTripper {
-			return codexSocket{replayable{netproxy.Dispatch(vendorTransport(upstreamHeaderWait))}}
+			return codexSocket{replayable{freshAfterRegion(stallGuard{netproxy.Dispatch(vendorTransport(upstreamHeaderWait))})}}
 		}),
-		draws:   replayable{netproxy.Dispatch(vendorTransport(0))},
-		uploads: codexSocket{replayable{netproxy.Dispatch(uploadTransport(upstreamHeaderWait))}},
+		draws:   replayable{freshAfterRegion(stallGuard{netproxy.Dispatch(vendorTransport(0))})},
+		uploads: codexSocket{replayable{freshAfterRegion(stallGuard{netproxy.Dispatch(uploadTransport(upstreamHeaderWait))})}},
 		slow:    new(atomic.Int64),
 	}
 }
@@ -119,16 +122,23 @@ var uploadStall = time.Minute
 
 // vendorTransport is a transport to the vendors that gives one wait to
 // begin answering, none for 0: the request's context then bounds it.
+// A silent HTTP/2 connection is pinged and dropped (#2843), by a health
+// check that doesn't ping a vendor still thinking into ending the
+// connection (netproxy.CalmHTTP2).
 func vendorTransport(wait time.Duration) *http.Transport {
+	t := plainVendorTransport(wait)
+	netproxy.CalmHTTP2(t)
+	return t
+}
+
+func plainVendorTransport(wait time.Duration) *http.Transport {
 	return &http.Transport{
 		Proxy:                 netproxy.Func,
 		ResponseHeaderTimeout: wait,
 		MaxIdleConnsPerHost:   8,
 		IdleConnTimeout:       90 * time.Second,
 		ForceAttemptHTTP2:     true,
-		TLSClientConfig:       upstreamTLS.Clone(), // its own: a transport adds h2 to it on first use
-		// a silent HTTP/2 connection is pinged and dropped (#2843)
-		HTTP2: netproxy.HTTP2Health(),
+		TLSClientConfig:       upstreamTLS,
 	}
 }
 
@@ -140,7 +150,7 @@ func vendorTransport(wait time.Duration) *http.Transport {
 // write that moves no bytes ends the connection (WriteByteTimeout), and a
 // vendor that never begins answering is ended by the response header wait.
 func uploadTransport(wait time.Duration) *http.Transport {
-	t := vendorTransport(wait)
+	t := plainVendorTransport(wait)
 	t.HTTP2 = &http.HTTP2Config{WriteByteTimeout: uploadStall}
 	return t
 }
@@ -152,9 +162,9 @@ func uploading(r *http.Request) bool {
 		(r.ContentLength < 0 || r.ContentLength >= uploadBytes)
 }
 
-// drawsApart sends a drawing's request (drawWaitOf) through draws, a
-// large body (uploading) through large, or on an uplink found slow
-// through uploads, and every other through any.
+// drawsApart sends a drawing's request (drawWaitOf) through draws, every
+// other through any, but for a large body (uploading) on an uplink found
+// slow: through uploads.
 //
 // The ping stays on a large body by default, as a silent connection
 // (#2843) takes a body that fits its send buffer and answers nothing for
@@ -226,11 +236,12 @@ type replayable struct{ http.RoundTripper }
 // one: "write tcp …: use of closed network connection". The vendor never
 // had the whole request, so it is sent again on another new connection,
 // after a moment, up to unsentAgain times (dealyang_ on X: a Codex turn through a TUN proxy's
-// fake IP, 198.18.0.17, failed with it on every reconnect). Go's read loop
-// may see that close before the write loop does, and say EOF instead; a
-// body the write loop didn't read whole is no more an answer then (short
-// below). Still closed, the error says why (errClosedUnsent), and the
-// routing rests nobody for it (failProxy).
+// fake IP, 198.18.0.17, failed with it on every reconnect). When the
+// reader saw the close before the write began, as on a busy machine, Go
+// says only "EOF"; that too goes again, as long as the request's write
+// had not finished (#5519). Still closed,
+// the error says why (errClosedUnsent), and the routing rests nobody for
+// it (failProxy).
 func (t replayable) RoundTrip(req *http.Request) (*http.Response, error) {
 	_, marked := req.Header["Idempotency-Key"]
 	if _, ok := req.Header["X-Idempotency-Key"]; ok {
@@ -244,29 +255,19 @@ func (t replayable) RoundTrip(req *http.Request) (*http.Response, error) {
 		r.Header["X-Idempotency-Key"] = nil
 	}
 	for n := 0; ; n++ {
-		var fresh, h2 atomic.Bool
-		var sent atomic.Int64 // of the body, as the write loop read it
+		var fresh, h2, wrote atomic.Bool
 		trace := &httptrace.ClientTrace{GotConn: func(i httptrace.GotConnInfo) {
 			fresh.Store(!i.Reused)
 			if tc, ok := i.Conn.(interface{ ConnectionState() tls.ConnectionState }); ok {
 				h2.Store(tc.ConnectionState().NegotiatedProtocol == "h2")
 			}
+		}, WroteRequest: func(i httptrace.WroteRequestInfo) {
+			wrote.Store(i.Err == nil)
 		}}
 		try := r.WithContext(httptrace.WithClientTrace(r.Context(), trace))
-		wrapped := false
-		if b := r.Body; b != nil && b != http.NoBody && r.ContentLength > 0 {
-			try.Body = &countedBody{rc: b, n: &sent}
-			wrapped = true
-		}
 		res, err := t.RoundTripper.RoundTrip(try)
-		// A body the write loop didn't read whole was not written whole, so
-		// the far side's close is no answer to it — Go reports that close
-		// from whichever end it sees first, the write's ("broken pipe") or
-		// the read's (an EOF while the body was still going), and only the
-		// first was taken for it until a slow body made the read end win.
-		short := wrapped && sent.Load() < r.ContentLength
 		if err == nil || !fresh.Load() || h2.Load() || req.Context().Err() != nil ||
-			!(closedBeforeSent(err) || (short && closedByPeer(err))) {
+			!closedBeforeSent(err) && (wrote.Load() || !endedUnwritten(err)) {
 			return res, err
 		}
 		if n >= len(unsentAgain) || (r.Body != nil && r.Body != http.NoBody && r.GetBody == nil) {
@@ -293,28 +294,6 @@ func (t replayable) RoundTrip(req *http.Request) (*http.Response, error) {
 // connection was closed before the whole of it was sent.
 var unsentAgain = []time.Duration{250 * time.Millisecond, time.Second}
 
-// countedBody is a request's body, counted as the write loop reads it: how
-// much of it went, whatever the far side did with it.
-type countedBody struct {
-	rc io.ReadCloser
-	n  *atomic.Int64
-}
-
-func (b *countedBody) Read(p []byte) (int, error) {
-	n, err := b.rc.Read(p)
-	b.n.Add(int64(n))
-	return n, err
-}
-
-func (b *countedBody) Close() error { return b.rc.Close() }
-
-// closedByPeer says the far side ended the connection: the read's end, a
-// reset, or a write that found it closed (closedBeforeSent).
-func closedByPeer(err error) bool {
-	return closedBeforeSent(err) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
-		strings.Contains(err.Error(), "connection reset by peer")
-}
-
 // closedBeforeSent says err is Go's HTTP/1.1 transport failing to write
 // the request: the far side had closed the connection, so the write found
 // it closed by the reader ("use of closed network connection") or broken
@@ -325,12 +304,27 @@ func closedByPeer(err error) bool {
 // "nothing written" doesn't hold over TLS: a server had read 1186 bytes
 // of a request Go called unwritten.) A TLS connection the reader closed
 // first fails the write with a bare net.ErrClosed; the reader's own end is
-// "EOF" or a read error. A close the reader saw before the write began is
-// Go's errServerClosedIdle (seen on Windows).
+// "EOF" or a read error, read by endedUnwritten. A close the reader saw
+// before the request was handed to the connection is Go's
+// errServerClosedIdle (seen on Windows).
 func closedBeforeSent(err error) bool {
 	var op *net.OpError
 	return errors.As(err, &op) && op.Op == "write" || errors.Is(err, net.ErrClosed) ||
 		strings.Contains(err.Error(), "http: server closed idle connection")
+}
+
+// endedUnwritten says err is the reader's end of a connection the far
+// side closed — "EOF", or a read error such as a reset — which counts as
+// closed before sent only while the request's write had not finished
+// (no WroteRequest without an error): on a busy machine Go's write
+// goroutine may not have run yet when a proxy's close right after the
+// handshake arrives, so the reader sees the end first and Go returns a
+// bare "EOF", not a write error (#5519). Once the whole request was
+// written, the same end may follow a vendor that read and acted on it,
+// and it is never sent again here.
+func endedUnwritten(err error) bool {
+	var op *net.OpError
+	return errors.Is(err, io.EOF) || errors.As(err, &op) && op.Op == "read" && !op.Timeout()
 }
 
 // errClosedUnsent is a request's error once every new connection it was
@@ -349,3 +343,88 @@ func (e errClosedUnsent) Unwrap() error { return e.err }
 
 // closedUnsentWords mark errClosedUnsent in a failure's message.
 const closedUnsentWords = "closed before sent"
+
+// regionFresh drops the kept-alive connections of next once a vendor has
+// refused a request on one of them for where it comes from (regionWords):
+// Google's 400 "User location is not supported for the API use." is
+// decided per connection by the edge it reached, and the next request on
+// that connection, whatever account it carries, was refused the same,
+// while a new connection, to another edge, was answered (#5182, ggdayup:
+// every Antigravity account of a pool refused within 10s on one reused
+// connection, a new one answered 12s later). The refused reply's body is
+// watched as it is read; when it ends, the idle connections are closed,
+// so the try after it dials a new one. A connection another request is
+// still reading at that moment is left to finish, and dropped before the
+// next request through next instead (pending), if it is idle by then.
+type regionFresh struct {
+	next    http.RoundTripper
+	pending *atomic.Bool
+}
+
+func freshAfterRegion(next http.RoundTripper) regionFresh {
+	return regionFresh{next: next, pending: new(atomic.Bool)}
+}
+
+func (t regionFresh) RoundTrip(r *http.Request) (*http.Response, error) {
+	if t.pending.CompareAndSwap(true, false) {
+		t.CloseIdleConnections()
+	}
+	res, err := t.next.RoundTrip(r)
+	if err != nil || res.StatusCode < 400 || res.Body == nil || res.Body == http.NoBody {
+		return res, err
+	}
+	res.Body = &regionWatch{ReadCloser: res.Body, t: t}
+	return res, nil
+}
+
+// CloseIdleConnections closes next's, where it keeps any.
+func (t regionFresh) CloseIdleConnections() {
+	if c, ok := t.next.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}
+
+// regionWatchBytes is how much of a failed reply's body regionWatch keeps
+// to read the refusal's words from: an error's words come first.
+const regionWatchBytes = 8 << 10
+
+// regionWatch is a failed reply's body, its first bytes kept: once it is
+// read to its end or closed, a region refusal in them has the
+// connections dropped (regionFresh).
+type regionWatch struct {
+	io.ReadCloser
+	t    regionFresh
+	mu   sync.Mutex
+	head []byte
+	done bool
+}
+
+func (b *regionWatch) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if room := regionWatchBytes - len(b.head); room > 0 && n > 0 {
+		b.head = append(b.head, p[:min(n, room)]...)
+	}
+	if err == io.EOF && !b.done && regionWords.Match(wordsOf(b.head)) {
+		// HTTP/1.1 puts the connection back as the body ends, before any
+		// Close: the next request through the transport finds it gone
+		b.t.pending.Store(true)
+	}
+	return n, err
+}
+
+func (b *regionWatch) Close() error {
+	err := b.ReadCloser.Close()
+	b.mu.Lock()
+	refused := !b.done && regionWords.Match(wordsOf(b.head))
+	b.done = true
+	b.mu.Unlock()
+	if refused {
+		// the stream is over once Close returns: its connection is idle,
+		// unless another request is on it
+		b.t.pending.Store(true)
+		b.t.CloseIdleConnections()
+	}
+	return err
+}

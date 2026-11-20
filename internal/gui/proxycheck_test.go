@@ -92,6 +92,11 @@ func TestProxyCheckSaysTheProxyTookItUnderOneExit(t *testing.T) {
 // "through" it went direct, and Proxied says so.
 func TestProxyCheckSaysAProxyPassedBy(t *testing.T) {
 	client, proxyURL, asked := proxyCheckRig(t)
+	// the machine's own proxies aren't in this test: ALL_PROXY is the one
+	// it names, and NO_PROXY is what passes it by
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		t.Setenv(k, "")
+	}
 	t.Setenv("ALL_PROXY", proxyURL)
 	t.Setenv("NO_PROXY", "trace.example.invalid")
 	ctx := context.Background()

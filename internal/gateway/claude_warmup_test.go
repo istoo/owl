@@ -32,7 +32,7 @@ func fakeWarmClaude(t *testing.T, out string, code int) string {
 		"echo \"errors:$DISABLE_ERROR_REPORTING\"; echo \"updater:$DISABLE_AUTOUPDATER\"; } > " + log + "\n" +
 		"echo '" + out + "'\nexit " + string(rune('0'+code)) + "\n"
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:3425")
 	return log
 }
@@ -112,7 +112,7 @@ func TestClaudeUsageRunsClaudeCode(t *testing.T) {
 		"{ printf 'args:'; for a in \"$@\"; do printf '[%s]' \"$a\"; done; echo; echo \"token:$CLAUDE_CODE_OAUTH_TOKEN\"; } > " + log + "\n" +
 		"cat " + out + "\n"
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "leaked")
 	got, err := claudeUsage(context.Background(), "")
 	if err != nil || got != text {
@@ -123,6 +123,36 @@ func TestClaudeUsageRunsClaudeCode(t *testing.T) {
 		`[--settings][{"disableDeepLinkRegistration":"disable"}]`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("run lacks %q:\n%s", want, b)
+		}
+	}
+}
+
+// Claude Code's -p /usage prints no figure for extra usage (usage
+// credits), but its verbose json carries a usage_report with the month's cap
+// and spend (Shinji_Zl on X). The read adds them as a line for the card, and
+// adds none for an account with it off, no cap, or a Claude Code that sends
+// no report.
+func TestClaudeUsageCredits(t *testing.T) {
+	text := "Current session: 13% used · resets 4pm (Asia/Shanghai)"
+	msgs := func(extra string) string {
+		report := ``
+		if extra != "" {
+			report = `,"usage_report":{"rate_limits":{"limits":null,"extra_usage":` + extra + `}}`
+		}
+		return `[{"type":"system","subtype":"init"},{"type":"assistant"` + report + `},{"type":"result","is_error":false,"result":"` + text + `"}]`
+	}
+	for _, c := range []struct{ name, extra, want string }{
+		{"on", `{"is_enabled":true,"monthly_limit":50000,"used_credits":27140,"utilization":54,"currency":"USD"}`, "\nExtra usage: 271.40 / 500.00 USD spent"},
+		{"unused", `{"is_enabled":true,"monthly_limit":2000,"used_credits":null,"utilization":null,"currency":"USD"}`, "\nExtra usage: 0.00 / 20.00 USD spent"},
+		{"off", `{"is_enabled":false,"monthly_limit":null,"used_credits":null,"utilization":null,"currency":null}`, ""},
+		{"no cap", `{"is_enabled":true,"monthly_limit":null,"used_credits":100,"utilization":null,"currency":"USD"}`, ""},
+		{"no report", "", ""},
+	} {
+		fakeWarmClaude(t, msgs(c.extra), 0)
+		got, err := claudeUsage(context.Background(), "")
+		want := text + c.want
+		if err != nil || got != want {
+			t.Errorf("%s: usage %q %v, want %q", c.name, got, err, want)
 		}
 	}
 }
@@ -224,7 +254,7 @@ func TestClaudeRunEndsWhatItStarted(t *testing.T) {
 			dir := t.TempDir()
 			pidFile := filepath.Join(dir, "child")
 			testenv.Program(t, filepath.Join(dir, "claude"), "#!/bin/sh\nsleep 300 </dev/null >/dev/null 2>&1 &\necho $! > "+pidFile+"\nsleep 300\n")
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 			var pid int
 			t.Cleanup(func() {
 				if pid > 0 {

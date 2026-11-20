@@ -1,0 +1,114 @@
+# Upstream sync
+
+owl is a fork of yetone/magpie. This file records the upstream tree the
+current history was last synced to, so the next sync can start from it
+instead of rebuilding the whole naming transform by hand.
+
+## Last sync
+
+    upstream repository  https://github.com/yetone/magpie
+    upstream commit      4f94b8a829090236be37d3687e76e16b5113eec0
+    upstream date        2026-11-17
+    owl commit           1bf8fec80 (the tree merged into upstream's)
+    previous merge point e17b6cefc7b25c19d1e522f9e8a9626bf68912d9
+                         (2026-11-04, the last commit both histories shared
+                         before owl's main was squashed)
+
+## How the merge was made
+
+owl's main was squashed on 2026-11-11, so it shares no ancestor with
+upstream and `git merge upstream/main` cannot be used. The merge was a
+three-way merge over transformed trees:
+
+    B' = T(e17b6cefc)                orphan commit
+    U' = T(upstream/main)            parent B'
+    O' = owl's tree at 1bf8fec80     parent B'
+    merge U' into O'                 conflicts resolved by ownership
+
+T is `scripts/upstream-sync/rename.py`. It renders an upstream tree in
+owl's naming: `github.com/yetone/magpie` → `github.com/istoo/owl`,
+`MAGPIE_` → `OWL_`, `Magpie`/`magpie` → `Owl`/`owl`, path components
+included, and re-runs gofmt because a shorter struct field realigns the
+fields after it.
+
+What T leaves alone (the compatibility boundary, not owl's name to change):
+
+    @magpie-community/...      the community plugins' npm scope
+    magpie-community/...       the community plugins repository
+    X-Magpie-*, x-magpie-*     gateway request headers
+    json:"magpie"              a plugin package.json's manifest key
+    "magpie": ...              that key in JSON text, and manifest access
+                               (`?.magpie?`, `["magpie"]`) in plugin code
+    magpie_label, magpie_by, magpie_price, magpie_via,
+    magpie_cache_unknown, magpie_deferred
+                               old JSON fields the catalog and gateway read
+    "magpie":"routing-group"   a shared routing group's format marker
+    usemagpie                  the upstream site; owl removes those calls
+                               itself, and leaving them visible is the point
+
+Calibration: T(e17b6cefc) against owl's 68bbe1383 leaves 848 differing
+files, every remaining `magpie` token in T's tree is one of the exceptions
+above, and the files containing one are the plugin subsystem's. The
+remaining differences are owl's own work (UI, memory, backports), not
+missed or wrong renames.
+
+What the 2026-11-17 merge had to fix by hand, and the next one will meet
+again:
+
+    fixed-column help text  a rename shortens "magpie" to "owl" by three,
+                            and every table aligned to the old width
+                            (internal/cli/model_cli.go's modelUsage and its
+                            spec and api siblings) is three columns off.
+                            Realign them to the column owl's name gives.
+    com.yetone.magpie.*     the transform leaves com.yetone, so the new
+                            ccswitch scheme came out com.yetone.owl.*.
+                            Owl's are com.istoo.owl.* (Info.plist, daemon).
+    lengths                 upstream code that writes over an id "at one
+                            length" (Codex's model_provider, openai and
+                            magpie both six) is wrong for owl's three:
+                            relabel pads or rewrites a whole file instead.
+    the word, not letters   a guard that greps for the project's name finds
+                            the letters inside ordinary words once the name
+                            is three letters ("knowledge" has owl). Match a
+                            word boundary, and check every i18n key and test
+                            comment that names the old project.
+    owl's split files       owl moved parts of app.js out (drawEditor to
+                            editor.js, usage packing to
+                            plugins/usage/page.js). A merge that keeps owl's
+                            side of that region also keeps its older copy
+                            and silently drops upstream's new blocks. Merge
+                            the moved function against B' and U' as its own
+                            three-way diff (editor.js needed 75 lines back),
+                            and delete the same declarations from app.js.
+    two of one thing        both sides' implementations can end up beside
+                            each other: app.js and page.js each declared
+                            usagePacked (the page's script then threw
+                            "already declared" and drew nothing), and
+                            decide_group.go masked a decision twice. A page
+                            that loads or a package that builds is no proof:
+                            run the GUI file and the package's tests.
+    owl's fast paths        upstream rewrites a function owl had optimized
+                            (modelOf's strings.Clone, withFields' top-level
+                            reader, uploadLanes, redactionWanted's
+                            fail-closed read). Take owl's version back and
+                            keep upstream's new behaviour around it.
+
+## The next sync
+
+1. `git fetch upstream`, record the new sha here.
+2. Unpack `git archive <sha>` and run `rename.py` over it.
+3. Build B' as `T(<the sha this file last names>)` if it is not in history:
+   it was written down here only, so keep the transformed tree of the
+   previous upstream commit, or redo the calibration against a known owl
+   commit.
+4. Merge `T(<new sha>)` into owl's tree with B' as the base.
+5. Resolve conflicts: owl's own files win (its release chain, README,
+   .github/workflows, build/, docs/owl-design.md, TASKS.md, the tray
+   panel, the memory work); everything else takes upstream.
+6. Read the hand fixes above first; grep the merged tree for
+   "usemagpie" in runtime code, `com.yetone.owl`, help tables whose
+   continuations sit at an older column, and `\bowl\b` in guards that
+   meant the old name. Diff every file owl had split out (editor.js,
+   plugins/usage/page.js) against B' and U', and run a page that loads
+   app.js before trusting a merge: a repeated top-level `let` throws at
+   once and nothing else on the page runs.

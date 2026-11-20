@@ -41,7 +41,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -50,7 +49,6 @@ import (
 	"github.com/istoo/owl/internal/appdir"
 	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/edit"
-	"github.com/istoo/owl/internal/proc"
 )
 
 // hanakoProbe gives up quickly, as OpenHanako's own liveness probe does:
@@ -382,21 +380,11 @@ func hanakoRemove(dir string) error {
 // /opt/HanaAgent on Linux. An AppImage of it isn't found.
 var hanakoApp = desktopApp{id: "com.hanako.app", names: []string{"HanaAgent.app"},
 	win: filepath.Join("HanaAgent", "HanaAgent.exe"), guid: "3802e236-0c74-5d5f-a339-e8fa54299135",
-	linux: "/opt/HanaAgent"}
+	onLinux: &linuxApp{dirs: []string{"/opt/HanaAgent"}, exe: "hanako", name: "HanaAgent"}}
 
 // hanakoInstalled reports whether OpenHanako's app is installed here; a
 // var so a test can say.
-var hanakoInstalled = func() bool {
-	if hanakoApp.installed() {
-		return true
-	}
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		return false
-	}
-	// owl's desktopApp reads one Linux folder; the package's executable
-	// is what tells it is installed
-	return isFile(filepath.Join(proc.SystemDirs("/opt/HanaAgent")[0], "hanako"))
-}
+var hanakoInstalled = hanakoApp.installed
 
 // errSealed says why owl can't do what it was asked to with OpenHanako
 // closed, and what will.

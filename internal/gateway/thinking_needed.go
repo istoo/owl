@@ -1,8 +1,7 @@
 package gateway
 
 import (
-	"regexp"
-
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/tidwall/gjson"
 )
@@ -15,7 +14,7 @@ import (
 // no thinking) with `thinking.type must be "enabled"` (cybercaius on
 // Discord, v0.1.1862, his own 天翼云 provider). Read off the reply, not
 // the provider: any upstream that says it is asked again thinking.
-var thinkingNeededRefusal = regexp.MustCompile(`(?i)thinking[._ ]type\W+(?:must|should|has to) be\W+enabled\b`)
+var thinkingNeededRefusal = lazyre.New(`(?i)thinking[._ ]type\W+(?:must|should|has to) be\W+enabled\b`)
 
 // thinkingNeeded is how unfit remembers an upstream that takes model only
 // with thinking enabled (thinkingNeededRefusal).

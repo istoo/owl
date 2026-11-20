@@ -77,7 +77,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	return log
 }
 

@@ -4,7 +4,8 @@
 // a FetchSession whose fetch is the real one's, the request, connection
 // and TLS untouched, and copies the reply of each of the main turn's
 // requests (x-claude-code-request-class: main), as it streams, to the
-// file OWL_CLAUDE_TAP names: a JSON line an event. Claude Code reads
+// file OWL_CLAUDE_TAP names: a JSON line an event, and the reply's
+// anthropic-ratelimit-unified-* headers as it opens. Claude Code reads
 // its own copy of the stream as before.
 //
 // OWL_CLAUDE_GUARD names a file of the bridge's holding the
@@ -59,6 +60,8 @@
   }
   let streams = 0;
   let live = false;
+  // StartValueMax (tap.go)
+  const envValueMax = 16384;
   // body is a request's body with the guard file's safeguards and effort:
   // the same bytes when they are what it has, or when it has none to
   // replace (a request Claude Code builds without the extra body). The
@@ -98,8 +101,13 @@
     }
     let changed = false;
     if (safeguards) {
+      // the variable is set to a file that fits what a program is
+      // started with (envValueMax): whatever Claude Code runs inherits
+      // it, and Linux refuses to start one with a variable over 128KiB
+      // (#6848). A larger file's safeguards are put in each request
+      // here, over the variable's stand-in
       const env = effort === undefined ? text : JSON.stringify(extra);
-      if (process.env.CLAUDE_CODE_EXTRA_BODY !== env) process.env.CLAUDE_CODE_EXTRA_BODY = env;
+      if (env.length <= envValueMax && process.env.CLAUDE_CODE_EXTRA_BODY !== env) process.env.CLAUDE_CODE_EXTRA_BODY = env;
       if (JSON.stringify(req.safeguards) !== JSON.stringify(extra.safeguards)) {
         req.safeguards = extra.safeguards;
         changed = true;
@@ -172,7 +180,13 @@
           // told before Claude Code has the reply, so the helper knows a
           // stream is coming before any of its messages
           const s = ++streams;
-          put({ s, open: true });
+          // with the account's allowance as Anthropic tells it on the
+          // reply, which -p tells in its rate_limit_event
+          const h = {};
+          res.headers.forEach((v, k) => {
+            if (/^anthropic-ratelimit-unified-/i.test(k)) h[k.toLowerCase()] = v;
+          });
+          put(Object.keys(h).length ? { s, open: true, h } : { s, open: true });
           read(s, mine);
         }
       } catch {}

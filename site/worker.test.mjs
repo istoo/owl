@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { served, goTarget, sponsorTarget } from "./worker.js";
+import { bucket, sha } from "./r2stub.mjs";
 
 const EN = "### Features\n\n- One thing (#1)\n\n### Install\n\nDownload it.";
 const ZH = "### 新功能\n\n- 一件事 (#1)";
@@ -23,13 +24,17 @@ globalThis.caches = {
 // pagesDown for github.com itself failing too. seen keeps each API ask's
 // headers.
 let apiDown = false, pagesDown = false;
+// downloadsDown: github.com's download address answering 504 while the
+// API serves the same files (2026-11-08)
+let downloadsDown = false;
 const seen = [];
+const SIG64 = "OT7nCVnsnONdQsBC4rfHcpqouwWLfavkbv3FCdPOBjGTBdHTefDVHQdZe8w1T5nOwlvA/S5a2EiI9zC9yOOcBQ==";
 const FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
     <id>tag:github.com,2008:Repository/1/v0.1.3</id>
     <updated>2026-10-03T08:54:51Z</updated>
-    <link rel="alternate" type="text/html" href="https://github.com/istoo/owl/releases/tag/v0.1.3"/>
+    <link rel="alternate" type="text/html" href="https://github.com/istoo/owl-releases/releases/tag/v0.1.3"/>
     <title>owl v0.1.3</title>
     <content type="html">&lt;h3&gt;Features&lt;/h3&gt;
 &lt;ul&gt;
@@ -45,7 +50,7 @@ const FEED = `<?xml version="1.0" encoding="UTF-8"?>
   <entry>
     <id>tag:github.com,2008:Repository/1/v0.1.2</id>
     <updated>2026-10-02T08:54:51Z</updated>
-    <link rel="alternate" type="text/html" href="https://github.com/istoo/owl/releases/tag/v0.1.2"/>
+    <link rel="alternate" type="text/html" href="https://github.com/istoo/owl-releases/releases/tag/v0.1.2"/>
     <content type="html">&lt;h3&gt;Fixes&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;Older, &lt;strong&gt;English&lt;/strong&gt; alone, &lt;code&gt;a &amp;amp;lt; b&lt;/code&gt; &lt;a href=&quot;https://x.dev/&quot;&gt;link&lt;/a&gt;&lt;/li&gt;
@@ -69,20 +74,33 @@ globalThis.fetch = async (u, init = {}) => {
   if (u.startsWith("https://api.github.com/")) {
     seen.push(new Headers(init.headers));
     if (apiDown) return new Response('{"message":"API rate limit exceeded"}', { status: 403 });
+    const asset = u.match(/\/releases\/assets\/(\d+)$/);
+    if (asset) {
+      if (new Headers(init.headers).get("Accept") !== "application/octet-stream") return Response.json({ id: +asset[1] });
+      return new Response(null, { status: 302, headers: { Location: `https://release-assets.githubusercontent.com/a/${asset[1]}?sig=1` } });
+    }
   } else if (pagesDown) return new Response("unicorn", { status: 503 });
-  if (u === "https://github.com/istoo/owl/releases/latest")
-    return new Response(null, { status: 302, headers: { Location: "https://github.com/istoo/owl/releases/tag/v0.1.3" } });
+  if (downloadsDown && u.includes("/releases/download/")) return new Response("", { status: 504 });
+  if (u === "https://release-assets.githubusercontent.com/a/2?sig=1") return new Response("abc  owl-linux-amd64\n");
+  if (u === "https://github.com/istoo/owl-releases/releases/latest")
+    return new Response(null, { status: 302, headers: { Location: "https://github.com/istoo/owl-releases/releases/tag/v0.1.3" } });
   if (u.endsWith("/releases.atom")) return new Response(FEED);
-  const gh = (tag) => ({ tag_name: tag, body: BODIES[tag], html_url: "https://github.com/r/" + tag, published_at: "2026-10-01T00:00:00Z", draft: false, prerelease: false, assets: [{ name: "owl-linux-amd64", size: 1, browser_download_url: "https://dl/x" }] });
+  const gh = (tag) => ({ tag_name: tag, body: BODIES[tag], html_url: "https://github.com/r/" + tag, published_at: "2026-10-01T00:00:00Z", draft: false, prerelease: false, assets: [
+      { name: "owl-linux-amd64", size: 1, browser_download_url: "https://dl/x", url: "https://api.github.com/repos/istoo/owl-releases/releases/assets/1" },
+      { name: "SHA256SUMS", size: 1, browser_download_url: "https://dl/sums", url: "https://api.github.com/repos/istoo/owl-releases/releases/assets/2" },
+      { name: "SHA256SUMS.sig", size: 88, browser_download_url: "https://dl/sig", url: "https://api.github.com/repos/istoo/owl-releases/releases/assets/3" },
+    ] });
+  if (u.endsWith("/releases/tags/v0.1.3")) return Response.json(gh("v0.1.3"));
   if (u.endsWith("/releases/latest")) return Response.json(gh("v0.1.3"));
   if (u.includes("/releases?per_page=")) return Response.json(Object.keys(BODIES).map(gh));
   if (u.endsWith("/SHA256SUMS")) return new Response("abc  owl-linux-amd64\n");
+  if (u.endsWith("/SHA256SUMS.sig")) return new Response(SIG64 + "\n");
   return new Response("not found", { status: 404 });
 };
 
 const ctx = { waitUntil: (p) => p };
 const get = async (path) => {
-  const res = await worker.fetch(new Request("https://github.com/istoo/owl" + path), {}, ctx);
+  const res = await worker.fetch(new Request("https://usemagpie.ai" + path), {}, ctx);
   assert.equal(res.status, 200, path);
   return { body: await res.json(), cc: res.headers.get("Cache-Control") };
 };
@@ -99,6 +117,15 @@ test("latest: the English alone without lang, the Chinese with zh", async () => 
   }
   // asked in Chinese first, the edge's copy still has both
   assert.equal((await get("/api/latest")).body.notes, EN);
+});
+
+// The app checks the signature itself (internal/update/signed.go); the feed
+// only carries the signed list and the signature, and never lists the
+// signature as a file to download.
+test("latest: carries SHA256SUMS and its signature, and the signature is no file", async () => {
+  const { body } = await get("/api/latest");
+  assert.deepEqual(body.signed, { sums: "abc  owl-linux-amd64\n", sig: SIG64 });
+  assert.deepEqual(Object.keys(body.assets), ["owl-linux-amd64"]);
 });
 
 test("notes: each release in the language, English where it has no Chinese", async () => {
@@ -136,7 +163,7 @@ test("i18n: every string the home page marks has its Chinese, and no other", asy
 
 test("home: / sends a browser that prefers Chinese, Japanese or German to its page, until a language is picked", async () => {
   const env = { ASSETS: { fetch: async () => new Response("<html></html>", { headers: { "Content-Type": "text/plain" } }) } };
-  const home = (headers) => worker.fetch(new Request("https://github.com/istoo/owl/", { headers }), env, ctx);
+  const home = (headers) => worker.fetch(new Request("https://usemagpie.ai/", { headers }), env, ctx);
   const to = async (headers) => {
     const res = await home(headers);
     assert.match(res.headers.get("Vary") || "", /Accept-Language/);
@@ -158,7 +185,7 @@ test("home: / sends a browser that prefers Chinese, Japanese or German to its pa
   assert.equal(await to({ "Accept-Language": "de", Cookie: "lang=en" }), null);
   assert.equal(await to({ Cookie: "lang=de" }), "/de/");
   for (const lang of ["zh", "de"]) {
-    const res = await worker.fetch(new Request("https://github.com/istoo/owl/" + lang), env, ctx);
+    const res = await worker.fetch(new Request("https://usemagpie.ai/" + lang), env, ctx);
     assert.equal(res.status, 301);
     assert.equal(new URL(res.headers.get("Location")).pathname, `/${lang}/`);
   }
@@ -167,26 +194,33 @@ test("home: / sends a browser that prefers Chinese, Japanese or German to its pa
 test("docs: the bare docs paths open each language's guide", async () => {
   const env = { ASSETS: { fetch: async () => new Response("asset") } };
   for (const [from, to] of [["/docs", "/docs/start"], ["/docs/zh/", "/docs/zh/start"], ["/docs/ja", "/docs/ja/start"]]) {
-    const res = await worker.fetch(new Request("https://github.com/istoo/owl" + from), env, ctx);
-    assert.equal(new URL(res.headers.get("Location"), "https://github.com/istoo/owl").pathname, to, from);
+    const res = await worker.fetch(new Request("https://usemagpie.ai" + from), env, ctx);
+    assert.equal(new URL(res.headers.get("Location"), "https://usemagpie.ai").pathname, to, from);
   }
+});
+
+test("site: /favicon.ico goes to the icon the pages link", async () => {
+  const env = { ASSETS: { fetch: async () => new Response("asset") } };
+  const res = await worker.fetch(new Request("https://usemagpie.ai/favicon.ico"), env, ctx);
+  assert.equal(res.status, 301);
+  assert.equal(res.headers.get("Location"), "https://usemagpie.ai/favicon.png");
 });
 
 test("docs: the MCP hub's old pages go to the MCP router's, keeping the query", async () => {
   const env = { ASSETS: { fetch: async () => new Response("asset") } };
   for (const [from, to] of [["/docs/mcp-hub", "/docs/mcp-router"], ["/docs/mcp-hub.html", "/docs/mcp-router"], ["/docs/zh/mcp-hub/", "/docs/zh/mcp-router"], ["/docs/ja/mcp-hub.html?x=1", "/docs/ja/mcp-router?x=1"]]) {
-    const res = await worker.fetch(new Request("https://github.com/istoo/owl" + from), env, ctx);
+    const res = await worker.fetch(new Request("https://usemagpie.ai" + from), env, ctx);
     assert.equal(res.status, 301, from);
     const got = new URL(res.headers.get("Location"));
     assert.equal(got.pathname + got.search, to, from);
   }
-  const res = await worker.fetch(new Request("https://github.com/istoo/owl/blob/main/docs/mcp-router"), env, ctx);
+  const res = await worker.fetch(new Request("https://usemagpie.ai/docs/mcp-router"), env, ctx);
   assert.equal(await res.text(), "asset");
 });
 
 // #661: the update window showed no notes while GitHub's API limited the
 // worker, and the failure was kept for five minutes.
-const ask = (path, env = {}) => worker.fetch(new Request("https://github.com/istoo/owl" + path), env, ctx);
+const ask = (path, env = {}) => worker.fetch(new Request("https://usemagpie.ai" + path), env, ctx);
 
 test("latest: with the API limited, the notes come from the releases feed, kept briefly", async () => {
   store.clear();
@@ -218,7 +252,7 @@ test("notes: with the API limited, the releases feed's notes, in either language
     assert.deepEqual(list.map((r) => r.version), ["0.1.3", "0.1.2"]);
     assert.equal(list[0].notes, "### 新功能\n\n- 一件事 (#1)");
     assert.equal(list[1].notes, "### Fixes\n\n- Older, **English** alone, `a &lt; b` [link](https://x.dev/)");
-    assert.equal(list[0].url, "https://github.com/istoo/owl/releases/tag/v0.1.3");
+    assert.equal(list[0].url, "https://github.com/istoo/owl-releases/releases/tag/v0.1.3");
   } finally {
     apiDown = false;
   }
@@ -237,7 +271,7 @@ test("notes and latest: GitHub failing altogether is an error never kept, then t
     apiDown = pagesDown = false;
     assert.equal((await ask("/api/notes?upto=0.1.3")).headers.get("Cache-Control"), "public, max-age=300");
     assert.equal((await ask("/api/latest")).status, 200);
-    for (const k of ["https://github.com/istoo/owl/__v2/releases", "https://github.com/istoo/owl/__v2/latest"]) store.delete(k);
+    for (const k of ["https://usemagpie.ai/__v2/releases", "https://usemagpie.ai/__v2/latest"]) store.delete(k);
     apiDown = pagesDown = true;
     const res = await ask("/api/notes?upto=0.1.3");
     assert.equal(res.status, 200);
@@ -263,10 +297,10 @@ test("api: a GITHUB_TOKEN secret is sent to GitHub's API, and none without it", 
 
 test("cache: what an older worker kept, in its own shape, is never read as this one's", async () => {
   store.clear();
-  store.set("https://github.com/istoo/owl/__latest", JSON.stringify({ version: "0.1.1", notes: "", assets: {} }));
-  store.set("https://github.com/istoo/owl/__releases", JSON.stringify([{ version: "0.1.1", notes: "old" }]));
-  store.set("https://github.com/istoo/owl/__v2/latest", JSON.stringify({ version: "0.1.1" }));
-  store.set("https://github.com/istoo/owl/__v2/releases", JSON.stringify([{ version: "0.1.1" }]));
+  store.set("https://usemagpie.ai/__latest", JSON.stringify({ version: "0.1.1", notes: "", assets: {} }));
+  store.set("https://usemagpie.ai/__releases", JSON.stringify([{ version: "0.1.1", notes: "old" }]));
+  store.set("https://usemagpie.ai/__v2/latest", JSON.stringify({ version: "0.1.1" }));
+  store.set("https://usemagpie.ai/__v2/releases", JSON.stringify([{ version: "0.1.1" }]));
   const notes = await ask("/api/notes?upto=0.1.3");
   assert.equal(notes.status, 200);
   assert.equal((await notes.json()).releases[0].version, "0.1.3");
@@ -284,7 +318,7 @@ test("download: a platform's link goes to that asset of the latest release", asy
 
 test("download: each link followed is counted, with the platform, the country and a browser or a command", async () => {
   captured.length = 0;
-  const req = new Request("https://github.com/istoo/owl/download/linux", { headers: { "User-Agent": "curl/8.7.1" } });
+  const req = new Request("https://usemagpie.ai/download/linux", { headers: { "User-Agent": "curl/8.7.1" } });
   req.cf = { country: "BR" };
   assert.equal((await worker.fetch(req, {}, ctx)).status, 302);
   await new Promise((ok) => setTimeout(ok, 0));
@@ -292,12 +326,12 @@ test("download: each link followed is counted, with the platform, the country an
   assert.equal(captured[0].event, "owl site download");
   assert.deepEqual(captured[0].properties, { link: "linux", file: "owl-linux-amd64", client: "command", country: "BR", $process_person_profile: false });
   captured.length = 0;
-  await worker.fetch(new Request("https://github.com/istoo/owl/download/linux", { headers: { "User-Agent": "Mozilla/5.0 (Macintosh)" } }), {}, ctx);
+  await worker.fetch(new Request("https://usemagpie.ai/download/linux", { headers: { "User-Agent": "Mozilla/5.0 (Macintosh)" } }), {}, ctx);
   await new Promise((ok) => setTimeout(ok, 0));
   assert.equal(captured[0].properties.client, "browser");
   // a HEAD, or a file the release doesn't have, isn't counted
   captured.length = 0;
-  await worker.fetch(new Request("https://github.com/istoo/owl/download/linux", { method: "HEAD" }), {}, ctx);
+  await worker.fetch(new Request("https://usemagpie.ai/download/linux", { method: "HEAD" }), {}, ctx);
   await ask("/download/nothing-like-it");
   await new Promise((ok) => setTimeout(ok, 0));
   assert.deepEqual(captured, []);
@@ -306,7 +340,7 @@ test("download: each link followed is counted, with the platform, the country an
 test("install.sh: each fetch is counted", async () => {
   const env = { ASSETS: { fetch: async () => new Response("#!/bin/sh\n", { headers: { "Content-Type": "text/x-sh" } }) } };
   captured.length = 0;
-  const res = await worker.fetch(new Request("https://github.com/istoo/owl/install.sh", { headers: { "User-Agent": "curl/8.7.1" } }), env, ctx);
+  const res = await worker.fetch(new Request("https://usemagpie.ai/install.sh", { headers: { "User-Agent": "curl/8.7.1" } }), env, ctx);
   assert.equal(await res.text(), "#!/bin/sh\n");
   await new Promise((ok) => setTimeout(ok, 0));
   assert.equal(captured.length, 1);
@@ -316,15 +350,15 @@ test("install.sh: each fetch is counted", async () => {
 
 test("relay: the snippet's requests reach PostHog with the visitor's address and without the site's cookies", async () => {
   relayed.length = 0;
-  const post = new Request("https://github.com/istoo/owl/r/e/?ip=0&ver=1.442.1", {
+  const post = new Request("https://usemagpie.ai/r/e/?ip=0&ver=1.442.1", {
     method: "POST",
     body: "gzipped",
     headers: { Cookie: "lang=zh", "CF-Connecting-IP": "203.0.113.7", "Content-Type": "text/plain", "User-Agent": "Mozilla/5.0" },
   });
   assert.equal(await (await worker.fetch(post, {}, ctx)).text(), "relayed");
-  await worker.fetch(new Request("https://github.com/istoo/owl/r/static/array.js"), {}, ctx);
-  await worker.fetch(new Request("https://github.com/istoo/owl/r/array/phc_x/config.js"), {}, ctx);
-  await worker.fetch(new Request("https://github.com/istoo/owl/r/flags/?v=2"), {}, ctx);
+  await worker.fetch(new Request("https://usemagpie.ai/r/static/array.js"), {}, ctx);
+  await worker.fetch(new Request("https://usemagpie.ai/r/array/phc_x/config.js"), {}, ctx);
+  await worker.fetch(new Request("https://usemagpie.ai/r/flags/?v=2"), {}, ctx);
   assert.deepEqual(relayed.map((r) => r.u), [
     "https://us.i.posthog.com/e/?ip=0&ver=1.442.1",
     "https://us-assets.i.posthog.com/static/array.js",
@@ -344,7 +378,7 @@ test("docs: an English docs page sends a browser that prefers Chinese or Japanes
   const have = new Set(["/docs/start", "/docs/zh/start", "/docs/ja/start", "/docs/only-en"]);
   const env = { ASSETS: { fetch: async (r) => new Response(have.has(new URL(r.url).pathname) ? "<html></html>" : "nf", { status: have.has(new URL(r.url).pathname) ? 200 : 404, headers: { "Content-Type": "text/plain" } }) } };
   const to = async (path, headers) => {
-    const res = await worker.fetch(new Request("https://github.com/istoo/owl" + path, { headers }), env, ctx);
+    const res = await worker.fetch(new Request("https://usemagpie.ai" + path, { headers }), env, ctx);
     assert.match(res.headers.get("Vary") || "", /Accept-Language/);
     return res.status === 302 ? res.headers.get("Location") : res.status;
   };
@@ -359,7 +393,7 @@ test("docs: an English docs page sends a browser that prefers Chinese or Japanes
   // a page not written in Chinese yet
   assert.equal(await to("/docs/only-en", { "Accept-Language": "zh-CN" }), 200);
   // a language's own page is never moved
-  const res = await worker.fetch(new Request("https://github.com/istoo/owl/blob/main/docs/zh/start", { headers: { Cookie: "lang=en" } }), env, ctx);
+  const res = await worker.fetch(new Request("https://usemagpie.ai/docs/zh/start", { headers: { Cookie: "lang=en" } }), env, ctx);
   assert.equal(res.status, 200);
 });
 
@@ -402,11 +436,11 @@ test("partners: links go through /go", () => {
   const out = served(LIST, NOW);
   assert.deepEqual(out.map((p) => p.id), ["acme", "plain"]);
   const [acme, plain] = out;
-  assert.equal(acme.website, "https://github.com/istoo/owl/go/acme/site");
-  assert.equal(acme.keysUrl, "https://github.com/istoo/owl/go/acme/keys");
+  assert.equal(acme.website, "https://usemagpie.ai/go/acme/site");
+  assert.equal(acme.keysUrl, "https://usemagpie.ai/go/acme/keys");
   assert.equal(acme.iconUrl, LIST[0].iconUrl);
   assert.equal(acme.chat, LIST[0].chat);
-  assert.equal(acme.regions[0].keysUrl, "https://github.com/istoo/owl/go/acme/keys/cn");
+  assert.equal(acme.regions[0].keysUrl, "https://usemagpie.ai/go/acme/keys/cn");
   assert.equal(acme.regions[0].website, undefined);
   // the editor names a /go website by the host it sends the browser to
   assert.equal(acme.siteHost, "acme.example");
@@ -448,7 +482,7 @@ test("partners: /go counts the click", async () => {
   }
   const what = p.keysUrl ? "keys" : "site";
   captured.length = 0;
-  const res = await worker.fetch(new Request("https://github.com/istoo/owl/go/" + p.id + "/" + what), {}, ctx);
+  const res = await worker.fetch(new Request("https://usemagpie.ai/go/" + p.id + "/" + what), {}, ctx);
   assert.equal(res.status, 302);
   assert.equal(res.headers.get("Location"), goTarget(PARTNERS, p.id, what));
   assert.equal(new URL(res.headers.get("Location")).searchParams.has("ref"), true);
@@ -460,7 +494,7 @@ test("partners: /go counts the click", async () => {
   assert.equal(captured[0].properties.$process_person_profile, false);
   // a HEAD goes on but isn't counted
   captured.length = 0;
-  const head = await worker.fetch(new Request("https://github.com/istoo/owl/go/" + p.id + "/" + what, { method: "HEAD" }), {}, ctx);
+  const head = await worker.fetch(new Request("https://usemagpie.ai/go/" + p.id + "/" + what, { method: "HEAD" }), {}, ctx);
   assert.equal(head.status, 302);
   assert.deepEqual(captured, []);
   assert.equal((await ask("/go/nobody-at-all/keys")).status, 404);
@@ -505,7 +539,7 @@ test("icon proxy passes on a picture and nothing of the asker", async () => {
     throw new Error("a test reached " + u); // never the real network
   };
   try {
-    const req = new Request("https://github.com/istoo/owl?url=" + encodeURIComponent("https://author.example/logo.png"), {
+    const req = new Request("https://usemagpie.ai/api/icon?url=" + encodeURIComponent("https://author.example/logo.png"), {
       headers: { Cookie: "lang=zh", "User-Agent": "owl/0.1.1168", "X-Forwarded-For": "203.0.113.9", "CF-Connecting-IP": "203.0.113.9" },
     });
     const res = await worker.fetch(req, {}, { waitUntil() {} });
@@ -517,7 +551,7 @@ test("icon proxy passes on a picture and nothing of the asker", async () => {
     assert.deepEqual([...h.keys()].sort(), ["accept", "user-agent"]);
     assert.doesNotMatch(h.get("user-agent"), /0\.1\.1168/);
 
-    const ask = async (u) => (await worker.fetch(new Request("https://github.com/istoo/owl?url=" + encodeURIComponent(u)), {}, { waitUntil() {} })).status;
+    const ask = async (u) => (await worker.fetch(new Request("https://usemagpie.ai/api/icon?url=" + encodeURIComponent(u)), {}, { waitUntil() {} })).status;
     assert.equal(await ask("https://author.example/page"), 415);
     assert.equal(await ask("https://author.example/big.png"), 413);
     assert.equal(await ask("https://author.example/gone.png"), 502);
@@ -525,9 +559,9 @@ test("icon proxy passes on a picture and nothing of the asker", async () => {
     assert.equal(await ask("https://u:p@author.example/logo.png"), 400);
     assert.equal(await ask("https://author.example:8443/logo.png"), 400);
     assert.equal(await ask("not a url"), 400);
-    assert.equal(await ask("https://github.com/istoo/owl?url=x"), 400);
-    assert.equal(await ask("https://www.github.com/istoo/owl/logo.png"), 400);
-    assert.ok(asked.every((a) => !new URL(a.u).hostname.endsWith("github.com/istoo/owl")), "the worker asked itself");
+    assert.equal(await ask("https://usemagpie.ai/api/icon?url=x"), 400);
+    assert.equal(await ask("https://www.usemagpie.ai/logo.png"), 400);
+    assert.ok(asked.every((a) => !new URL(a.u).hostname.endsWith("usemagpie.ai")), "the worker asked itself");
   } finally {
     globalThis.fetch = was;
   }
@@ -545,7 +579,7 @@ test("sponsors: /go/<id>/home and /readme send the browser to the sponsor's own 
       if (!s[where]) continue;
       assert.equal(new URL(s[where]).protocol, "https:");
       captured.length = 0;
-      const res = await worker.fetch(new Request(`https://github.com/istoo/owl/go/${s.id}/${where}`), {}, ctx);
+      const res = await worker.fetch(new Request(`https://usemagpie.ai/go/${s.id}/${where}`), {}, ctx);
       assert.equal(res.status, 302);
       assert.equal(res.headers.get("Location"), s[where]);
       await Promise.resolve();
@@ -555,7 +589,7 @@ test("sponsors: /go/<id>/home and /readme send the browser to the sponsor's own 
       assert.equal(captured[0].properties.where, where);
       // a HEAD goes on but isn't counted
       captured.length = 0;
-      assert.equal((await worker.fetch(new Request(`https://github.com/istoo/owl/go/${s.id}/${where}`, { method: "HEAD" }), {}, ctx)).status, 302);
+      assert.equal((await worker.fetch(new Request(`https://usemagpie.ai/go/${s.id}/${where}`, { method: "HEAD" }), {}, ctx)).status, 302);
       assert.deepEqual(captured, []);
     }
     assert.equal((await ask(`/go/${s.id}/home/x`)).status, 404);
@@ -573,8 +607,9 @@ test("sponsors: the home page and the READMEs link every sponsor through /go", a
       for (const s of SPONSORS) {
         if (s[where]) assert.equal(text.includes(s[where]), false, `${f.pathname} links ${s.id} directly`);
         // the home page links its own /go; a README, on GitHub, the site's
-        const go = (where === "home" ? "" : "https://github.com/istoo/owl") + `/go/${s.id}/${where}`;
-        if (text.includes(`/go/${s.id}/`)) assert.ok(s[where] && text.includes(`href="${go}"`), `${f.pathname}: ${go}`);
+        const go = (where === "home" ? "" : "https://usemagpie.ai") + `/go/${s.id}/${where}`;
+        // as an <a href> or a Markdown link (Kimi's thanks line, e6b9d1199)
+        if (text.includes(`/go/${s.id}/`)) assert.ok(s[where] && (text.includes(`href="${go}"`) || text.includes(`](${go})`)), `${f.pathname}: ${go}`);
       }
     }
   const home = readFileSync(pages.home[0], "utf8");
@@ -625,13 +660,14 @@ test("contributors: each language's page gets its own table, and keeps its line 
   const was = globalThis.HTMLRewriter;
   globalThis.HTMLRewriter = FakeRewriter;
   try {
-    const get = async (path) => (await worker.fetch(new Request(`https://github.com/istoo/owl${path}`, { headers: { Cookie: "lang=en" } }), env, ctx)).text();
+    const get = async (path) => (await worker.fetch(new Request(`https://usemagpie.ai${path}`, { headers: { Cookie: "lang=en" } }), env, ctx)).text();
     for (const [path, lang, head] of [["/docs/contributors", "en", "What came of it"], ["/docs/zh/contributors", "zh", "带来的改动"], ["/docs/ja/contributors.html", "ja", "そこから生まれた"]]) {
       const html = await get(path);
       assert.match(html, /<div id="wall"><div class="table-wrap"><table class="cw">/, path);
       assert.ok(html.includes(head), `${path} has the ${lang} table`);
       assert.ok(html.includes("packinggoodsllc_07668") && html.includes("v0.1.2581"), path);
-      assert.match(html, /static\.cloudflareinsights\.com/, `${path} keeps the beacon`);
+      assert.match(html, /posthog\.init\(/, `${path} keeps the analytics`);
+      assert.doesNotMatch(html, /cloudflareinsights/, `${path} leaves Cloudflare's beacon to Cloudflare`);
     }
     fragments = false;
     const bare = await get("/docs/zh/contributors");
@@ -653,7 +689,7 @@ test("contributors: the pages say how to be left off, and every docs footer link
     const html = readFileSync(dir(file), "utf8");
     assert.match(html, /<div id="wall">/, file);
     assert.ok(html.includes("site/contributors-exclude.txt"), file);
-    for (const l of ["en", "zh", "ja"]) assert.ok(html.includes(`hreflang="${l}" href="https://github.com/istoo/owl/blob/main/docs/${l === "en" ? "" : l + "/"}contributors"`), `${file} ${l}`);
+    for (const l of ["en", "zh", "ja"]) assert.ok(html.includes(`hreflang="${l}" href="https://usemagpie.ai/docs/${l === "en" ? "" : l + "/"}contributors"`), `${file} ${l}`);
     assert.ok(!/privacy" hreflang=|og:url" content="[^"]*privacy/.test(html), `${file} still points at the page it was made from`);
   }
   for (const sub of ["", "zh/", "ja/"]) {
@@ -672,19 +708,19 @@ test("seo: the sitemap lists the home pages and every docs page, each its own ca
   const pub = new URL("./public/", import.meta.url);
   const xml = await readFile(new URL("sitemap.xml", pub), "utf8");
   const listed = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-  const want = ["https://github.com/istoo/owl/", ...Object.keys(LANGS).map((l) => `https://github.com/istoo/owl/${l}/`)];
+  const want = ["https://usemagpie.ai/", ...Object.keys(LANGS).map((l) => `https://usemagpie.ai/${l}/`)];
   for (const dir of ["docs/", "docs/zh/", "docs/ja/"])
     for (const f of (await readdir(new URL(dir, pub))).filter((f) => f.endsWith(".html")).sort())
-      want.push(`https://github.com/istoo/owl/blob/main/${dir}${f.slice(0, -5)}`);
+      want.push(`https://usemagpie.ai/${dir}${f.slice(0, -5)}`);
   assert.deepEqual([...listed].sort(), [...want].sort());
   const home = await readFile(new URL("index.html", pub), "utf8");
-  assert.match(home, /<link rel="canonical" data-i18n-attr="href:meta.url" href="https:\/\/github\.com\/istoo\/owl\/">/);
-  for (const [l, { dict }] of Object.entries(LANGS)) assert.equal(dict["meta.url"], `https://github.com/istoo/owl/${l}/`);
+  assert.match(home, /<link rel="canonical" data-i18n-attr="href:meta.url" href="https:\/\/usemagpie.ai\/">/);
+  for (const [l, { dict }] of Object.entries(LANGS)) assert.equal(dict["meta.url"], `https://usemagpie.ai/${l}/`);
   for (const u of listed.filter((u) => u.includes("/docs/"))) {
-    const html = await readFile(new URL(u.slice("https://github.com/istoo/owl/blob/main/".length) + ".html", pub), "utf8");
+    const html = await readFile(new URL(u.slice("https://usemagpie.ai/".length) + ".html", pub), "utf8");
     const canon = [...html.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map((m) => m[1]);
     assert.deepEqual(canon, [u], `${u} canonical`);
-    assert.ok(html.includes(`<link rel="alternate" hreflang="x-default" href="https://github.com/istoo/owl/blob/main/docs/${u.split("/").pop()}">`), `${u} x-default`);
+    assert.ok(html.includes(`<link rel="alternate" hreflang="x-default" href="https://usemagpie.ai/docs/${u.split("/").pop()}">`), `${u} x-default`);
     assert.ok(!/name="robots" content="[^"]*noindex/.test(html), `${u} is noindex`);
     // every alternate is a page that exists, so none is listed as a 404
     for (const [, alt] of html.matchAll(/<link rel="alternate" hreflang="[a-z-]+" href="([^"]+)">/g))
@@ -695,8 +731,32 @@ test("seo: the sitemap lists the home pages and every docs page, each its own ca
 test("seo: robots.txt names the sitemap and keeps crawlers off the counted links", async () => {
   const { readFile } = await import("node:fs/promises");
   const txt = await readFile(new URL("./public/robots.txt", import.meta.url), "utf8");
-  assert.match(txt, /^Sitemap: https:\/\/github\.com\/istoo\/owl\/sitemap.xml$/m);
+  assert.match(txt, /^Sitemap: https:\/\/usemagpie.ai\/sitemap.xml$/m);
   for (const p of ["/api/", "/go/", "/r/", "/download"]) assert.match(txt, new RegExp(`^Disallow: ${p}$`, "m"));
+});
+
+test("seo: llms.txt lists every English docs page and links only to listed pages", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const pub = new URL("./public/", import.meta.url);
+  const txt = await readFile(new URL("llms.txt", pub), "utf8");
+  const xml = await readFile(new URL("sitemap.xml", pub), "utf8");
+  const listed = new Set([...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]));
+  assert.match(txt, /^# owl\n\n> /);
+  const links = [...txt.matchAll(/\]\((https:\/\/usemagpie\.ai\/[^)]*)\)/g)].map((m) => m[1]);
+  for (const u of links) assert.ok(listed.has(u), `llms.txt links ${u}, which the sitemap doesn't list`);
+  const docs = (await readdir(new URL("docs/", pub))).filter((f) => f.endsWith(".html") && f !== "contributors.html");
+  for (const f of docs) assert.ok(links.includes(`https://usemagpie.ai/docs/${f.slice(0, -5)}`), `llms.txt misses docs/${f}`);
+});
+
+test("seo: llms-full.txt is current and holds every English docs page", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const { build } = await import("./llms-full.mjs");
+  const pub = new URL("./public/", import.meta.url);
+  const txt = await readFile(new URL("llms-full.txt", pub), "utf8");
+  assert.equal(txt, await build(), "public/llms-full.txt is stale: run `node llms-full.mjs` in site/");
+  const docs = (await readdir(new URL("docs/", pub))).filter((f) => f.endsWith(".html") && f !== "contributors.html");
+  for (const f of docs) assert.ok(txt.includes(`Source: https://usemagpie.ai/docs/${f.slice(0, -5)}\n`), `llms-full.txt misses docs/${f}`);
+  assert.doesNotMatch(txt.replace(/^```\n[\s\S]*?\n```$/gm, ""), /<\/?(p|div|span|li|td|code|a)\b/, "llms-full.txt has HTML left outside its code blocks");
 });
 
 test("seo: the home page's structured data parses and its title is in every language", async () => {
@@ -708,4 +768,223 @@ test("seo: the home page's structured data parses and its title is in every lang
   assert.equal(app.offers.price, "0");
   assert.match(html, /<title data-i18n="meta.title">[^<]{20,70}<\/title>/);
   for (const [l, { dict }] of Object.entries(LANGS)) assert.ok(dict["meta.title"].startsWith("owl"), l);
+});
+
+// 2026-11-08: github.com answered 504 for every release file for hours,
+// while GitHub's API served the same ones. The feed then reads the
+// checksums through the API and sends each file by the site's /dl, which
+// an app too old to know the api field follows; it is kept a minute, so
+// github.com's own address comes back as soon as it answers.
+test("latest: github.com's downloads failing, the files go by /dl, through GitHub's API", async () => {
+  store.clear();
+  downloadsDown = true;
+  try {
+    const res = await ask("/api/latest");
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Cache-Control"), "public, max-age=60");
+    const a = (await res.json()).assets["owl-linux-amd64"];
+    assert.deepEqual(a, {
+      url: "https://usemagpie.ai/dl/v0.1.3/owl-linux-amd64",
+      api: "https://api.github.com/repos/istoo/owl-releases/releases/assets/1",
+      size: 1,
+      sha256: "abc",
+    });
+    seen.length = 0;
+    // each ask's writes to the edge's cache are waited for before the next
+    const pending = [];
+    const keeping = { waitUntil: (p) => void pending.push(p) };
+    for (let i = 0; i < 2; i++) {
+      const dl = await worker.fetch(new Request("https://usemagpie.ai/dl/v0.1.3/owl-linux-amd64"), {}, keeping);
+      await Promise.all(pending);
+      assert.equal(dl.status, 302);
+      assert.equal(dl.headers.get("Location"), "https://release-assets.githubusercontent.com/a/1?sig=1");
+      assert.equal(dl.headers.get("Cache-Control"), "no-store");
+    }
+    // the release's files once, where one is once: the second is the edge's
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1].get("Accept"), "application/octet-stream");
+    assert.equal((await ask("/dl/v0.1.3/owl-nothing")).status, 404);
+  } finally {
+    downloadsDown = false;
+  }
+  // github.com answering again: its own address, and api beside it
+  store.clear();
+  const res = await ask("/api/latest");
+  assert.equal(res.headers.get("Cache-Control"), "public, max-age=300");
+  const a = (await res.json()).assets["owl-linux-amd64"];
+  assert.equal(a.url, "https://dl/x");
+  assert.equal(a.api, "https://api.github.com/repos/istoo/owl-releases/releases/assets/1");
+});
+
+test("dl: a redirect GitHub's API gives anywhere but its asset host is not passed on", async () => {
+  store.clear();
+  const was = globalThis.fetch;
+  globalThis.fetch = async (u, init = {}) =>
+    /\/releases\/assets\/\d+$/.test(String(u)) ? new Response(null, { status: 302, headers: { Location: "https://evil.example/x" } }) : was(u, init);
+  try {
+    const res = await ask("/dl/v0.1.3/owl-linux-amd64");
+    assert.equal(res.status, 502);
+    assert.equal(res.headers.get("Cache-Control"), "no-store");
+  } finally {
+    globalThis.fetch = was;
+  }
+});
+
+// R2 holding a file under the hash the release gives, as the cron leaves it
+const holding = async (b, tag, name, body, hash = sha(body)) =>
+  b.put(`${tag}/${name}`, body, { httpMetadata: { contentType: "application/octet-stream" }, customMetadata: { sha256: hash } });
+
+test("r2: the feed and /download name the site's /files for a file R2 holds, with github.com's address beside it", async () => {
+  store.clear();
+  const env = { RELEASES: bucket() };
+  // the fixture's SHA256SUMS says "abc"
+  await holding(env.RELEASES, "v0.1.3", "owl-linux-amd64", "bytes", "abc");
+  const res = await ask("/api/latest", env);
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).assets["owl-linux-amd64"], {
+    url: "https://usemagpie.ai/files/v0.1.3/owl-linux-amd64",
+    api: "https://api.github.com/repos/istoo/owl-releases/releases/assets/1",
+    size: 1,
+    sha256: "abc",
+    github: "https://github.com/istoo/owl-releases/releases/download/v0.1.3/owl-linux-amd64",
+  });
+  const dl = await ask("/download/linux", env);
+  assert.equal(dl.status, 302);
+  assert.equal(dl.headers.get("Location"), "https://usemagpie.ai/files/v0.1.3/owl-linux-amd64");
+  const file = await ask("/files/v0.1.3/owl-linux-amd64", env);
+  assert.equal(file.status, 200);
+  assert.equal(await file.text(), "bytes");
+  // a tag R2 no longer keeps goes to GitHub
+  const old = await ask("/files/v0.1.1/owl-linux-amd64", env);
+  assert.equal(old.status, 302);
+  assert.equal(old.headers.get("Location"), "https://github.com/istoo/owl-releases/releases/download/v0.1.1/owl-linux-amd64");
+});
+
+test("r2: bytes R2 holds under another hash than the release's are not named; github.com's address is", async () => {
+  store.clear();
+  const env = { RELEASES: bucket() };
+  await holding(env.RELEASES, "v0.1.3", "owl-linux-amd64", "older");
+  const a = (await (await ask("/api/latest", env)).json()).assets["owl-linux-amd64"];
+  assert.equal(a.url, "https://dl/x");
+  assert.equal(a.github, "https://github.com/istoo/owl-releases/releases/download/v0.1.3/owl-linux-amd64");
+  // R2 failing: the feed as GitHub has it
+  store.clear();
+  env.RELEASES.fail = true;
+  const res = await ask("/api/latest", env);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).assets["owl-linux-amd64"].url, "https://dl/x");
+});
+
+test("r2: the five-minute cron copies the newest release's files from github.com, by GitHub's API when that fails", async () => {
+  const body = "the linux build";
+  const was = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (u, init = {}) => {
+    u = String(u);
+    if (u.endsWith("/SHA256SUMS") || u === "https://release-assets.githubusercontent.com/a/2?sig=1") return new Response(`${sha(body)}  owl-linux-amd64\n`);
+    if (u === "https://github.com/istoo/owl-releases/releases/download/v0.1.3/owl-linux-amd64") {
+      asked.push("github.com");
+      return downloadsDown ? new Response("", { status: 504 }) : new Response(body);
+    }
+    if (u === "https://release-assets.githubusercontent.com/a/1?sig=1") {
+      asked.push("api");
+      return new Response(body);
+    }
+    return was(u, init);
+  };
+  try {
+    for (const down of [false, true]) {
+      store.clear();
+      downloadsDown = down;
+      asked.length = 0;
+      const env = { RELEASES: bucket() };
+      const pending = [];
+      await worker.scheduled({ cron: "*/5 * * * *" }, env, { waitUntil: (p) => void pending.push(p) });
+      await Promise.all(pending);
+      assert.deepEqual(asked, down ? ["github.com", "api"] : ["github.com"]);
+      const o = env.RELEASES.objs.get("v0.1.3/owl-linux-amd64");
+      assert.ok(o, "copied");
+      assert.equal(new TextDecoder().decode(o.bytes), body);
+      assert.equal(o.customMetadata.sha256, sha(body));
+      // the quarter-hour cron is the ledger's, and copies nothing
+      const other = { RELEASES: bucket(), LEDGER: { get: async () => null, put: async () => {} } };
+      const p2 = [];
+      await worker.scheduled({ cron: "*/15 * * * *" }, other, { waitUntil: (p) => void p2.push(p.catch(() => {})) });
+      await Promise.all(p2);
+      assert.equal(other.RELEASES.objs.size, 0);
+    }
+  } finally {
+    globalThis.fetch = was;
+    downloadsDown = false;
+    store.clear();
+  }
+});
+
+test("plugins/tagged: the dist branch's list passed on, jsDelivr and the last copy when it fails", async () => {
+  const was = globalThis.fetch;
+  const list = { version: 1, plugins: [{ repo: "a/b", spec: "github:a/b", stars: 3 }] };
+  let rawDown = false, cdnDown = false;
+  globalThis.fetch = async (u) => {
+    u = String(u);
+    if (u.startsWith("https://raw.githubusercontent.com/magpie-community/plugins/dist/")) return rawDown ? new Response("x", { status: 503 }) : Response.json(list);
+    if (u.startsWith("https://cdn.jsdelivr.net/gh/magpie-community/plugins@dist/")) return cdnDown ? new Response("x", { status: 503 }) : Response.json(list);
+    throw new Error("a test reached " + u);
+  };
+  try {
+    store.delete("https://usemagpie.ai/__v2/tagged");
+    const ask = () => worker.fetch(new Request("https://usemagpie.ai/api/plugins/tagged"), {}, ctx);
+    let res = await ask();
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).plugins, list.plugins);
+    store.delete("https://usemagpie.ai/__v2/tagged");
+    rawDown = true;
+    assert.equal((await (await ask()).json()).plugins[0].repo, "a/b", "jsDelivr stands in");
+    store.delete("https://usemagpie.ai/__v2/tagged");
+    cdnDown = true;
+    assert.equal((await (await ask()).json()).plugins[0].repo, "a/b", "the last whole copy stands in");
+    store.delete("https://usemagpie.ai/__v2/tagged-good");
+    assert.equal((await ask()).status, 503);
+  } finally {
+    globalThis.fetch = was;
+  }
+});
+
+test("plugins/readme: a plugin's kept README passed on, from jsDelivr when raw fails, 404 when none", async () => {
+  const was = globalThis.fetch;
+  const asked = [];
+  let rawDown = false;
+  globalThis.fetch = async (u) => {
+    u = String(u);
+    asked.push(u);
+    const raw = "https://raw.githubusercontent.com/magpie-community/plugins/dist/readmes/";
+    const cdn = "https://cdn.jsdelivr.net/gh/magpie-community/plugins@dist/readmes/";
+    for (const [base, down] of [[raw, rawDown], [cdn, false]]) {
+      if (!u.startsWith(base)) continue;
+      if (down) return new Response("x", { status: 503 });
+      if (u.endsWith("/rsshub-plugin.md")) return new Response("# kept");
+      if (u.endsWith("/%40sc/scoped.md")) return new Response("# scoped");
+      if (u.endsWith("/github/o/r.md")) return new Response("# repo");
+      return new Response("nope", { status: 404 });
+    }
+    throw new Error("a test reached " + u);
+  };
+  try {
+    const ask = (n) => worker.fetch(new Request("https://usemagpie.ai/api/plugins/readme?name=" + encodeURIComponent(n)), {}, ctx);
+    for (const [n, want] of [["rsshub-plugin", "# kept"], ["@sc/scoped", "# scoped"], ["github:o/r", "# repo"]]) {
+      store.delete("https://usemagpie.ai/__v2/readme/" + (n.startsWith("github:") ? "github/" + n.slice(7) : n));
+      const res = await ask(n);
+      assert.equal(res.status, 200, n);
+      assert.equal(await res.text(), want);
+    }
+    const before = asked.length;
+    assert.equal(await (await ask("rsshub-plugin")).text(), "# kept");
+    assert.equal(asked.length, before, "the edge keeps it");
+    store.delete("https://usemagpie.ai/__v2/readme/rsshub-plugin");
+    rawDown = true;
+    assert.equal(await (await ask("rsshub-plugin")).text(), "# kept", "jsDelivr stands in");
+    assert.equal((await ask("missing-one")).status, 404);
+    for (const bad of ["../x", "github:../../x", "", "A B"]) assert.equal((await ask(bad)).status, 400, bad);
+  } finally {
+    globalThis.fetch = was;
+  }
 });

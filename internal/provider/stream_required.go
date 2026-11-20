@@ -2,7 +2,8 @@ package provider
 
 import (
 	"encoding/json"
-	"regexp"
+
+	"github.com/istoo/owl/internal/lazyre"
 )
 
 // A backend that only streams (claude-relay-service's Responses endpoint,
@@ -13,7 +14,7 @@ import (
 // The probe asks once more streamed when it hears this, rather than
 // streaming every probe: a vendor that takes one body keeps being asked
 // for one, and only a backend that says so is asked otherwise.
-var streamRequired = regexp.MustCompile(`(?i)\bstream(ing)?\b[^.\n]{0,40}\b(must|need|needs|should|has to|have to)\b[^.\n]{0,30}\btrue\b|\bonly\s+(supports?|accepts?|allows?|serves?)\s+(requests\s+(with|in)\s+)?stream|\brequires?\s+stream|\bstream(ing)?\s+(is\s+)?(required|mandatory)\b`)
+var streamRequired = lazyre.New(`(?i)\bstream(ing)?\b[^.\n]{0,40}\b(must|need|needs|should|has to|have to)\b[^.\n]{0,30}\btrue\b|\bonly\s+(supports?|accepts?|allows?|serves?)\s+(requests\s+(with|in)\s+)?stream|\brequires?\s+stream|\bstream(ing)?\s+(is\s+)?(required|mandatory)\b`)
 
 // StreamRequired is whether a 400's words say the request must ask for a
 // stream.

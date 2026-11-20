@@ -131,29 +131,6 @@ func TestHeldThinkingKeepsTheAgentAlive(t *testing.T) {
 	}
 }
 
-// saysWhen is a ResponseWriter that closes seen once its reply holds
-// what: the agent goes away mid-reply, so the reply has begun, whatever
-// the machine's load (the first version waited 200ms after the run
-// started, and CI's runner had the run ended before it said anything).
-type saysWhen struct {
-	http.ResponseWriter
-	what string
-	mu   sync.Mutex
-	saw  bool
-	seen chan struct{}
-}
-
-func (w *saysWhen) Write(b []byte) (int, error) {
-	n, err := w.ResponseWriter.Write(b)
-	w.mu.Lock()
-	if !w.saw && strings.Contains(string(b), w.what) {
-		w.saw = true
-		close(w.seen)
-	}
-	w.mu.Unlock()
-	return n, err
-}
-
 // A stream's last event written after the agent went away reached nobody:
 // the reply isn't whole, and the request is recorded as canceled (499), not
 // as a 200 done (#751, a Claude Code run stopped by Alma's timeout).
@@ -170,39 +147,34 @@ func TestClientGoneRecordedAsCanceled(t *testing.T) {
 	}
 
 	// Claude Code's run stopped mid-reply, written to the holdWriter the
-	// gateway gives it: relay still ends the stream it was encoding
-	// (message_stop), which isn't the reply made whole
+	// gateway gives it. Its stream ends one of two ways, whichever comes
+	// first: abort closes the run's segment and relay ends the stream it
+	// was encoding (message_stop), or Claude Code's output reaches its end
+	// first, its reply unended, and it ends with an error event (#4822).
+	// Neither is the reply made whole.
 	fakeClaudeCalling(t)
 	s := New()
 	t.Cleanup(s.subscription.abortAll)
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
-	rec := httptest.NewRecorder()
-	w := &saysWhen{ResponseWriter: rec, what: "thinking it over", seen: make(chan struct{})}
-	h = newHoldWriter(w, false)
-	h.ctx = ctx
-	// the agent goes away once its reply has begun, not after a wait
+	rec := saidOn("thinking it over")
 	go func() {
+		// its reply under way: its words reached the client
 		select {
-		case <-w.seen:
+		case <-rec.said:
 		case <-time.After(10 * time.Second):
 		}
 		cancel()
 	}()
+	h = newHoldWriter(rec, false)
+	h.ctx = ctx
 	p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}
 	body := `{"model":"claude-sonnet-5","max_tokens":100,"stream":true,"messages":[{"role":"user","content":"hang on"}]}`
 	var u Usage
 	s.serveClaudeSubscription(h, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)).WithContext(ctx), provider.Anthropic, p, "claude-sonnet-5", []byte(body), &u)
-	// the stream ends with a terminal event whichever the relay reaches
-	// first: the segment closed as it should (message_stop), or the run's
-	// output closed before that and it says why (an error event, #4822) —
-	// ubuntu CI saw the second at 1ms into the reply, this Mac the first
-	// at 4ms. Neither is a stream left hanging, and neither is a reply
-	// counted as whole.
-	reply := rec.Body.String()
-	if !strings.Contains(reply, "thinking it over") ||
-		!strings.Contains(reply, "event: message_stop") && !strings.Contains(reply, "event: error") {
-		t.Fatalf("the run's reply: %q", reply)
+	got := rec.Body.String()
+	if !strings.Contains(got, "thinking it over") || !strings.Contains(got, "event: message_stop") && !strings.Contains(got, "ended by owl before it ended its reply") {
+		t.Fatalf("the run's reply: %q", got)
 	}
 	if h.ended {
 		t.Fatal("a Claude Code run stopped as its agent left taken as a whole reply, recorded as a 200")

@@ -57,10 +57,12 @@ func TestTryTellsWhereItsTimeWent(t *testing.T) {
 	}
 	r, n := ask()
 	t.Logf("a new connection: %+v", n)
-	// the vendor's wait is the hold, give or take the machine: a loaded
-	// runner measured 298.7 ms for a 300 ms hold (11-10)
+	// the vendor's wait is the hold. The fake starts holding when it has
+	// read the request, which can be before the write returns here and Send
+	// ends, so a busy machine moves part of the hold into Send (298.7 ms of
+	// Wait for a 300 ms hold, 11-10): Send and Wait together cover it.
 	holdMs := float64(hold.Milliseconds())
-	if n.Wait < holdMs-10 || n.Wait > holdMs+5000 {
+	if n.Send+n.Wait < holdMs-1 || n.Wait > holdMs+5000 {
 		t.Fatalf("wait %v for a %v hold: %+v", n.Wait, hold, n)
 	}
 	if n.Reused || n.TLS <= 0 || n.Asks != 1 || n.Before != 0 {
@@ -78,7 +80,7 @@ func TestTryTellsWhereItsTimeWent(t *testing.T) {
 	}
 	// the open connection carries the next one
 	_, n = ask()
-	if !n.Reused || n.DNS != 0 || n.Connect != 0 || n.TLS != 0 || n.Wait < holdMs-10 {
+	if !n.Reused || n.DNS != 0 || n.Connect != 0 || n.TLS != 0 || n.Send+n.Wait < holdMs-1 {
 		t.Fatalf("the open connection: %+v", n)
 	}
 }
@@ -119,4 +121,101 @@ func TestSentBy(t *testing.T) {
 			t.Errorf("sentBy(%s) = %q, want %q", c.p.ID, got, c.want)
 		}
 	}
+}
+
+// buhaodeshiyehao on X (Codex through Lody): the Routing page's "Where
+// the time went" said only a turn's masking. Codex's turns to the
+// ChatGPT backend, and to a Responses provider with Socket, go over a
+// WebSocket, and a conversation's turns after its first go on the kept
+// socket, with no HTTP request the try's trace saw, so the try had no
+// timing. Each turn on a socket, a new one or a kept one, says where its
+// time went: the backend's wait before the first frame is the vendor's.
+func TestSocketTurnTellsWhereItsTimeWent(t *testing.T) {
+	const hold = 200 * time.Millisecond
+	holdMs := float64(hold.Milliseconds())
+	check := func(t *testing.T, what string, try Try) {
+		t.Helper()
+		n := try.Net
+		if n == nil {
+			t.Fatalf("%s: no timing", what)
+		}
+		t.Logf("%s: %+v", what, *n)
+		// the fake holds from when it read the frame, which can be before
+		// the write returns here: Send and Wait together cover the hold
+		// (Send 5.4, Wait 195.1 for 200 ms on ubuntu CI, run 44159644833)
+		if n.Send+n.Wait < holdMs-1 || n.Wait > holdMs+5000 || n.Head < n.Wait {
+			t.Fatalf("%s: timing %+v for a %v hold", what, *n, hold)
+		}
+		if sum := n.Own + n.Before + n.Pool + n.DNS + n.Connect + n.TLS + n.Send + n.Wait; sum > n.Head+1 {
+			t.Fatalf("%s: steps %v over the %v to the first byte: %+v", what, sum, n.Head, *n)
+		}
+		if float64(try.Millis) < n.Head-1 {
+			t.Fatalf("%s: first byte %v after the end %d", what, n.Head, try.Millis)
+		}
+	}
+	t.Run("codex sign-in", func(t *testing.T) {
+		socketOn(t)
+		f := &fakeSocketBackend{keep: true, hold: hold}
+		f.frames = keptReply(f)
+		chatgpt(t, f.ServeHTTP)
+		s := New()
+		post := func(body string) Try {
+			t.Helper()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("POST", CodexPath+"/responses", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer chatgpt-token")
+			req.Header.Set("chatgpt-account-id", "acct-1")
+			s.Handler().ServeHTTP(rec, req)
+			if rec.Code != 200 || !strings.Contains(rec.Body.String(), "pong") {
+				t.Fatalf("%d %s", rec.Code, rec.Body.String())
+			}
+			r := lastRoute(s)
+			if len(r.Tries) != 1 {
+				t.Fatalf("tries %+v", r.Tries)
+			}
+			return r.Tries[0]
+		}
+		check(t, "a new socket", post(keptTurn("conv-1", "gpt-5.5", userPing)))
+		kept := post(keptTurn("conv-1", "gpt-5.5", userPing, asstPong, userAgain))
+		if posts, sockets := f.counts(); posts != 0 || sockets != 2 || f.opened() != 1 {
+			t.Fatalf("%d posts, %d turns on %d sockets; want both on one", posts, sockets, f.opened())
+		}
+		check(t, "the kept socket", kept)
+		if n := kept.Net; !n.Reused || n.DNS != 0 || n.Connect != 0 || n.TLS != 0 {
+			t.Fatalf("the kept socket dialed: %+v", *n)
+		}
+	})
+	t.Run("responses provider", func(t *testing.T) {
+		socketOn(t)
+		f := &fakeSocketBackend{keep: true, hold: hold}
+		f.frames = keptReply(f)
+		relaySocket(t, f, provider.SocketOn)
+		s := New()
+		post := func(body string) Try {
+			t.Helper()
+			code, out := postProtoBody(t, s, "/v1/responses", body)
+			if code != 200 || !strings.Contains(out, "pong") {
+				t.Fatalf("%d %s", code, out)
+			}
+			r := lastRoute(s)
+			if len(r.Tries) != 1 {
+				t.Fatalf("tries %+v", r.Tries)
+			}
+			return r.Tries[0]
+		}
+		check(t, "a new socket", post(keptTurn("conv-2", "relay/m1", userPing)))
+		kept := post(keptTurn("conv-2", "relay/m1", userPing, asstPong, userAgain))
+		if posts, sockets := f.counts(); posts != 0 || sockets != 2 || f.opened() != 1 {
+			t.Fatalf("%d posts, %d turns on %d sockets; want both on one", posts, sockets, f.opened())
+		}
+		check(t, "the kept socket", kept)
+	})
+}
+
+func postProtoBody(t *testing.T, s *Server, path, body string) (int, string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", path, strings.NewReader(body))
+	s.Handler().ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
 }

@@ -9,16 +9,15 @@ import (
 	"time"
 )
 
-// A plugin subscription takes accounts from a file through its own
-// auth.import (the one-click Agy move uses it): a plugin that declares it
-// is listed as importable with its words, and each account its import
-// gives is kept as a sign-in is, one already signed in updated rather than
-// added twice.
+// A plugin subscription had no "Import accounts from a file…" (marchen_cc
+// on X: WorkBuddy's): a plugin that declares auth.import is listed as
+// importable with its words, and each account its import gives is kept as
+// a sign-in is, one already signed in updated rather than added twice.
 func TestPluginImportFiles(t *testing.T) {
 	sandbox(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	for _, name := range []string{"importer", "fake"} {
+	for _, name := range []string{"importer", "apiprompts"} {
 		abs, _ := filepath.Abs("testdata/" + name)
 		if _, err := Add(ctx, abs); err != nil {
 			t.Fatal(err)
@@ -33,7 +32,7 @@ func TestPluginImportFiles(t *testing.T) {
 		switch ps[i].ID {
 		case "importer":
 			imp = &ps[i]
-		case "fakeco":
+		case "apiprompts":
 			other = &ps[i]
 		}
 	}
@@ -71,7 +70,7 @@ func TestPluginImportFiles(t *testing.T) {
 	if !strings.Contains(string(b), "r-ann2") || strings.Contains(string(b), `"r-ann"`) || !strings.Contains(string(b), "r-bob") {
 		t.Errorf("auth.json = %s", b)
 	}
-	if _, err := ImportFiles(ctx, "fakeco", []string{"x"}); err == nil {
+	if _, err := ImportFiles(ctx, "apiprompts", []string{"x"}); err == nil {
 		t.Error("a plugin with no auth.import took a file")
 	}
 }

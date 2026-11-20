@@ -7,6 +7,7 @@ import (
 
 	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/edit"
+	"github.com/istoo/owl/internal/provider"
 )
 
 // TestClaudeAliasShown (StringKe on Discord): a settings.json saying
@@ -95,6 +96,48 @@ func TestClaudeAliasShown(t *testing.T) {
 	}
 }
 
+// v0.2.27's picker draws the options in their order: the catalog's
+// routing groups and providers first, then Claude Code's own models.
+// Upstream puts the own models first, which moved every catalog option
+// down a page and changed what the old page's first row said.
+func TestClaudePickerCatalogBeforeOwn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	if err := os.MkdirAll(filepath.Dir(catalog.CachePath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(catalog.CachePath(), []byte(`{"anthropic":{"models":{
+		"claude-opus-5-5":{"id":"claude-opus-5-5","name":"Claude Opus 5.5","release_date":"2026-09-22"}
+	}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalog.Reset()
+	t.Cleanup(catalog.Reset)
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Chat: "http://127.0.0.1:1/v1", Key: "k", Models: []string{"claude-opus-5-5"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveLive("relay", "http://127.0.0.1:1/v1", []catalog.Model{{ID: "claude-opus-5-5"}}); err != nil {
+		t.Fatal(err)
+	}
+	a := claude(home)
+	opts := a.Field("model").Options(a.Values())
+	firstCat, own := -1, -1
+	for i, o := range opts {
+		if o.Ref != "" && firstCat < 0 {
+			firstCat = i
+		}
+		if o.Value == "claude-opus-5-5" && o.Ref == "" {
+			own = i
+		}
+	}
+	if firstCat != 0 || own < 0 || own < firstCat {
+		t.Fatalf("first catalog option %d, Claude's own %d: %+v", firstCat, own, opts)
+	}
+}
+
 // TestClaudeDatedAlias (#496): models.dev lists an alias and its dated id
 // as two models (claude-opus-4-5, claude-opus-4-5-20251101), and the
 // picker showed both. The dated one now names its alias, for the picker to
@@ -120,6 +163,11 @@ func TestClaudeDatedAlias(t *testing.T) {
 	for _, o := range opts {
 		if o.Alias != want[o.Value] {
 			t.Errorf("%s: alias %q, want %q", o.Value, o.Alias, want[o.Value])
+		}
+		// v0.2.27's page hides an alias it doesn't know to be a model's
+		// own name as an account name: every alias here says it is one
+		if o.Alias != "" && !o.Named {
+			t.Errorf("%s: alias %q not marked as the model's own name", o.Value, o.Alias)
 		}
 	}
 }

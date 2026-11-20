@@ -49,6 +49,7 @@ jobs:
         shell: bash
         run: |
           wanted="${{ github.event_name == 'push' && 'all' || inputs.targets }}"
+          # shellcheck disable=SC2193 # actionlint fills the matrix value in
           if [ "$wanted" = "all" ] || [[ ",$wanted," == *",${{ matrix.target }},"* ]] \
             || { [ "$wanted" = "apple" ] && [[ "${{ matrix.target }}" == *darwin* ]]; } \
             || { [ "$wanted" = "linux" ] && [[ "${{ matrix.target }}" == *linux* ]]; } \

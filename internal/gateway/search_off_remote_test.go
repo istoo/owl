@@ -20,7 +20,7 @@ func TestSearchProviderOffTellsRemoteOwl(t *testing.T) {
 	if err := provider.Save(p); err != nil {
 		t.Fatal(err)
 	}
-	e := provider.Entry{Provider: p, Model: "kimi-for-coding"}
+	e := provider.Entry{Provider: &p, Model: "kimi-for-coding"}
 	if got := webSearchOf(e, canSearch()); got != searchOwl {
 		t.Fatalf("automatic: %q, want %q", got, searchOwl)
 	}

@@ -6,17 +6,8 @@ package gui
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework AppKit
 #import <Cocoa/Cocoa.h>
-#include <mach/mach.h>
+#import <objc/runtime.h>
 #include <stdlib.h>
-#include <string.h>
-
-// mpFootprint is the process's physical footprint, for the flap's test.
-static unsigned long long mpFootprint(void) {
-	task_vm_info_data_t t;
-	mach_msg_type_number_t n = TASK_VM_INFO_COUNT;
-	if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&t, &n) != KERN_SUCCESS) return 0;
-	return t.phys_footprint;
-}
 
 // The Dock tile flaps as the header logo does: the icon the system draws
 // for owl (its glass tile and glossy bird, light) is cut into body, tail
@@ -49,7 +40,7 @@ static CGPathRef mpDockPath(const char *ops, int nops, const double *pts) {
 
 static CGContextRef mpDockContext(void) {
 	CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-	CGContextRef c = CGBitmapContextCreate(NULL, mpDockPx, mpDockPx, 8, 0, cs, kCGImageAlphaPremultipliedLast);
+	CGContextRef c = CGBitmapContextCreate(NULL, mpDockPx, mpDockPx, 8, 0, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
 	CGColorSpaceRelease(cs);
 	return c;
 }
@@ -75,7 +66,7 @@ static const CGFloat mpDockSeam = 1;
 // even-odd and stroked out by edge pixels, within the mask within if any.
 static CGImageRef mpDockFill(CGPathRef path, CGFloat edge, CGImageRef within) {
 	CGColorSpaceRef g = CGColorSpaceCreateDeviceGray();
-	CGContextRef c = CGBitmapContextCreate(NULL, mpDockPx, mpDockPx, 8, 0, g, kCGImageAlphaNone);
+	CGContextRef c = CGBitmapContextCreate(NULL, mpDockPx, mpDockPx, 8, 0, g, (CGBitmapInfo)kCGImageAlphaNone);
 	CGColorSpaceRelease(g);
 	CGContextSetGrayFillColor(c, 0, 1);
 	CGContextFillRect(c, CGRectMake(0, 0, mpDockPx, mpDockPx));
@@ -182,13 +173,13 @@ static void mpDockTurn(CGContextRef c, double x, double y, double deg) {
 	CGContextTranslateCTM(c, -x, -y);
 }
 
-// mpDockDraw draws a frame into c: the bob outside, each piece's own turn
-// inside, as the logo's groups nest. Cleared first, so a piece turned past
-// the tile in the frame before leaves nothing of itself in this one.
-static void mpDockDraw(CGContextRef c, double bob, double tail, double wing, const double *at) {
-	CGRect all = CGRectMake(0, 0, mpDockPx, mpDockPx);
-	CGContextClearRect(c, all);
+// mpDockFrameImage draws a frame: the bob outside, each piece's own turn
+// inside, as the logo's groups nest.
+static CGImageRef mpDockFrameImage(double bob, double tail, double wing, const double *at) {
+	CGContextRef c = mpDockContext();
+	if (!c) return NULL;
 	CGContextSetInterpolationQuality(c, kCGInterpolationHigh);
+	CGRect all = CGRectMake(0, 0, mpDockPx, mpDockPx);
 	CGContextDrawImage(c, all, mpDockClean);
 	double deg[3] = {0, tail, wing};
 	for (int i = 0; i < 3; i++) {
@@ -204,13 +195,6 @@ static void mpDockDraw(CGContextRef c, double bob, double tail, double wing, con
 		CGContextDrawImage(c, all, mpDockPiece[i]);
 		CGContextRestoreGState(c);
 	}
-}
-
-// mpDockFrameImage draws a frame into an image of its own, for mpDockPNG.
-static CGImageRef mpDockFrameImage(double bob, double tail, double wing, const double *at) {
-	CGContextRef c = mpDockContext();
-	if (!c) return NULL;
-	mpDockDraw(c, bob, tail, wing, at);
 	CGImageRef im = CGBitmapContextCreateImage(c);
 	CGContextRelease(c);
 	return im;
@@ -228,71 +212,69 @@ static int mpDockPNG(const char *file, double bob, double tail, double wing, con
 	}
 }
 
-// The one image the tile is shown. NSDockTile keeps each image it is given
-// (measured: 29 frames' images, 29 MB, still held after a flap, and as much
-// again for the next click); the same image shown again is kept once. So
-// the frames are drawn into one image, through this handler, as the view
-// asks for it, and that same image is shown every frame.
-static NSImage *mpDockFrame;
-static CGContextRef mpDockCanvas;
-static double mpDockBob, mpDockTail, mpDockWing;
-static double mpDockAt[6];
-static int mpDockDisplays;
-
-// mpDockFrameDraw draws the frame mpDockShow last asked for, into the size
-// the view asks for. Runs on the main thread, as the view draws.
-static BOOL mpDockFrameDraw(NSRect r) {
-	if (!mpDockCanvas) mpDockCanvas = mpDockContext();
-	if (!mpDockCanvas) return NO;
-	mpDockDraw(mpDockCanvas, mpDockBob, mpDockTail, mpDockWing, mpDockAt);
-	CGImageRef im = CGBitmapContextCreateImage(mpDockCanvas);
-	if (!im) return NO;
-	CGContextRef c = [[NSGraphicsContext currentContext] CGContext];
-	CGContextSetInterpolationQuality(c, kCGInterpolationHigh);
-	CGContextDrawImage(c, NSRectToCGRect(r), im);
-	CGImageRelease(im);
-	return YES;
+// mpDockFrameNS is a frame as an NSImage, retained. It is made on a Go
+// thread, which has no autorelease pool: without one of its own, what
+// AppKit autoreleases in making it (its NSCGImageSnapshotRep, holding the
+// frame's 1 MB of pixels) was never let go, 29 frames a flap, for as long
+// as owl ran (#4162).
+static NSImage *mpDockFrameNS(CGImageRef im) {
+	@autoreleasepool {
+		return [[NSImage alloc] initWithCGImage:im size:NSMakeSize(mpDockPx, mpDockPx)];
+	}
 }
 
-// mpDockAngles carries the turn points by value into the main queue: the
-// Go side frees the array when the flap returns.
-typedef struct { double v[6]; } mpDockAngles;
+// mpDockFrameFreed makes a frame's NSImage as mpDockShow does, on the
+// calling thread, lets it go, and says whether its pixels went with it:
+// 1 when nothing of it is left, for tests.
+static int mpDockFrameFreed(void) {
+	CGContextRef c = mpDockContext();
+	if (!c) return -1;
+	CGImageRef im = CGBitmapContextCreateImage(c);
+	CGContextRelease(c);
+	if (!im) return -1;
+	NSImage *ns = mpDockFrameNS(im);
+	CGImageRelease(im);
+	// a weak reference to its pixels' rep; each look at it in a pool of
+	// its own, since objc_loadWeak autoreleases what it gives
+	id rep = nil;
+	int seen, freed;
+	@autoreleasepool {
+		objc_storeWeak(&rep, ns.representations.firstObject);
+		seen = objc_loadWeak(&rep) != nil;
+	}
+	[ns release];
+	@autoreleasepool {
+		freed = objc_loadWeak(&rep) == nil;
+		objc_storeWeak(&rep, nil);
+	}
+	if (!seen) return -1; // nothing to watch
+	return freed;
+}
 
 static void mpDockShow(double bob, double tail, double wing, const double *at) {
-	mpDockAngles an;
-	memcpy(an.v, at, sizeof an.v);
+	CGImageRef im = mpDockFrameImage(bob, tail, wing, at);
+	if (!im) return;
+	NSImage *ns = mpDockFrameNS(im);
+	CGImageRelease(im);
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSDockTile *tile = NSApp.dockTile;
-		if (!mpDockFrame) {
-			mpDockFrame = [[NSImage imageWithSize:NSMakeSize(mpDockPx, mpDockPx) flipped:NO drawingHandler:^BOOL(NSRect r) {
-				return mpDockFrameDraw(r);
-			}] retain];
-			mpDockFrame.cacheMode = NSImageCacheNever;
-		}
 		if (!mpDockView) {
 			mpDockView = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, tile.size.width, tile.size.height)];
 			mpDockView.imageScaling = NSImageScaleProportionallyUpOrDown;
 		}
-		mpDockBob = bob;
-		mpDockTail = tail;
-		mpDockWing = wing;
-		memcpy(mpDockAt, an.v, sizeof mpDockAt);
-		mpDockView.image = mpDockFrame;
-		mpDockView.needsDisplay = YES; // the same image again: ask for a redraw
+		mpDockView.image = ns;
+		[ns release];
 		if (tile.contentView != mpDockView) tile.contentView = mpDockView;
 		[tile display];
-		mpDockDisplays++;
 	});
 }
-
-// mpDockShown is how many frames the main queue has shown, for tests.
-static int mpDockShown(void) { return mpDockDisplays; }
 
 // mpDockStill gives the tile back to the system's icon.
 static void mpDockStill(void) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSDockTile *tile = NSApp.dockTile;
 		tile.contentView = nil;
+		mpDockView.image = nil; // the last frame's pixels, until the next flap
 		[tile display];
 	});
 }
@@ -328,21 +310,13 @@ var (
 	dockOnce     sync.Once
 	dockGood     bool
 	dockFlapping atomic.Bool
-	// dockPlainForTest overrides the Dock's appearance in tests: 1 plain,
-	// -1 not plain, 0 asks the Dock. The machine's Dock is not what a test
-	// of the flap's frames is about.
-	dockPlainForTest atomic.Int32
 )
 
 // dockReady cuts the icon of app (owl's own bundle when "") up the first
 // time the tile flaps, by the header logo's paths; false when it can't, or
 // the Dock shows icons another way.
 func dockReady(app string) bool {
-	if v := dockPlainForTest.Load(); v != 0 {
-		if v < 0 {
-			return false
-		}
-	} else if C.mpDockPlain() == 0 {
+	if C.mpDockPlain() == 0 {
 		return false
 	}
 	dockOnce.Do(func() {
@@ -423,12 +397,6 @@ func dockFlap() {
 	C.mpDockStill()
 }
 
-// dockFramesShown is how many frames the main queue has shown, for tests.
-func dockFramesShown() int { return int(C.mpDockShown()) }
-
-// dockFootprint is the process's physical footprint, for the flap's test.
-func dockFootprint() uint64 { return uint64(C.mpFootprint()) }
-
 // dockFramePNG writes the tile at t, 0..1 of the flap, cut from app's icon.
 func dockFramePNG(app, file string, t float64) bool {
 	if !dockReady(app) {
@@ -440,4 +408,12 @@ func dockFramePNG(app, file string, t float64) bool {
 	defer C.free(unsafe.Pointer(cf))
 	bob, tail, wing := flapAt(t)
 	return C.mpDockPNG(cf, C.double(bob), C.double(tail), C.double(wing), at) != 0
+}
+
+// dockFrameFreed makes a Dock frame's image on this goroutine's thread, as
+// dockFlap does, lets it go, and says whether its pixels went with it; ok
+// is false when there was nothing to watch.
+func dockFrameFreed() (freed, ok bool) {
+	r := C.mpDockFrameFreed()
+	return r == 1, r >= 0
 }

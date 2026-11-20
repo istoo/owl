@@ -7,16 +7,17 @@ import (
 	"github.com/istoo/owl/internal/provider"
 )
 
-// user-agent=agent has a key+URL provider pass the agent's User-Agent on
-// (#1851), user-agent=owl goes back to owl's, and a signed-in
-// account, which goes as its own client, is refused it.
+// A key+URL provider goes as owl by default (#1851, nb5p on Discord):
+// user-agent=agent sends the agent's in its place, user-agent=owl goes back
+// to the default, and a signed-in account, which goes as its own client, is
+// refused agent.
 func TestProviderUserAgentPair(t *testing.T) {
 	p := provider.Provider{ID: "plan", Name: "Plan", Chat: "https://plan.example/v1", Key: "k"}
-	if err := applyPairs(&p, []string{"user-agent=agent"}); err != nil || !p.PassUserAgent {
-		t.Fatalf("agent: %v %v", p.PassUserAgent, err)
-	}
-	if err := applyPairs(&p, []string{"user-agent=owl"}); err != nil || p.PassUserAgent {
+	if err := applyPairs(&p, []string{"user-agent=owl"}); err != nil || p.PassUserAgent || p.PassesUserAgent() {
 		t.Fatalf("owl: %v %v", p.PassUserAgent, err)
+	}
+	if err := applyPairs(&p, []string{"user-agent=agent"}); err != nil || !p.PassUserAgent || !p.PassesUserAgent() {
+		t.Fatalf("agent: %v %v", p.PassUserAgent, err)
 	}
 	if err := applyPairs(&p, []string{"user-agent=claude"}); err == nil || !strings.Contains(err.Error(), "agent|owl") {
 		t.Fatalf("a made-up value: %v", err)
@@ -25,8 +26,8 @@ func TestProviderUserAgentPair(t *testing.T) {
 	if err := applyPairs(&a, []string{"user-agent=agent"}); err == nil || a.PassUserAgent {
 		t.Fatalf("an account took it: %v", err)
 	}
-	if err := applyPairs(&a, []string{"user-agent=owl"}); err != nil {
-		t.Fatalf("an account turning it off: %v", err)
+	if err := applyPairs(&a, []string{"user-agent=owl"}); err != nil || a.PassUserAgent {
+		t.Fatalf("an account turning it off: %v %v", a.PassUserAgent, err)
 	}
 }
 

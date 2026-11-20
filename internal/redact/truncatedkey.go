@@ -1,8 +1,9 @@
 package redact
 
 import (
-	"regexp"
 	"strings"
+
+	"github.com/istoo/owl/internal/lazyre"
 )
 
 // 日志或工具输出被截断时，私钥往往只剩明确头加若干行密钥正文，没有
@@ -12,7 +13,7 @@ import (
 // debt: 依赖常见正文行宽与明确的头；无上下文的裸字符串不判为密钥。若需
 // 识别带装甲头字段的格式，应按对应格式解析，不放宽通用字符匹配。
 
-var privateKeyHeader = regexp.MustCompile(`-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----`)
+var privateKeyHeader = lazyre.New(`-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----`)
 
 const (
 	// 标准 PEM 正文每行 64 字符，OpenSSH 的 70 和少数工具的 76 也收。

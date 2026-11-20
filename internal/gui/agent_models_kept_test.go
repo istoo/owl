@@ -26,7 +26,7 @@ func TestAgentModelsKeptByVisibility(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	for _, p := range []provider.Provider{
 		{ID: "deepseek-x", Name: "DeepSeek X", Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"d1"}},
-		{ID: "opencode-go", Name: "OpenCode Go", Preset: "opencode-go", Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"kimi-k2.6", "glm-5.1"}},
+		{ID: "opencode-go", Name: "OpenCode Go", Preset: "opencode-go", Key: "k", Anthropic: provider.OpenCodeGoAnthropic, Chat: provider.OpenCodeGoChat, Models: []string{"kimi-k2.6", "glm-5.1"}},
 		{ID: "zen-x", Name: "Zen X", Key: "k", Chat: "http://127.0.0.1:1/v1", Models: []string{"z1"}},
 	} {
 		if err := provider.Save(p); err != nil {

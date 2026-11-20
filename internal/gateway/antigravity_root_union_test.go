@@ -2,10 +2,10 @@ package gateway
 
 import (
 	"encoding/json"
+	"github.com/istoo/owl/internal/provider"
 	"reflect"
 	"testing"
 
-	"github.com/istoo/owl/internal/provider"
 	"github.com/tidwall/gjson"
 )
 
@@ -56,6 +56,7 @@ func TestAntigravityChatToolRootOneOfKeepsObject(t *testing.T) {
 // member does; a null branch makes it nullable. A union with nothing of
 // its own beside it is still read as its first branch that isn't null.
 func TestPlainSchemaUnionKeepsOwnShape(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, c := range []struct{ name, in, want string }{
 		{"root oneOf", rgSchema,
 			`{"type":"object","properties":{"pattern":{"type":"string"},"cursor":{"type":"string"}}}`},
@@ -101,6 +102,7 @@ func TestPlainSchemaUnionKeepsOwnShape(t *testing.T) {
 // the upstreams that refuse a root union), keeps the same tool an object
 // with both its fields: its constraint-only branches are passed over.
 func TestObjectSchemaRootOneOfKeepsObject(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	ps := gjson.ParseBytes(objectSchema(json.RawMessage(rgSchema)))
 	if ps.Get("type").String() != "object" || !ps.Get("properties.pattern").Exists() || !ps.Get("properties.cursor").Exists() || ps.Get("oneOf").Exists() || ps.Get("required").Exists() {
 		t.Fatalf("got %s", ps.Raw)

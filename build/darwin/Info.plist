@@ -19,6 +19,10 @@
 			<key>CFBundleURLName</key><string>com.istoo.owl.import</string>
 			<key>CFBundleURLSchemes</key><array><string>owl</string></array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key><string>com.istoo.owl.ccswitch</string>
+			<key>CFBundleURLSchemes</key><array><string>ccswitch</string></array>
+		</dict>
 	</array>
 	<key>NSHumanReadableCopyright</key><string>owl · MIT · based on yetone/magpie</string>
 </dict>

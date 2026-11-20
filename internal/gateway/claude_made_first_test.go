@@ -28,6 +28,8 @@ func claudeMadeFirst(t *testing.T, bRefuses bool) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a shell script stands in for Claude Code")
 	}
+	noRests() // a rest an earlier test left must not hold this account (#6717)
+	t.Cleanup(noRests)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -85,7 +87,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(bin, "claude"), script)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+stdPath())
 	provider.ForgetAccounts()
 	t.Cleanup(provider.ForgetAccounts)
 }

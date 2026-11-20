@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>はじめに · owl ドキュメント</title>
+<title>はじめに：Claude Code や Codex などエージェントごとにモデルを選ぶ · owl ドキュメント</title>
 <meta name="description" content="owl の全体の仕組みとセットアップ方法：手持ちのプロバイダを追加し、エージェントごとにモデルを選び、必要に応じて 1 つのモデルを複数のアカウントにルーティングします。">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#fafafa">
@@ -27,18 +27,66 @@
 <script>try{if(/Linux/.test(navigator.userAgent)&&!/Android/.test(navigator.userAgent)||localStorage.getItem("omarchy")||/[?&]omarchy=/.test(location.search))document.write('<script src="/omarchy.js"><\/script>')}catch(e){}</script>
 <link rel="icon" href="/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="/img/icon-256.png">
-<link rel="alternate" hreflang="en" href="https://github.com/istoo/owl/blob/main/docs/start">
-<link rel="alternate" hreflang="zh" href="https://github.com/istoo/owl/blob/main/docs/zh/start">
-<link rel="alternate" hreflang="ja" href="https://github.com/istoo/owl/blob/main/docs/ja/start">
-<link rel="alternate" hreflang="x-default" href="https://github.com/istoo/owl/blob/main/docs/start">
-<link rel="canonical" href="https://github.com/istoo/owl/blob/main/docs/ja/start">
+<link rel="alternate" hreflang="en" href="https://usemagpie.ai/docs/start">
+<link rel="alternate" hreflang="zh" href="https://usemagpie.ai/docs/zh/start">
+<link rel="alternate" hreflang="ja" href="https://usemagpie.ai/docs/ja/start">
+<link rel="alternate" hreflang="x-default" href="https://usemagpie.ai/docs/start">
+<link rel="canonical" href="https://usemagpie.ai/docs/ja/start">
 <link rel="stylesheet" href="/docs.css">
 <meta property="og:site_name" content="owl">
 <meta property="og:title" content="owl をはじめる">
 <meta property="og:description" content="手持ちのプロバイダを追加し、エージェントごとにモデルを選ぶ。セットアップを順を追って解説します。">
-<meta property="og:image" content="https://github.com/istoo/owl/img/og.png">
-<meta property="og:url" content="https://github.com/istoo/owl/blob/main/docs/ja/start">
+<meta property="og:image" content="https://usemagpie.ai/img/og.png">
+<meta property="og:url" content="https://usemagpie.ai/docs/ja/start">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "TechArticle",
+   "headline": "はじめに",
+   "description": "owl の全体の仕組みとセットアップ方法：手持ちのプロバイダを追加し、エージェントごとにモデルを選び、必要に応じて 1 つのモデルを複数のアカウントにルーティングします。",
+   "inLanguage": "ja",
+   "url": "https://usemagpie.ai/docs/ja/start",
+   "about": {
+    "@type": "SoftwareApplication",
+    "name": "owl",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Windows, Linux"
+   },
+   "publisher": {
+    "@type": "Organization",
+    "name": "owl",
+    "url": "https://usemagpie.ai/"
+   }
+  },
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "owl",
+     "item": "https://usemagpie.ai/ja/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "ドキュメント",
+     "item": "https://usemagpie.ai/docs/ja/start"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "name": "はじめに",
+     "item": "https://usemagpie.ai/docs/ja/start"
+    }
+   ]
+  }
+ ]
+}
+</script>
 </head>
 <body>
 
@@ -54,9 +102,17 @@
     <a class="toc-only" href="/docs/ja/privacy">プライバシー</a>
     <a class="toc-only" href="/docs/ja/masking">プライバシーマスキング</a>
     <a class="toc-only" href="/docs/ja/mcp-router">MCP ルーター</a>
+    <a class="toc-only" href="/docs/ja/library">ライブラリ</a>
+    <a class="toc-only" href="/docs/ja/claude-code-models">Claude Code で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/codex-models">Codex で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/gemini-cli-models">Gemini CLI で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/subscriptions">サブスクを任意のエージェントで</a>
+    <a class="toc-only" href="/docs/ja/local-models">ローカルモデル</a>
+    <a class="toc-only" href="/docs/ja/opencode-models">OpenCode で他のモデル</a>
+    <a class="toc-only" href="/docs/ja/alternatives">CC Switch・CCR との比較</a>
     <a href="/docs/ja/import">owl に追加</a>
     <a href="/docs/integrate">アプリ連携</a>
-    <a href="https://github.com/istoo/owl/releases">リリース</a>
+    <a href="https://github.com/istoo/owl-releases/releases">リリース</a>
   </div>
   <div class="langs">
     <button class="icon-btn lang" type="button" aria-label="言語" title="言語" aria-haspopup="true" aria-expanded="false" aria-controls="langs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.75 2.55 3.83 2.55 6.25S9.7 12.5 8 14.25M8 1.75C6.3 3.5 5.45 5.58 5.45 8S6.3 12.5 8 14.25"/></svg></button>
@@ -66,6 +122,7 @@
       <a href="/docs/ja/start" hreflang="ja" lang="ja">日本語</a>
     </div>
   </div>
+  <a class="icon-btn" href="https://discord.gg/vGSnD3ZKQF" aria-label="Discord の owl" title="Discord に参加"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
   <a class="icon-btn" href="https://github.com/istoo/owl" aria-label="GitHub の owl" title="GitHub のソースコード"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
   <button class="icon-btn theme" type="button" aria-label="Theme" title="Theme: system"><svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11.25V14"/></svg><svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg><svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg></button>
   <a class="btn small" href="/#get">ダウンロード</a>
@@ -113,11 +170,11 @@
     </figure>
 
     <h3>サブスクリプション · サインインのみ、キー不要</h3>
-    <p>Claude（Pro、Max、Team）、ChatGPT（Plus、Pro、Business）、Copilot、Gemini（Code Assist）。Cursor、Grok（SuperGrok）、Devin などは <span class="ui">プラグイン</span> ページから追加します。Antigravity はここではサインインしません。<span class="ui">Antigravity (local agy CLI)</span> をプラグインページからインストールすると、インストール済みでサインインした agy CLI を実行し、リクエストは公式クライアント agy 自身から送られます（Google は Antigravity 自身のクライアント経由で Code Assist にアクセスするアカウントを停止します）。タイルをクリックすると、owl がブラウザでベンダー自身のサインインページを開き、完了するとすぐにアカウントが表示されます（Copilot では GitHub のページに入力するコードが表示されます）。サブスクリプションは他のエージェント内でログインするのではなく、ここ owl で追加します。</p>
+    <p>Claude（Pro、Max、Team）、ChatGPT（Plus、Pro、Business）、Copilot、Gemini（Code Assist）、Antigravity。Cursor、Grok（SuperGrok）、Devin などは <span class="ui">プラグイン</span> ページから追加します。タイルをクリックすると、owl がブラウザでベンダー自身のサインインページを開き、完了するとすぐにアカウントが表示されます（Copilot では GitHub のページに入力するコードが表示されます）。サブスクリプションは他のエージェント内でログインするのではなく、ここ owl で追加します。</p>
     <ul>
       <li><b>複数のアカウント。</b> Claude や ChatGPT のタイルをもう一度クリックすると、別のアカウントを追加できます。各アカウントはプロバイダの下に並び、ワンクリックで使用中のものに切り替えられます。</li>
       <li><b>すでにサインイン済み？</b> このマシンでサインインしているエージェントも、<em>signed in as …</em> というプロバイダとして表示されます。</li>
-      <li><b>どのエージェントからも使えます。</b> サブスクリプションのモデルは、他のすべてのエージェントのピッカーに <code>claude/…</code>、<code>codex/…</code>、<code>copilot/…</code> として並びます。Antigravity の Claude や Gemini のモデルも、Antigravity (local agy CLI) とサインイン済みの agy CLI を通して同じように使えます。Google は Antigravity 自身のクライアント経由で Code Assist にアクセスするアカウントを停止するため、owl は Antigravity に直接サインインしません。Claude サブスクリプションのリクエストはこのマシンにインストールされた Claude Code を通して実行されるため、Claude Code はインストールしたままにしてください。</li>
+      <li><b>どのエージェントからも使えます。</b> サブスクリプションのモデルは、他のすべてのエージェントのピッカーに <code>claude/…</code>、<code>codex/…</code>、<code>copilot/…</code>、<code>antigravity/…</code> として並びます。たとえば Antigravity の Claude や Gemini のモデルを Codex や Claude Code で使うには、ここで Antigravity にサインインし、エージェントの行で <code>antigravity/…</code> のモデルを選ぶだけで、ほかの設定は要りません。Google は Antigravity 以外で使われている Antigravity アカウントを停止することがあるので、失っても困らないアカウントを使ってください。Claude サブスクリプションのリクエストはこのマシンにインストールされた Claude Code を通して実行されるため、Claude Code はインストールしたままにしてください。</li>
     </ul>
 
     <h3>ベンダー</h3>
@@ -152,6 +209,7 @@
       <tr><td>Claude Code</td><td><code>~/.claude/settings.json</code>：<code>env</code> ブロック内の <code>ANTHROPIC_BASE_URL</code>、<code>ANTHROPIC_AUTH_TOKEN</code> とモデル関連の変数</td></tr>
       <tr><td>Codex</td><td><code>~/.codex/config.toml</code>：<code>[model_providers.owl]</code> テーブルとモデル、一覧は <code>owl-models.json</code>。ChatGPT のサインインには手を加えません</td></tr>
       <tr><td>OpenCode、MiMo Code、DevEco Code、Pi、Crush</td><td><code>owl</code> プロバイダのエントリと <code>owl/provider/model</code></td></tr>
+      <tr><td>Open Code Review</td><td><code>~/.opencodereview/config.json</code>：<code>owl</code> カスタムプロバイダを追加し、<code>ocr</code> が使うものに設定</td></tr>
       <tr><td>AtomCode</td><td><code>~/.atomcode/config.toml</code>：<code>owl</code> プロバイダアカウントと、カタログ内の各モデルのエントリ</td></tr>
       <tr><td>Snow CLI</td><td><code>~/.snow/profiles/owl.json</code>：<code>owl</code> プロファイルを作り、使用中のプロファイルにする（Snow App は「Sync Snow CLI API config」で取り込む）</td></tr>
       <tr><td>QwenPaw</td><td><code>~/.qwenpaw.secret/providers/custom/owl.json</code> の <code>owl</code> プロバイダーと、各エージェントの <code>agent.json</code> の <code>active_model</code>。初回の接続後に QwenPaw を再起動</td></tr>
@@ -159,6 +217,7 @@
     </table></div>
     <p><b>実行中のセッションは、開始時のモデルを使い続けます。</b> エージェントは起動時に設定を読むので、変更は次のセッションから反映されます。Codex は起動時にモデル一覧も作るため、切り替えたら Codex アプリと開いている <code>codex</code> セッションを再起動してください。</p>
     <div class="callout"><b>Paseo やエディタ拡張などのフロントエンド</b>で Claude Code や Codex を代わりに動かすものは、同じ CLI を起動し、同じ <code>~/.claude</code> または <code>~/.codex</code> の設定を読みます。owl で一度モデルを設定すれば、それらにも次のセッションから反映されます。</div>
+    <div class="callout"><b><code>claude-owl</code>：Claude Code を owl 経由で、<code>claude</code> はそのまま。</b>ふだんの <code>claude</code> は自分の Claude アカウントのまま、必要なときだけ owl を通したいなら、Claude Code は接続せずに <code>claude-owl</code> で起動します。同じ <code>claude</code> を、そのセッションだけ owl の設定（ゲートウェイ、モデルと各ティア）を自分の設定の上に重ねて起動するので、<code>~/.claude/settings.json</code> は書き換えられません。引数はすべて Claude Code に渡ります：<code>claude-owl --resume</code>、<code>claude-owl -p "…"</code>。<span class="ui">設定 › コマンドライン</span> で <code>owl</code> コマンドを追加すると、その隣に置かれます。すでに追加済みなら <code>owl claude launcher add</code> を一度実行してください。<code>owl claude run</code> でも同じです。その中で <code>/model</code> で選んだモデルは次の <code>claude-owl</code> に引き継がれ、自分の <code>claude</code> は元のモデルのままです。owl が起動している必要があります。</div>
 
     <h2 id="routing"><a class="anchor" href="#routing">3 · 任意：ルーティンググループ</a></h2>
     <p>プロバイダごとにアカウントが 1 つなら、ここは読み飛ばして構いません。ChatGPT アカウントが 2 つある、あるいは同じモデルをサブスクリプションとキーの両方で使えるなど、複数あるときに意味を持ちます。</p>
@@ -175,13 +234,13 @@
     <h3>1 つのモデルを複数のプロバイダで</h3>
     <p>グループとは、1 つまたは複数のプロバイダのモデルを、エージェントが 1 つとして選べるようにまとめたものです。ピッカーの <em>Routing groups</em> の下に <code>group/&lt;id&gt;</code> として表示されます。2 つのプロバイダが同じ名前で提供しているモデルは、それだけでグループになります。<span class="ui">Routing</span> タブの <span class="ui">New group</span> では、好きなモデルを組み合わせてグループを作れます。グループで何ができるかは、最初のモデルが基準になります。</p>
     <div class="callout"><b>何もしなくてもできるグループ。</b> すでに持っているモデルを提供する 2 つ目のプロバイダを追加すると（Claude サブスクリプションと Copilot の Claude Opus、DeepSeek 自身の API と OpenRouter の DeepSeek など）、owl はそれを提供するすべてのプロバイダにまたがるグループ <code>auto/&lt;model&gt;</code>（モデル自身の ID。例: <code>auto/claude-opus-4.6</code>。以前の <code>group/auto-…</code> も引き続き使えます）を自動で作ります。名前はベンダーごとの表記の違い（<code>deepseek/deepseek-chat</code>、<code>deepseek-chat</code>）を吸収して照合されます。エージェントにこれを選ぶとリクエストがすべてに分散されます。不要なものは <code>owl group rm</code> で非表示にできます。</div>
-    <div class="callout"><b>プロバイダ独自の id に自分の id を。</b> プロバイダによっては <code>deepseek-v4.1-flash-1017</code> や <code>grok-4.6@500k</code> のような独自の id でモデルを提供します。プロバイダの編集画面の <span class="ui">名前・価格・推論レベル</span> で、<span class="ui">同じモデル</span> の隣の <span class="ui">表示 ID</span> に使いたい id を入れて <span class="ui">保存</span>、または <code>owl model id relay/grok-4.6@500k grok-4.6</code> を実行します。以後 owl は一覧、ルーティング、他のプロバイダの <code>grok-4.6</code> とまとめた <code>auto/grok-4.6</code> グループ、ゲートウェイキーの制限、使用量の記録をすべて <code>grok-4.6</code> で行い、プロバイダには <code>grok-4.6@500k</code> で問い合わせます。1 つのプロバイダで 1 つの id は 1 つのモデルです。最後に付けたものが有効で、その間プロバイダ自身のその id のモデルは一覧から外れます。<code>owl model id relay/grok-4.6 --reset</code> で元に戻し、<code>owl model ids</code> で一覧を表示します。サインインしたサブスクリプションやプラグインのプロバイダでも同じです（<code>owl model id cursor/deepseek-v41-flash-1017 deepseek-v4.1-flash</code>）。アカウントやプラグインには引き続き元の id で問い合わせます。</div>
+    <div class="callout"><b>プロバイダ独自の id に自分の id を。</b> プロバイダによっては <code>deepseek-v4.1-flash-1017</code> や <code>grok-4.6@500k</code> のような独自の id でモデルを提供します。プロバイダの編集画面の <span class="ui">モデル設定</span> で、<span class="ui">同じモデル</span> の隣の <span class="ui">表示 ID</span> に使いたい id を入れて <span class="ui">保存</span>、または <code>owl model id relay/grok-4.6@500k grok-4.6</code> を実行します。以後 owl は一覧、ルーティング、他のプロバイダの <code>grok-4.6</code> とまとめた <code>auto/grok-4.6</code> グループ、ゲートウェイキーの制限、使用量の記録をすべて <code>grok-4.6</code> で行い、プロバイダには <code>grok-4.6@500k</code> で問い合わせます。1 つのプロバイダで 1 つの id は 1 つのモデルです。最後に付けたものが有効で、その間プロバイダ自身のその id のモデルは一覧から外れます。<code>owl model id relay/grok-4.6 --reset</code> で元に戻し、<code>owl model ids</code> で一覧を表示します。サインインしたサブスクリプションやプラグインのプロバイダでも同じです（<code>owl model id cursor/deepseek-v41-flash-1017 deepseek-v4.1-flash</code>）。アカウントやプラグインには引き続き元の id で問い合わせます。</div>
     <div class="table-wrap"><table>
       <tr><th>ルーティング</th><th>先に使われるもの</th></tr>
       <tr><td>スマート <code>smart</code></td><td>デフォルトです。メンバーのアカウントとキーをまとめて扱い（グループ内のグループは 1 つとして扱います。下記参照）、クォータに余裕のあるサブスクリプションのうち、利用枠が最も早く更新されるもの。基準は週の枠です。週の枠がなく 5 時間枠だけのアカウント（Claude Enterprise）は 5 時間枠で判断されるため、それより後に週の枠が更新されるものすべてより先になります。リセットのないクレジット（WorkBuddy のパッケージはそれぞれの日に失効します）は、残りのうち最も早く失効する時点で判断されるため、クレジットが最も早く失効する WorkBuddy アカウントが先になります。同時に更新されるアカウント（無料アカウントはすべて月末）は、その後に残りのクレジットが先に失効するものが先になります。失敗後に休止中のものは最後に回ります。</td></tr>
       <tr><td>順番どおり <code>order</code></td><td>最初のモデルが応答できなくなるまでそれを使い、次へ進みます。</td></tr>
       <tr><td>使い切ってから次へ <code>drain</code></td><td>1 つのアカウントやキーを使い切るまで使い、その後は次へ移ってそのまま使い続けます。その間に前のものが回復しても戻りません。レート制限やエラーのものは休止中だけ飛ばします。</td></tr>
-      <tr><td>持ち回り <code>rotate</code></td><td>各会話の次のターンを、次のメンバーのアカウントやキーに送り、負荷を分散します。</td></tr>
+      <tr><td>持ち回り <code>rotate</code></td><td>メッセージを送るたびに、次のメンバーのアカウントやキーへ回します。そのメッセージのためのツール呼び出しは同じものに残ります。維持を「セッション」にすると、会話全体が一つに留まります。</td></tr>
       <tr><td>使用量の少ない順 <code>usage</code></td><td>利用枠の残りが最も多いアカウントやキー。</td></tr>
       <tr><td>期限前に使い切る <code>pace</code></td><td>更新までの 1 時間あたりの週の枠の残りが最も多いアカウント、つまりリセット時に失う分が最も多いもの。これにより各メンバーの週の枠がリセットで無駄になりにくくなります。週の枠がなく 5 時間枠だけのアカウント（Claude Enterprise）は、更新までの 1 時間あたりの 5 時間枠の残りで判断されるので、ほぼ常に最初になります。リセットより早く期限切れになるクレジットがあるアカウントは、最初に期限切れになる分を期限までの 1 時間あたりで数え、そのほうが多ければそれで判断します（WorkBuddy のチェックインで得たクレジットなど）。使用率が 90% 以上のものは、他が応答できなくなるまで待ちます。キーは最近送ったトークン数で判断します。</td></tr>
       <tr><td>重み順 <code>weight</code></td><td>グループ編集画面で各モデルの横に設定した重み（1〜1000、未設定は 1）に応じてリクエストを分けます。重み 3 のモデルは重み 1 のモデルが 1 件受けるごとに 3 件受け、まとめてではなく均等に散らします。各モデルは自分のプロバイダーのルーティングで自分のアカウントやキーを使い、グループ内のグループは 1 つとして数えます。失敗して休んでいるものはその回から外れ、失敗したときは次のモデルが代わりに答えます。</td></tr>
@@ -202,7 +261,7 @@
       <li>ルールはターンの開始時に決まり、エージェントがツールの結果を返している間もそのターンは同じモデルに留まるため、ベンダーのキャッシュが途中で失われません。唯一の例外として、ターンがモデルのコンテキストを超えて大きくなった場合は、それを受け付けられるメンバーに移ります。</li>
       <li>トークン数は、リクエストのサイズから推定した値と、会話の直前のリクエストでベンダーが数えた値のうち、大きいほうを使います。余裕を持たせてください。200k のモデルなら、ルールは 199k ではなく 150k にします。</li>
       <li>サブエージェントはそれ自体が独立した会話なので、親のエージェントはそのままに、ルールでサブエージェントだけを別の送り先に送れます。</li>
-      <li>インテントは、ユーザーが求めていることを数語で表したものです（「テストを書く・直す」「ちょっとした質問」など）。ターンの開始時に、グループの分類モデル（owl にある任意のモデル。小さく高速で推論なしのものが最適です）に、一致しうるインテントのうちユーザーのメッセージがどれに当たるかを一度だけ尋ねます。送られるのはそのメッセージだけで、会話全体ではありません。分類モデルが失敗した、設定したタイムアウトを超えた（既定は 8 秒。「設定 → モデル → 応答 → インテント判定のタイムアウト」で変更可能）、または判断できなかった場合は、どのインテントも一致せず、そのターンは他のルールに従います。インテントのないルールでいずれにせよ決まる場合は問い合わせず、同じメッセージについて二度尋ねることもありません。その呼び出しは使用量に owl 自身の呼び出しとして表示されます。何を尋ねるのか、回答がどう使われるのか、失敗したらどうなるのかの詳細は<a href="/docs/ja/intent">インテントルーティング</a>を参照してください。</li>
+      <li>インテントは、ユーザーが求めていることを数語で表したものです（「テストを書く・直す」「ちょっとした質問」など）。ターンの開始時に、グループの分類モデル（owl にある任意のモデル。小さく高速で推論なしのものが最適です）に、一致しうるインテントのうちユーザーのメッセージがどれに当たるかを一度だけ尋ねます。送られるのはそのメッセージだけで、会話全体ではありません。分類モデルが失敗した、設定したタイムアウトを超えた（既定は 15 秒。「設定 → モデル → 応答 → インテント判定のタイムアウト」で変更可能）、または判断できなかった場合は、どのインテントも一致せず、そのターンは他のルールに従います。インテントのないルールでいずれにせよ決まる場合は問い合わせず、同じメッセージについて二度尋ねることもありません。その呼び出しは使用量に owl 自身の呼び出しとして表示されます。何を尋ねるのか、回答がどう使われるのか、失敗したらどうなるのかの詳細は<a href="/docs/ja/intent">インテントルーティング</a>を参照してください。</li>
       <li><span class="ui">compacting</span> は、エージェントが会話を圧縮するとき（Claude Code の <code>/compact</code> と自動圧縮、Codex、OpenCode、Pi、Gemini CLI、Qwen Code、Kimi Code）に一致します。これにより、会話は元のモデルのまま、要約だけをより安く速いモデルに書かせられます。圧縮は単独で判断されます。圧縮が起きたターンとそのキャッシュは元の送り先に留まります。会話がルールのモデルが受け付けられる長さを超えている場合は、次に一致するルール、またはグループの順序で決まります。</li>
       <li><b>時間帯と曜日。</b>ルールは、このコンピューターの時計で、特定の時間帯や曜日だけ有効にできます（ベンダーのピーク時間など）。その間のターンを別のモデルに送るルールでは、ベンダーのモデルはフォールバックとして後ろに残ります。完全に外すには、ルールの <span class="ui">⋯</span> メニューから <span class="ui">代わりにモデルを一時停止</span> を選びます。ルールが有効な間（時間帯、曜日、エージェント）、そのモデルはグループから外れ、先頭にもフォールバックにもならず、会話の継続でも使われません。時間帯が終われば戻ります。一時停止は時間帯、曜日、エージェントだけで判断し、グループのモデルがすべて一時停止中ならエージェントにそう伝えます。</li>
       <li><b>フォルダ。</b><span class="ui">フォルダ</span> は、エージェントの作業フォルダが指定したフォルダのどれか、またはその中にあるときに一致します。<code>~/work/acme</code> は <code>~/work/acme/web</code> を含み、<code>~/work/acme-old</code> は含みません。フォルダはエージェントがリクエストでモデルに伝えるもの（Claude Code、Codex、OpenCode、Pi が伝えます）なので、伝えないエージェントはフォルダのルールに一致しません。<code>~</code> はホームフォルダ、<code>C:\work</code> は WSL の <code>/mnt/c/work</code> と同じで、macOS と Windows では大文字小文字を区別しません。</li>
@@ -237,6 +296,8 @@ owl group rule add opus-anywhere use=deepseek/deepseek-v4-flash compact  <span c
 owl group rule add opus-anywhere use=kimi/kimi-k2.6 folders=~/oss,<span class="s">"~/My Project"</span>  <span class="c"># これらのプロジェクトのターンはまずこのモデルへ</span>
 owl group rule add opus-anywhere pause=copilot/claude-opus-5.5 time=14:00-18:00 days=mon-fri  <span class="c"># その時間帯は外す</span>
 owl group rule add opus-anywhere pause=claude/claude-opus-5-5 except-folders=~/big-task  <span class="c"># ~/big-task のタスク専用：ほかのフォルダでは外す</span>
+owl group rule add opus-anywhere use=deepseek/deepseek-v4-flash when=<span class="s">"effort is off"</span> when=<span class="s">"not subagent"</span>  <span class="c"># 推論オフでサブエージェントでないリクエスト</span>
+owl group rule add opus-anywhere use=deepseek/deepseek-v4-flash when=<span class="s">"system matches ^你是对话标题命名"</span>  <span class="c"># システムプロンプトでタイトル生成リクエストを見分ける</span>
 owl group set coder models+=group/opus-anywhere  <span class="c"># グループの中のグループ</span>
 owl group rule opus-anywhere      <span class="c"># ルール一覧。rule rm|mv &lt;n&gt;、rule classifier &lt;group&gt; &lt;model&gt;</span>
 owl group copy opus-anywhere <span class="s">"Opus test"</span>  <span class="c"># モデル・ルーティング・ルールが同じ複製。別々に変更できる</span>
@@ -268,6 +329,7 @@ owl claude group/opus-anywhere    <span class="c"># これを使う</span></pre>
       <tr><td><code>owl providers</code></td><td>プロバイダ一覧：ホスト、キー、モデル、使っているエージェント</td></tr>
       <tr><td><code>owl models</code></td><td>エージェントが選べるすべてのモデル（<code>provider/model</code> 形式）</td></tr>
       <tr><td><code>owl claude codex/gpt-5.5</code></td><td>エージェントのモデルを設定</td></tr>
+      <tr><td><code>claude-owl</code></td><td>このセッションだけ Claude Code を owl 経由で起動、ふだんの <code>claude</code> は自分のアカウントのまま（<code>owl claude run</code>、<code>owl claude launcher add</code> で PATH に追加）</td></tr>
       <tr><td><code>owl codex effort high</code></td><td>他の項目を設定</td></tr>
       <tr><td><code>owl codex default</code></td><td>エージェント自身のデフォルトに戻し、owl の設定を取り除く</td></tr>
       <tr><td><code>owl save work</code> · <code>use work</code></td><td>プロファイルを保存・適用</td></tr>
@@ -276,6 +338,8 @@ owl claude group/opus-anywhere    <span class="c"># これを使う</span></pre>
       <tr><td><code>owl tray</code></td><td>メニューバーのアイコンだけで起動</td></tr>
       <tr><td><code>owl log</code> · <code>owl log -f</code></td><td>owl のログの場所。不具合の報告に添えます。<code>-n 200</code> でアプリのログの末尾を表示、<code>-f</code> で追いかけます</td></tr>
     </table></div>
+
+    <p><a href="/docs/ja/sync">複数のコンピュータで owl を同期：WebDAV・S3・GitHub</a></p>
 
     <h2 id="faq"><a class="anchor" href="#faq">よくある質問</a></h2>
     <h3><code>OPENAI_BASE_URL</code> や <code>ANTHROPIC_BASE_URL</code> を export する必要はありますか？</h3>
@@ -289,19 +353,28 @@ owl claude group/opus-anywhere    <span class="c"># これを使う</span></pre>
     <h3>エージェントの設定を手で編集すると、何か壊れますか？</h3>
     <p>いいえ。owl は毎回ファイルを読み直し、自分が設定するキーだけに触れるので、他の設定やコメントはそのまま残ります。<span class="ui">Import…</span> で取り込んだプロバイダはコピーなので、その後エージェント側の設定を変えても再度コピーはされません。</p>
     <h3>GitHub に届かない環境で、インストールや更新をするには？</h3>
-    <p>インストーラと <code>owl update</code> にプロキシを渡します：<code>curl -fsSL https://github.com/istoo/owl/install.sh | sh -s -- --proxy http://127.0.0.1:7890</code>、または <code>owl update --proxy socks5://127.0.0.1:1080</code>（http・https・socks5・socks5h に対応。<code>HTTPS_PROXY</code> と <code>ALL_PROXY</code> も使われます）。<code>--mirror &lt;prefix&gt;</code> を付けると、指定した GitHub ダウンロードミラーから <code>&lt;prefix&gt;https://github.com/…</code> としてリリースファイルを取得します。<code>owl update mirror &lt;prefix&gt;</code> でアプリ自身の更新を含め毎回使い、<code>owl update mirror off</code> で解除します。指定しない限りミラーは使われず、ファイルの SHA-256 はミラーではなく常に github.com/istoo/owl から取得するので、ミラーが書き換えたファイルはインストールされません。アプリ自身の更新は <span class="ui">Settings</span> → <span class="ui">Proxy</span> を通ります。</p>
+    <p>インストーラと <code>owl update</code> にプロキシを渡します：<code>curl -fsSL https://usemagpie.ai/install.sh | sh -s -- --proxy http://127.0.0.1:7890</code>、または <code>owl update --proxy socks5://127.0.0.1:1080</code>（http・https・socks5・socks5h に対応。<code>HTTPS_PROXY</code> と <code>ALL_PROXY</code> も使われます）。リリースファイルは usemagpie.ai（Cloudflare R2）から取得し、失敗したときは github.com から取得します。<code>--mirror &lt;prefix&gt;</code> を付けると、サイトからの取得に失敗したとき、指定した GitHub ダウンロードミラーから <code>&lt;prefix&gt;https://github.com/…</code> としてリリースファイルを取得します。<code>owl update mirror &lt;prefix&gt;</code> でアプリ自身の更新を含め毎回使い、<code>owl update mirror off</code> で解除します。指定しない限りミラーは使われず、ファイルの SHA-256 はミラーではなく常に usemagpie.ai から取得するので、ミラーが書き換えたファイルはインストールされません。アプリ自身の更新は <span class="ui">Settings</span> → <span class="ui">Proxy</span> を通ります。</p>
+
+    <h3 id="verify-download"><a class="anchor" href="#verify-download">ダウンロードしたファイルが GitHub Actions でビルドされたものか確認するには？</a></h3>
+    <p><a href="https://github.com/istoo/owl-releases/releases">istoo/owl-releases</a> の各ファイルには SLSA ビルド来歴（build provenance）の証明が付いています。GitHub Actions の実行自身の ID で Sigstore を通して署名されており、こちらの鍵は使いません。<a href="https://cli.github.com">GitHub CLI</a> で確認します：<code>gh attestation verify owl-darwin-arm64.dmg -R istoo/owl-releases</code>。ビルドした workflow と実行が表示され、その実行が作っていないファイルは失敗します。istoo/owl の Releases にあるコピーにも同じコマンドが使えます。v0.1.3891 以降が対象です。証明が指すのは owl-releases リポジトリとそのコミットで、istoo/owl のソースのコミットではありません。アプリ自身の更新は両方を検証します：リリースの SHA-256 一覧に付いた ed25519 署名を owl に組み込まれた鍵で確認し（オフラインでも usemagpie.ai のミラーからでも有効）、v0.1.3891 以降はさらにそのファイルの証明を確認し、証明が無いファイルや、このリポジトリのリリース workflow によるものではない証明のファイルはインストールしません。usemagpie.ai からダウンロードしたファイルは証明も usemagpie.ai から（下の <code>attestations.jsonl</code>）取得し、ミラーに無いときは GitHub から取得します。どこから取得しても owl に組み込まれた Sigstore のルートで同じように検証するので、ミラーは運ぶだけです。証明を取得できないときは署名だけで更新を続け、ログに記録します。 同じ証明は usemagpie.ai にも、ミラーしたファイルの隣に置かれており、GitHub が使えないときも取得できます：<code>https://usemagpie.ai/files/v&lt;バージョン&gt;/attestations.jsonl</code> には、そのリリースの全ファイル分のバンドルが 1 行に 1 つ入っています。ファイルと一緒にダウンロードすれば、証明 API を使わずに確認できます：<code>gh attestation verify owl-darwin-arm64.dmg -R istoo/owl-releases --bundle attestations.jsonl</code>（バンドルは Sigstore バンドルです。ミラーには新しいリリースだけが残るので、古いものは上のコマンドを使ってください）。</p>
 
     <h3 id="linux-build"><a class="anchor" href="#linux-build">Linux ではインストーラはどのビルドを入れますか？</a></h3>
-    <p>GTK 3 と WebKitGTK 4.1 が入っていればデスクトップアプリ（ウィンドウ、トレイアイコン、アプリメニューの項目）です。デスクトップがあってもそれらが無いときは、パッケージマネージャー（apt、dnf、pacman、zypper）で <code>sudo</code> を通して WebKitGTK 4.1 を入れ（sudo がパスワードを尋ねます）、それからアプリを入れます。パスワードを尋ねる前に何を入れるかを表示します。端末が無いとき（CI、Dockerfile）、<code>sudo</code> が無いとき、知らないディストリビューションやインストールに失敗したときはターミナル版（<code>owl tui</code>、<code>owl web</code> と CLI）を入れ、最後に入れるコマンドを表示します。Debian・Ubuntu なら <code>sudo apt install libwebkit2gtk-4.1-0</code>、Fedora なら <code>sudo dnf install webkit2gtk4.1</code> です。入れたあとインストーラをもう一度実行するとアプリになります。デスクトップ上で実行しても ssh 越しでも、グラフィカルなセッション、あなたのグラフィカルなログイン、ログインできるデスクトップ環境のどれかがあればデスクトップありと判断します。デスクトップの無いサーバーにはターミナル版です。自分で選ぶには <code>--gui</code>（ライブラリを今入れられなくてもアプリ）か <code>--tui</code>（ターミナル版、パッケージは入れない）を付けます：<code>curl -fsSL https://github.com/istoo/owl/install.sh | sh -s -- --tui</code>。</p>
+    <p>GTK 3 と WebKitGTK 4.1 が入っていればデスクトップアプリ（ウィンドウ、トレイアイコン、アプリメニューの項目）です。デスクトップがあってもそれらが無いときは、パッケージマネージャー（apt、dnf、pacman、zypper）で <code>sudo</code> を通して WebKitGTK 4.1 を入れ（sudo がパスワードを尋ねます）、それからアプリを入れます。パスワードを尋ねる前に何を入れるかを表示します。端末が無いとき（CI、Dockerfile）、<code>sudo</code> が無いとき、知らないディストリビューションやインストールに失敗したときはターミナル版（<code>owl tui</code>、<code>owl web</code> と CLI）を入れ、最後に入れるコマンドを表示します。Debian・Ubuntu なら <code>sudo apt install libwebkit2gtk-4.1-0</code>、Fedora なら <code>sudo dnf install webkit2gtk4.1</code> です。入れたあとインストーラをもう一度実行するとアプリになります。デスクトップ上で実行しても ssh 越しでも、グラフィカルなセッション、あなたのグラフィカルなログイン、ログインできるデスクトップ環境のどれかがあればデスクトップありと判断します。デスクトップの無いサーバーにはターミナル版です。自分で選ぶには <code>--gui</code>（ライブラリを今入れられなくてもアプリ）か <code>--tui</code>（ターミナル版、パッケージは入れない）を付けます：<code>curl -fsSL https://usemagpie.ai/install.sh | sh -s -- --tui</code>。</p>
 
     <h3 id="uninstall"><a class="anchor" href="#uninstall">owl をアンインストールするには？</a></h3>
-    <p>スクリプトでインストールした場合：<code>curl -fsSL https://github.com/istoo/owl/install.sh | sh -s -- --uninstall</code> で、スクリプトが置いたものを取り除きます。<code>owl</code> コマンド、macOS ではアプリ、Linux ではメニュー項目・アイコン・<code>owl://</code> のハンドラ、それに Linux ではもう無い owl を起動してしまうサービスとログイン時の起動です。<code>~/.config/owl</code> の設定・プロバイダ・使用量は残るので、再インストールすれば戻ります。接続したエージェントはそれまで owl のアドレスを指したままです。<code>--purge</code> を付けると先に <code>owl uninstall --yes</code> を実行し、すべてのエージェントの接続を外して元の設定に戻してから、owl の設定・プロバイダ・使用量を削除します。ほかの方法でインストールした場合は、<code>owl uninstall</code> または <span class="ui">Settings</span> → <span class="ui">owl をアンインストール</span> が <code>--purge</code> と同じことを行い、プログラム本体は手動で削除します。</p>
+    <p>スクリプトでインストールした場合：<code>curl -fsSL https://usemagpie.ai/install.sh | sh -s -- --uninstall</code> は、まず owl にすべてのエージェントの接続を外させて元の設定に戻し、それからスクリプトが置いたものを取り除きます。<code>owl</code> コマンド、macOS ではアプリ、Linux ではメニュー項目・アイコン・<code>owl://</code> のハンドラ、それに Linux ではもう無い owl を起動してしまうサービスとログイン時の起動です。<code>~/.config/owl</code> の設定・プロバイダ・使用量は残るので、再インストールすれば戻ります。<code>--purge</code> を付けるとそれも削除します（<code>owl uninstall --yes</code>）。ほかの方法でインストールした場合は、<code>owl uninstall</code> または <span class="ui">Settings</span> → <span class="ui">owl をアンインストール</span> が <code>--purge</code> と同じことを行い、プログラム本体は手動で削除します。</p>
+    <p>owl をもう削除した（アプリをゴミ箱に入れた、フォルダーを消した）のに、エージェントが接続できないと言う場合：macOS と Linux では同じ <code>--uninstall</code> の行を実行してください。owl が見つからないと最新版を一時フォルダーにダウンロードし（インストールと同じく検証します）、<code>~/.config/owl</code> に各エージェントの元の設定が残っているうちに、それが元に戻します。Windows では owl をもう一度ダウンロードして <span class="ui">Settings</span> → <span class="ui">owl をアンインストール</span> を使います。Codex を手で戻すには、Codex を終了し、<code>~/.codex/config.toml</code> で <code># owl:</code> コメントの下の行（<code>openai_base_url</code>、<code>model_provider = "owl"</code>、<code>model_catalog_json</code>）を削除して、<code>model</code> を Codex 自身のモデルに戻します。owl で始めたスレッドを残さないなら <code>[model_providers.owl]</code> の表も消せます。<code>~/.codex/owl-models.json</code> を削除し、Codex を開き直します。</p>
+
+    <h3 id="data-folder"><a class="anchor" href="#data-folder">owl のファイルを別のディスクに置いて、システムを再インストールしても失わないようにできますか？</a></h3>
+    <p>インストール版の owl は、設定・プロバイダ・使用量・ライブラリを <code>~/.config/owl</code>（Windows では <code>C:\Users\&lt;ユーザー&gt;\.config\owl</code>）に保存します。1 日 1 回自動でバックアップしますが、その保存先は同じフォルダ内の <code>auto-backups</code> なので、システムを再インストールするとバックアップも一緒に失われます。<span class="ui">設定</span> → <span class="ui">同期とバックアップ</span> の <span class="ui">バックアップフォルダ</span> の下にもそう表示されます。そこで <span class="ui">変更…</span> を押し、別のディスク上のフォルダ（<code>D:\owl-backups</code> など）か、クラウドドライブが同期するフォルダを選んでください。再インストール後は owl を入れ、同じ場所で同じフォルダを選び、最新の版を <span class="ui">復元…</span> します。バックアップに API キーは含まれません。<span class="ui">バックアップにサインインを含める</span> を有効にすると、サブスクリプションのアカウントとプラグインのサインインもパスフレーズで暗号化して含めます。キーも持ち出すには、同じ場所で WebDAV フォルダ、S3 バケット、GitHub リポジトリへの同期をパスフレーズ付きで設定してください。</p>
+    <p>owl 自身のファイルをそのディスク（外付け SSD など）に置くなら、同じ場所の <span class="ui">データフォルダ</span> の <span class="ui">移動…</span> を押し、そのディスク上のフォルダを選びます。owl は再起動し、ファイルとキャッシュをその中の <code>owl</code> フォルダに移し、元の場所にリンクを残すので、ほかは何も変わりません。ディスクはつないだままにしてください。外すと、戻すまで owl は開きません。<span class="ui">元に戻す</span> で元の場所に戻ります。ターミナルでは <code>owl data move &lt;フォルダ&gt;</code> で同じことができます。</p>
+    <p>すべてをそのディスクに置くなら、ポータブルで使います。<code>owl.exe</code> をそのディスク上のフォルダに置き、隣に <code>data</code> という空のフォルダを作ります（<code>D:\owl\owl.exe</code> と <code>D:\owl\data</code>）。owl はキャッシュやログも含めてすべてを <code>data</code> に保存し、ユーザーフォルダには自分のファイルを書きません。<span class="ui">設定</span> → <span class="ui">情報</span> → <span class="ui">設定フォルダ</span> にポータブルと表示されます。それを開き、上の手順でバックアップを復元します。再インストール後は <code>D:\owl\owl.exe</code> をもう一度開くだけです。各エージェント自身の設定（<code>~/.claude</code>、<code>~/.codex</code>…）は、それぞれが読む場所に残ります。</p>
 
     <h3 id="log">owl のログはどこにありますか？</h3>
     <p>アプリ（ウィンドウ、メニューバーやトレイのアイコン、パネル。どう開いたかによらず）は <code>app.log</code> を書きます。macOS では <code>~/Library/Logs/owl/app.log</code>、Windows では <code>%LOCALAPPDATA%\owl\logs\app.log</code>、Linux では <code>~/.local/state/owl/app.log</code>（<code>$XDG_STATE_HOME</code> が設定されていれば <code>$XDG_STATE_HOME/owl</code>）、ポータブル版ではデータフォルダーの <code>logs</code> です。<span class="ui">設定</span> → <span class="ui">情報</span> → <span class="ui">ログ</span>にパスがあり、<span class="ui">開く</span>でそのフォルダーを表示します。<code>owl log</code> はパスを表示し、<code>owl log -f</code> は追いかけます。5 MiB に達すると隣の <code>app.old.log</code> になり、残るのは最大 2 ファイルです。記録されるのは owl がしたことと出会ったエラー（プロバイダーがリクエストを断った、再試行した、プラグインが起動しなかった）で、キー、プロンプト、返答は含みません。キーやトークンに見えるものも伏せられます。サービスとして動く <code>owl serve</code> のログは別の場所です。macOS では <code>~/Library/Logs/owl/serve.log</code>、Linux では <code>journalctl --user -u owl</code>。<code>owl log</code> はそれも示します。</p>
 
     <h3 id="privacy">owl は何を送信しますか？</h3>
-    <p>プロンプト、返答、キー、アカウントは、使っているプロバイダーにだけ送られます。間に owl 自身のサーバーはありません。リリース版の owl は 1 日 1 回、使われていることを知らせます。何人が使っていて、何を優先して面倒を見るべきかを知るためです。送るのは、このコンピュータで作ったランダムな ID、owl のバージョンとシステム、そして使っているエージェント、プロバイダー、モデルを owl 自身の ID（<code>claude</code>、<code>deepseek</code>、<code>deepseek/deepseek-v4</code>）で、それぞれの数とともに。自分で追加したプロバイダーとそのモデルは <code>custom</code> とだけ記録します。プロバイダー追加シートの先頭に載るパートナーについては、1 日に表示された回数、開かれた回数、追加された回数も送ります（回数のみ）。名前、Base URL、アカウント、キー、プロンプト、使用量は送りません。<span class="ui">設定</span> → <span class="ui">プライバシー</span> → <span class="ui">使っているエージェント、プロバイダー、モデルを共有</span> でエージェント、プロバイダー、モデルとパートナーの回数を外せます。<span class="ui">ユーザー数に含める</span>、<code>DO_NOT_TRACK=1</code>、<code>OWL_NO_STATS=1</code> のどれかですべてオフになります。ソースからのビルドは送信しません。パートナーの公式サイトと「キーを取得」のリンクは <code>github.com/istoo/owl/go/…</code> を経由し、移動の前にクリックを 1 回数えます（どのパートナーか、どのリンクか、国）。github.com/istoo/owl はパートナー一覧が取得された回数も数えます。これはサーバー自身が見るもので、どの Web サイトのアクセス集計とも同じく、上の設定には左右されません。ID、IP アドレス、アカウントは記録しません。プラグイン、インポートリンク、ライブラリが示すアイコンは <code>github.com/istoo/owl/api/icon</code> を経由して取得するので、アイコンのあるサーバーに見えるのはあなたの IP ではなく Cloudflare のアドレスです。このサーバーは画像を中継するだけで、数えることも記録することもしません。owl が自分から送るものすべては、毎日のカウントの例、手元に残すファイル、各スイッチとともに<a href="/docs/ja/privacy">プライバシー</a>のページに挙げています。</p>
+    <p>プロンプト、返答、キー、アカウントは、使っているプロバイダーにだけ送られます。間に owl 自身のサーバーはありません。リリース版の owl は 1 日 1 回、使われていることを知らせます。何人が使っていて、何を優先して面倒を見るべきかを知るためです。送るのは、このコンピュータで作ったランダムな ID、owl のバージョンとシステム、そして使っているエージェント、プロバイダー、モデルを owl 自身の ID（<code>claude</code>、<code>deepseek</code>、<code>deepseek/deepseek-v4</code>）で、それぞれの数とともに。自分で追加したプロバイダーとそのモデルは <code>custom</code> とだけ記録します。プロバイダー追加シートの先頭に載るパートナーについては、1 日に表示された回数、開かれた回数、追加された回数も送ります（回数のみ）。名前、Base URL、アカウント、キー、プロンプト、使用量は送りません。<span class="ui">設定</span> → <span class="ui">プライバシー</span> → <span class="ui">使っているエージェント、プロバイダー、モデル、プラグインを共有</span> でエージェント、プロバイダー、モデル、パートナーの回数、Discover のどのプラグインを入れているか（各プラグインの利用者数といいねの集計用）を外せます。<span class="ui">ユーザー数に含める</span>、<code>DO_NOT_TRACK=1</code>、<code>OWL_NO_STATS=1</code> のどれかですべてオフになります。ソースからのビルドは送信しません。パートナーの公式サイトと「キーを取得」のリンクは <code>usemagpie.ai/go/…</code> を経由し、移動の前にクリックを 1 回数えます（どのパートナーか、どのリンクか、国）。usemagpie.ai はパートナー一覧が取得された回数も数えます。これはサーバー自身が見るもので、どの Web サイトのアクセス集計とも同じく、上の設定には左右されません。ID、IP アドレス、アカウントは記録しません。プラグイン、インポートリンク、ライブラリが示すアイコンは <code>usemagpie.ai/api/icon</code> を経由して取得するので、アイコンのあるサーバーに見えるのはあなたの IP ではなく Cloudflare のアドレスです。このサーバーは画像を中継するだけで、数えることも記録することもしません。owl が自分から送るものすべては、毎日のカウントの例、手元に残すファイル、各スイッチとともに<a href="/docs/ja/privacy">プライバシー</a>のページに挙げています。</p>
 
     <h3 id="proxy-loopback">エージェントが 502 を返す、または接続できず、owl の Routing タブに何も出ない？</h3>
     <p>プロキシアプリ（Surge、Clash、mihomo など。システムプロキシ、TUN、拡張モードのいずれかが有効）が、エージェントから <code>http://127.0.0.1:3425</code> へのリクエストを横取りして別の場所へ送っているため、owl に届いていません。除外リスト（<code>skip-proxy</code>、バイパス）に 127.0.0.1 を書くだけでは足りないことがあります。Codex など一部のエージェントは、それでもプロキシを通します。ローカルアドレスを直結にするルールを、他のルールより前に追加してください：</p>
@@ -334,7 +407,16 @@ IP-CIDR6,::1/128,DIRECT,no-resolve</pre>
         contextWindow: 1000000</pre>
     </div>
     <p><code>baseURL</code> に <code>/anthropic</code> は付けません。モデル id は owl のもの（<code>owl models</code>）で、<code>models</code> を書くと dsh の既定の一覧が置き換わるので、更新方法の 2 行も残してください。<code>OWL_DS_KEY</code> には DeepSeek のキーではなくゲートウェイのキー（このコンピュータでは <code>owl</code>）を入れます。export するか、<code>~/.dsh/.env</code> に書くか、dsh のモデルページの DeepSeek 行に入力します。モデルは dsh で選びます。owl で接続を解除してもこの設定は残ります。owl には Files API がないため、dsh は画像を毎ターン base64 でインライン送信します。上限は <code>maxInlineRequestImageBytes</code>（既定 20 MiB、上の例では 64 MiB）です。この行では DeepSeek 自身のモデルだけを使ってください。<a href="https://github.com/istoo/owl/blob/main/docs/reference.md#deepseek-harness-the-deepseek-row-by-hand">詳しくはリファレンスへ</a>。</p>
-    <p style="margin-top:48px">困ったときや、共有したい構成があるときは <a href="https://github.com/istoo/owl/issues">GitHub</a> で issue を立ててください。ユーザーにすぐ使えるプロバイダを配りたいベンダーの方は <a href="/docs/ja/import">owl に追加</a> をご覧ください。</p>
+    <h3 id="trae">Trae / Trae CN で owl のモデルを使えますか？</h3>
+    <p>この方法で動いたという報告があります。Trae はカスタムモデルを Trae アカウント（Trae のサーバー側）に保存するため、owl からワンクリックで設定することはできず、Trae から <code>127.0.0.1</code> に届かないこともあります。手順：</p>
+    <ol>
+      <li>owl で <span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ローカルネットワークで共有</span> をオンにし、表示される <span class="ui">アドレス</span> を控えます。</li>
+      <li>ゲートウェイキーを用意します（<span class="ui">ゲートウェイ</span> → <span class="ui">ゲートウェイキー</span>、または <code>owl gateway-key add "Trae"</code>）。</li>
+      <li>Trae のカスタムモデル設定で、アドレスにそのアドレスを、API キーにそのゲートウェイキーを入力します。</li>
+    </ol>
+    <p>モデル id は owl のもの（<code>owl models</code>）です。共有をオンにすると、同じネットワークのほかのコンピューターもゲートウェイキーで接続できます。<a href="/docs/ja/remote#share">リモート owl</a> を参照してください。</p>
+
+    <p style="margin-top:48px">ゲートウェイのエラーは <a href="/docs/ja/troubleshooting">よくあるエラーの直し方</a> を参照してください。困ったときや、共有したい構成があるときは <a href="https://discord.gg/vGSnD3ZKQF">Discord</a> でどうぞ。Cherry Studio でチャットする場合は <a href="/docs/ja/cherry-studio">Cherry Studio ですべてのモデルを使う</a>を参照してください。ユーザーにすぐ使えるプロバイダを配りたいベンダーの方は <a href="/docs/ja/import">owl に追加</a> をご覧ください。</p>
   </article>
 </main>
 
@@ -349,11 +431,20 @@ IP-CIDR6,::1/128,DIRECT,no-resolve</pre>
     <a href="/docs/ja/privacy">プライバシー</a>
     <a href="/docs/ja/masking">プライバシーマスキング</a>
     <a href="/docs/ja/mcp-router">MCP ルーター</a>
+    <a href="/docs/ja/library">ライブラリ</a>
+    <a href="/docs/ja/claude-code-models">Claude Code で他のモデル</a>
+    <a href="/docs/ja/codex-models">Codex で他のモデル</a>
+    <a href="/docs/ja/gemini-cli-models">Gemini CLI で他のモデル</a>
+    <a href="/docs/ja/subscriptions">サブスクを任意のエージェントで</a>
+    <a href="/docs/ja/local-models">ローカルモデル</a>
+    <a href="/docs/ja/opencode-models">OpenCode で他のモデル</a>
+    <a href="/docs/ja/alternatives">CC Switch・CCR との比較</a>
     <a href="/docs/ja/import">owl に追加</a>
     <a href="/docs/integrate">アプリ連携</a>
     <a href="https://github.com/istoo/owl">GitHub</a>
+    <a href="https://discord.gg/vGSnD3ZKQF">Discord</a>
     <a href="/docs/ja/contributors">コントリビューター</a>
-    <a href="https://github.com/istoo/owl/releases">リリース</a>
+    <a href="https://github.com/istoo/owl-releases/releases">リリース</a>
   </div>
 </div></footer>
 

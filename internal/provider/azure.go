@@ -8,13 +8,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/istoo/owl/internal/catalog"
+	"github.com/istoo/owl/internal/lazyre"
 )
 
 // Azure OpenAI is reached at the user's own resource, never at one host
@@ -193,7 +193,7 @@ const (
 // azureDatedID matches a catalog id that carries its release date, such as
 // gpt-6.2-sol-2026-11-17. A deployment is named for the undated model, so
 // the dated aliases are not asked about.
-var azureDatedID = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}$`)
+var azureDatedID = lazyre.New(`-\d{4}-\d{2}-\d{2}$`)
 
 // azureCatalogRow is a row of the resource's v1 model catalog. The catalog
 // names every model the resource can deploy, which is not what it has

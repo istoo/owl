@@ -49,6 +49,7 @@ func TestAntigravityArrayGetsItems(t *testing.T) {
 // properties, items, an anyOf/oneOf member, an allOf, a $ref to $defs, a
 // type list with null; one that has items keeps its own.
 func TestPlainSchemaArraysAllHaveItems(t *testing.T) {
+	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	in := `{"type":"object","$defs":{"Tags":{"type":"array","description":"tags"}},
 	"properties":{
 		"grid":{"type":"array","items":{"type":"array"}},

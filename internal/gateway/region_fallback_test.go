@@ -19,7 +19,6 @@ const antigravityRegion400 = `{"error":{"message":"Antigravity: User location is
 // A refusal for where the request comes from is not about the request: it
 // is retryable at 400, and the boundaries #1621 lists stay as they were.
 func TestRegionRefusalIsRetryable(t *testing.T) {
-	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, x := range []struct {
 		status int
 		body   string
@@ -43,24 +42,23 @@ func TestRegionRefusalIsRetryable(t *testing.T) {
 // A conversation past the model's window that is refused for its region
 // is told as the region refusal, not as a prompt too long to compact.
 func TestRegionRefusalIsNotTooLong(t *testing.T) {
-	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
-	p := provider.Provider{ID: "fake", Name: "Fake", Contexts: map[string]int{"m": 100}}
+	p := provider.PluginForTest("workbuddy-ai", "workbuddy-ai")
+	p.Name, p.Contexts = "WorkBuddy AI", map[string]int{"m": 100}
 	for _, body := range []string{antigravityRegion400, googleRegion400} {
-		if said, ok := tooLongUnsaid(p, "m", 1000, 400, []byte(body)); ok {
+		if said, ok := tooLongUnsaid(p, "m", 1000, 0, 400, []byte(body)); ok {
 			t.Errorf("region refusal read as too long: %s", said)
 		}
 	}
 	// the same size, refused without saying why, still is
-	if _, ok := tooLongUnsaid(p, "m", 1000, 400, []byte(`{"error":{"message":"Invalid request parameters"}}`)); !ok {
+	if _, ok := tooLongUnsaid(p, "m", 1000, 0, 400, []byte(`{"error":{"message":"Invalid request parameters"}}`)); !ok {
 		t.Error("an unsaid overflow is no longer inferred")
 	}
 }
 
 // #1621: a group's member refused for its region hands the request to the
-// next member, and rests as briefly as any failure, not as one out of
-// credit or quota.
+// next member, and rests not at all (#5182): not as one out of credit or
+// quota, nor as any failure.
 func TestGroupFailsOverARegionRefusal(t *testing.T) {
-	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	for _, body := range []string{antigravityRegion400, googleRegion400} {
 		fresh(t)
 		a := &scripted{replies: []reply{{400, "", body}}}
@@ -79,7 +77,7 @@ func TestGroupFailsOverARegionRefusal(t *testing.T) {
 		if len(r.Tries) != 2 || r.Tries[0].Status != 400 || r.Tries[0].Rest == nil {
 			t.Fatalf("tries %+v", r.Tries)
 		}
-		if rest := r.Tries[0].Rest; rest.Why != failOther || time.Until(rest.Until) > longestRetry {
+		if rest := r.Tries[0].Rest; rest.Why != failOther || rest.By != "off" || rest.Failures != 0 || time.Until(rest.Until) > 0 {
 			t.Fatalf("rested %+v", rest)
 		}
 	}
@@ -87,7 +85,6 @@ func TestGroupFailsOverARegionRefusal(t *testing.T) {
 
 // #1621: a provider refused for its region goes to its fallback.
 func TestFallbackOnRegionRefusal(t *testing.T) {
-	t.Cleanup(provider.AntigravityBuiltinForTest()) // the retired built-in route
 	plan := &fake{t: t, ctype: "application/json", code: 400, reply: antigravityRegion400}
 	spare := &fake{t: t, ctype: "application/json", reply: `{"id":"from-spare","choices":[]}`}
 	twoProviders(t, plan, spare)

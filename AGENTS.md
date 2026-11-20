@@ -17,12 +17,10 @@ Before reviewing a community PR, read [contributors](docs/contributors.md):
 what stops a review for possible harm, what is closed unreviewed, and the
 authors whose PRs are closed on sight.
 
-## Lessons and how a change is run
+## Lessons
 
 Before changing code, read [LESSONS.md](LESSONS.md): what recent merged
-work got wrong and the rule that would have caught it. Write the check a
-change must pass before the first edit, and keep a retry to the unit that
-failed: [how a change is run](docs/agent-workflow.md).
+work got wrong and the rule that would have caught it.
 
 ## Built-in subscriptions that a plugin serves
 
@@ -87,16 +85,17 @@ Two cases decide it:
   sees on Code Assist through Antigravity's own client. The built-in's code
   is still in the tree, but `googleLogins` lists nothing once the plugin
   serves it, so it asks Google for nothing; the mover reads
-  `googleSavedLogins`. The plugin (0.2.3, the mover's min) serves as
+  `googleSavedLogins`. The plugin (0.2.1, the mover's min) serves as
   before for whoever has it, and the Providers page tells them the risk
   and points to Antigravity (local agy CLI),
   `@magpie-community/opencode-agy-cli-auth`, which runs the user's own agy
   over ACP (`withdrawn` in `/api/providers`). `plugin.Add` turns it away
   for anyone who doesn't have it listed (`plugin.RefuseWithdrawn`); the
   mover installs it for the user's own accounts under
-  `plugin.KeepWithdrawn`. Don't offer it to anyone new. The built-in
-  route's tests serve it again through
-  `provider.AntigravityBuiltinForTest()` until its code is taken out.
+  `plugin.KeepWithdrawn`, and it left the registry. Don't offer it to
+  anyone new. The built-in route's tests serve it again through
+  `provider.AntigravityBuiltinForTest()` until its code is taken out
+  (#6723).
 
 The plugin does everything: sign-in, refresh, models, requests, usage and
 errors. It runs in the plugin host (`internal/plugin`). The built-ins'

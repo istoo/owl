@@ -31,6 +31,9 @@ func TestMain(m *testing.M) {
 	limitsOn = gwbudget.Limit(budget.Limiter{})
 	// the test binary is no owl: it runs no claude-tui-helper
 	claudeTUIRuns = false
+	// the tests serve their Remote owl from this process, which is
+	// then this owl itself (remote_self_test.go turns it on again)
+	provider.LeaveOutSelf = false
 	code, err := isolatedTests(m)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -107,7 +110,7 @@ func isolatedTests(m *testing.M) (int, error) {
 			return 1, err
 		}
 	}
-	if err := os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
+	if err := os.Setenv("PATH", bin+string(os.PathListSeparator)+stdPath()); err != nil {
 		return 1, err
 	}
 	// no route is written to disk behind a test's back; the history's own

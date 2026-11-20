@@ -35,7 +35,7 @@ echo '{"type":"stream_event","event":{"type":"message_stop"}}'
 }
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	for i := 0; i < 5; i++ {
 		s := New()
 		p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}
@@ -61,7 +61,7 @@ func TestClaudeEndedBeforeItsInputSaysWhy(t *testing.T) {
 		t.Skip("a shell script stands in for Claude Code")
 	}
 	dir := t.TempDir()
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	s := New()
 	t.Cleanup(s.subscription.abortAll)
 	req := &Request{Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "hi"}}}}}

@@ -87,7 +87,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	claudeTUIRuns = true
 	t.Cleanup(func() { claudeTUIRuns = false })
 	helper := filepath.Join(t.TempDir(), "owl")

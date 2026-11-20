@@ -35,7 +35,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -46,6 +45,7 @@ import (
 
 	"github.com/istoo/owl/internal/filememo"
 	"github.com/istoo/owl/internal/lastgood"
+	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/plugin"
 	"github.com/istoo/owl/internal/settings"
 	"github.com/istoo/owl/internal/update"
@@ -147,7 +147,7 @@ func WhyOf(err error) *MoveWhy {
 
 // unreachable is an install that never got through to npm (or to Bun's
 // download): Bun's words for it, and Go's.
-var unreachable = regexp.MustCompile(`(?i)ConnectionRefused|ConnectionClosed|FailedToOpenSocket|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|Unable to connect|network|no such host|dial tcp|i/o timeout|TLS handshake`)
+var unreachable = lazyre.New(`(?i)ConnectionRefused|ConnectionClosed|FailedToOpenSocket|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|Unable to connect|network|no such host|dial tcp|i/o timeout|TLS handshake`)
 
 // installFailed says why the plugin couldn't be installed.
 func installFailed(pkg string, err error) error {
@@ -307,7 +307,7 @@ var antigravityBuiltinForTest atomic.Int32
 // AntigravityBuiltinForTest serves the built-in Antigravity again until the
 // returned func runs. Its route has served nothing since it was retired on
 // 11-15, and its code is still shared with Gemini CLI's: the tests of that
-// route use this until the code is taken out.
+// route use this until the code is taken out (#6723).
 func AntigravityBuiltinForTest() func() {
 	antigravityBuiltinForTest.Add(1)
 	var once sync.Once

@@ -47,7 +47,7 @@ case " $* " in
 esac
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	runsEndWithTest(t, dir)
 
 	bridged := func(what, got string) {

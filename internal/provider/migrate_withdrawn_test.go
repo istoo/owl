@@ -17,7 +17,7 @@ func TestWithdrawnPluginKeptForItsUsers(t *testing.T) {
 	claudeHome(t)
 	fakeMover(t)
 	const pkg = "@magpie-community/opencode-antigravity-auth"
-	movers["fakeco"].pkg, movers["fakeco"].min = pkg, "0.2.3"
+	movers["fakeco"].pkg, movers["fakeco"].min = pkg, "0.2.1"
 	var said []error
 	installPlugin = func(ctx context.Context, p, _ string) error {
 		err := plugin.RefuseWithdrawn(ctx, p)

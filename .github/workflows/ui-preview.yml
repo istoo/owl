@@ -94,7 +94,6 @@ jobs:
           ref: ${{ needs.detect.outputs.sha }}
           path: pr
           persist-credentials: false
-          allow-unsafe-pr-checkout: true
       - uses: actions/download-artifact@v4
         with:
           name: pr-info

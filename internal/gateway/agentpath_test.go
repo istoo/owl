@@ -10,7 +10,7 @@ import (
 
 // SSNQT on X: OpenBot's requests were listed as OpenCode's. OpenBot hands
 // owl's endpoint to the OpenCode it runs, keyless (its key and headers
-// are sealed where magpie can't write), so the request carries OpenCode's
+// are sealed where owl can't write), so the request carries OpenCode's
 // User-Agent and nothing of OpenBot's. Its address names it instead:
 // /agent/openbot/v1/… is served as /v1/… from OpenBot. A path naming no
 // agent is left as it is.

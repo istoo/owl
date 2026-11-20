@@ -29,8 +29,12 @@ func TestSearchQueueKeepsCodexAlive(t *testing.T) {
 			fresh(t)
 			release, stopped := make(chan struct{}), make(chan struct{})
 			proceed := make(chan struct{})
-			var once sync.Once
+			var once, onceGo sync.Once
 			finish := func() { once.Do(func() { close(release) }) }
+			// #5666: a client that fails before go (t.Fatal on a loaded
+			// runner) must not leave the handler on proceed, or up.Close
+			// waits for it until the package alarm.
+			goOn := func() { onceGo.Do(func() { close(proceed) }) }
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(stopped)
 				var q struct{ Tools []struct{ Type, Name string } }
@@ -48,11 +52,6 @@ func TestSearchQueueKeepsCodexAlive(t *testing.T) {
 					http.Error(w, "missing tools", 400)
 					return
 				}
-				// a client that gave up before proceeding is not waited on:
-				// with only <-proceed here, a failed Do left this handler
-				// parked and up.Close() waited out the package's 30m timeout
-				// (run 42860876555, TestSearchQueueKeepsCodexAlive/cancel hung
-				// 19m after search_queue_test.go:103's Fatal)
 				select {
 				case <-proceed:
 				case <-r.Context().Done():
@@ -90,6 +89,7 @@ func TestSearchQueueKeepsCodexAlive(t *testing.T) {
 			}))
 			defer up.Close()
 			defer finish()
+			defer goOn()
 			if err := provider.Save(provider.Provider{ID: "fake", Name: "Fake", Key: "fixture", Models: []string{"m1"}, Responses: up.URL + "/v1"}); err != nil {
 				t.Fatal(err)
 			}
@@ -105,12 +105,16 @@ func TestSearchQueueKeepsCodexAlive(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer owl")
 			// The idle deadline is much longer than the simulated queue tick;
 			// comments cannot reset it. A hard cap also catches runaway pings.
-			hard := time.AfterFunc(5*time.Second, cancel)
+			// It starts at the headers: a loaded machine's path to them is
+			// not the stream's, and a 5s cap from before the request cut
+			// silent on macOS CI before any header came (context canceled).
+			hard := time.AfterFunc(60*time.Second, cancel)
 			defer hard.Stop()
 			res, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
+			hard.Reset(5 * time.Second)
 			defer res.Body.Close()
 			// #2547: the idle window starts at the first data line, not at
 			// the headers: a loaded machine's path to the first translated
@@ -128,7 +132,7 @@ func TestSearchQueueKeepsCodexAlive(t *testing.T) {
 			if mode == "silent" {
 				time.Sleep(500 * time.Millisecond)
 			}
-			close(proceed)
+			goOn()
 			var body strings.Builder
 			pings, completed := 0, false
 			sc := bufio.NewScanner(res.Body)

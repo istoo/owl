@@ -94,7 +94,7 @@ func cpuCmd(args []string) error {
 	if _, err := os.Lstat(file); err == nil {
 		return fmt.Errorf("%s is there already: name another file (owl cpu <file>)", file)
 	}
-	base := gateway.URL()
+	base := gateway.ClientURL()
 	if err := pingOwl(base); err != nil {
 		return err
 	}

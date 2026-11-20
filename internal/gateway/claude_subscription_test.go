@@ -43,7 +43,7 @@ func TestClaudeSubscriptionPromptKeepsForeignHarnessOutOfSystem(t *testing.T) {
 	// the setting is passed as flag settings, which --setting-sources does
 	// not control.
 	for _, want := range []string{"--input-format stream-json", "--include-partial-messages", "--strict-mcp-config", "--effort medium",
-		`--settings {"disableDeepLinkRegistration":"disable"}`} {
+		`--settings {"disableDeepLinkRegistration":"disable","showThinkingSummaries":true}`} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("missing CLI contract %q in %q", want, args)
 		}
@@ -86,6 +86,17 @@ func TestCleanClaudeEnvRemovesGatewayOverrides(t *testing.T) {
 // fakeClaude answers each line it is given with the process it runs in and
 // how many turns that process has had, as Claude Code's stream-json does.
 // A test calls it before New(), for runsEndWithTest.
+// stdPath is the system's own tools, for a stand-in's PATH: its script needs
+// sh, sed and mkdir, while a Claude Code of the machine's own on PATH would
+// be a second install for claudecode.Own, which then asks the stand-in its
+// --version and counts that run in the test.
+func stdPath() string {
+	if runtime.GOOS == "windows" {
+		return os.Getenv("PATH")
+	}
+	return "/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
 func fakeClaude(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -104,7 +115,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	runsEndWithTest(t, dir)
 }
 
@@ -323,7 +334,8 @@ func TestClaudeOwnWebSearchStaysInside(t *testing.T) {
 	if s := strings.Join(got, "|"); s != "start:m1|text:Let me look. |text:Go 1.27.1|stop:stop" {
 		t.Fatalf("events: %s", s)
 	}
-	if usage.Input != 40 || usage.Output != 12 {
+	// the prompt told is the answering message's, both billed
+	if usage.Input != 30 || usage.Output != 12 || usage.billed().Input != 40 {
 		t.Fatalf("usage: %+v", usage)
 	}
 }
@@ -524,7 +536,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	s := New()
 	p := provider.Provider{ID: "claude", Account: &provider.Account{Agent: "claude", User: "u"}}
 	for _, stream := range []string{"true", "false"} {
@@ -575,7 +587,7 @@ while read -r line; do
 done
 `
 	testenv.Program(t, filepath.Join(dir, "claude"), script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+stdPath())
 	runsEndWithTest(t, dir)
 	s := New()
 	t.Cleanup(s.subscription.abortAll)
