@@ -66,7 +66,7 @@ type modelJSON struct {
 	Auto  []string `json:"auto,omitempty"`  // the APIs its vendor's list says it is served on, what Auto asks it on
 	NoAPI bool     `json:"noAPI,omitempty"` // the provider has a URL for none of them: agents aren't offered it (provider.NoAPIFor, #2094)
 	Same  string   `json:"same,omitempty"`  // the model the user said it is the same as, for the groups owl finds (#583)
-	Merge string   `json:"merge,omitempty"` // what those groups merge it by when the user says nothing; absent when ID
+	Merge string   `json:"merge,omitempty"` // what those groups merge it by when the user says nothing, even when that is its own id
 	Kind  string   `json:"kind,omitempty"`  // what the user said it makes: image or video (#1399)
 	// Inputs are the media beyond text and images its source listed it
 	// takes, video and audio (catalog.Model.InputModalities; pingqipai3 on X)
@@ -1272,12 +1272,11 @@ func providerInfoWith(p provider.Provider, ls provider.Listing, agents []agentUs
 			j.Tier = held.ModelTiers[ref]
 			j.CanUltra = provider.UltraOn(p, m.ID, ultraModels())
 		}
-		// a value the page reads as its default isn't sent: the window and
-		// reply limit the vendor listed are the ones in use unless the user
-		// set their own, and most models merge by their own id
-		if j.Merge = provider.MergeName(p, m.ID); j.Merge == m.ID {
-			j.Merge = ""
-		}
+		// Merge is sent even when it is the model's own id, as v0.2.27
+		// sent it: the page's merge input reads m.merge || m.id, so the
+		// answer reads alike either way, and the field the released page
+		// was checked against is there
+		j.Merge = provider.MergeName(p, m.ID)
 		if j.Listed == j.Context {
 			j.Listed = 0
 		}
