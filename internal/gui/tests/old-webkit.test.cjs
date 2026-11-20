@@ -147,49 +147,27 @@ test("compat.js is the first of the page's own scripts", async () => {
   // a provider editor draws its rate windows, traywindows.js when the menu
   // bar shows a card, autoresetown.js when Settings draws Codex's auto-use
   // rows, registry.js when Plugins draws its npm registry, navlamp.js when
-  // the pointer comes over the sidebar, whatsnew.js when release notes
+  // the pointer comes over the sidebar, panelupdate.js when the tray panel
+  // says a newer version is out, whatsnew.js when release notes
   // open, claudemode.js when a Claude provider's editor opens, ctxtext.js
   // when a context window part is opened, resetask.js when a Codex reset's
-  // Use is pressed, quotaall.js when a provider has two accounts, quotatable.js when the Usage page's table is picked,
-  // quitask.js when a Quit asks first, proxies.js when Settings draws its saved proxies, checkinnow.js when Settings' Check
+  // Use is pressed, quotaall.js when a provider has two accounts,
+  // quitask.js when a Quit asks first, checkinnow.js when Settings' Check
   // in now for one account is pressed, autobackup.js when Settings draws
   // Sync, scrollends.js on the window's first scroll, profilerename.js
   // when a saved profile's Rename is pressed, keyspend.js when the
-  // provider editor draws a key's row, syncfiles.js when Sync's server form,
-  // Export or Import opens, agentcompact.js when an agent sheet holds Long
-  // conversations, balfound.js when the editor draws a relay's balance
-  // with no Balance URL, passerrors.js when it draws a key provider's
-  // Errors, tlscerts.js when it draws the certificate rows,
-  // keybalance.js when it draws a key whose vendor tells no
-  // balance, modellimits.js when it draws a model's row, notices.js when
-  // About's Open-source licenses opens, videogen.js when Settings draws
-  // Image generation, provlinks.js when Settings' search first wants its
-  // provider links, pageshare.js when a plugin's page shares a picture,
-  // panelfirst.js when the panel's Usage tab's account count is pressed,
-  // panelarrange.js when its Allowances tab's Arrange is, modelfind.js
-  // when Model settings draws many models, agentsmanager.js when the
-  // Agents page's Manage is pressed, agentsuffix.js when an agent's Details
-  // open, phonetabs.js when owl web is laid out for a phone,
-  // pluginmd.js (a README's renderer) once plugins.js has run;
-  // plugincounts.js (Discover's counts) when the Plugins page loads;
-  // navicons.js (the sidebar lists' marks) with the first list drawn;
-  // autoswitchtip.js when a provider's accounts draw their switch;
-  // codexprojects.js when the open Codex app shows fewer projects;
-  // pipecheck.js when Settings draws Models;
-  // addfloat.js when the Providers page's add sheet first opens;
-  // plugingrid.js and plugininstalled.js when Plugins first draws;
-  // rotfig.js when a routing's In turn is first shown;
-  // ompadvisor.js when an omp's settings first show;
-  // kimisub.js when a Kimi Code row's Subagents line first shows;
-  // agentspeed.js when an agent row on a fast model draws its Speed;
-  // claudeowl.js when Claude Desktop's twin button or Advanced fold first shows;
-  // keyrates.js when a provider with two or more keys opens;
-  // maximages.js when the provider editor draws Max output;
-  // appearance.js when Settings draws General or the look changes;
-  // navorder.js once a page order is kept, or Settings › Sidebar pages draws;
-  // the checks above
+  // provider editor draws a key's row, syncfiles.js when Sync's Export or
+  // Import opens, aboutrows.js when About draws its long commands,
+  // providerserr.js when Providers' first read fails, navmore.js when a
+  // narrow window holds pages in More, palette.js when ⌘K opens the
+  // palette, editor.js when a provider's editor is first drawn,
+  // phonetabs.js when owl web is laid out for a phone, navkeys.js once
+  // the window is up (⌘1–9 and the sidebar's arrows), pagehead.js with
+  // it (each page's head), usagelayout.js with
+  // it (where a dragged Usage card's neighbours stand), pmorder.js when
+  // the Plugins page is drawn (Discover's kinds and order); the checks above
   // still read them
-  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quotatable.js", "quitask.js", "checkinnow.js", "proxies.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "agentcompact.js", "agentwindow.js", "balfound.js", "passerrors.js", "tlscerts.js", "keybalance.js", "modellimits.js", "notices.js", "videogen.js", "provlinks.js", "setfeats.js", "pageshare.js", "panelfirst.js", "panelarrange.js", "modelfind.js", "agentsmanager.js", "agentsuffix.js", "phonetabs.js", "pluginmd.js", "bark.js", "acctexport.js", "plugincounts.js", "navicons.js", "autoswitchtip.js", "codexprojects.js", "pipecheck.js", "addfloat.js", "plugingrid.js", "plugininstalled.js", "rotfig.js", "ompadvisor.js", "kimisub.js", "agentspeed.js", "claudeowl.js", "keyrates.js", "maximages.js", "qianwenplan.js", "qianfanplan.js", "agymove.js", "updatetrust.js", "currencyprefs.js", "appearance.js", "mirroredit.js", "navorder.js", "instancename.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
+  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "panelupdate.js", "panelhome.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quitask.js", "checkinnow.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "aboutrows.js", "providerserr.js", "navmore.js", "palette.js", "editor.js", "phonetabs.js", "navkeys.js", "pagehead.js", "usagelayout.js", "pmorder.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
 });
 
 test("the styles hold up in Safari 15.0", async () => {
@@ -277,17 +255,23 @@ test("with Safari 15.0's built-ins, the panel and the window draw every page", a
       await page.addInitScript(TAKEN);
       await page.route("**/*", serve);
       await page.goto(`http://owl.test/?mode=${mode}`);
-      await page.locator("#agents .row").first().waitFor();
+      if (mode === "panel") await page.locator("#pHome").waitFor();
+      else await page.locator("#agents .row").first().waitFor();
       assert.equal(await page.evaluate(() => [1, 2, 3].findLast((x) => x < 3)), 2, "compat.js fills findLast in");
       assert.deepEqual(await page.evaluate(() => { const a = { b: [1] }, c = structuredClone(a); return [c.b[0], c !== a && c.b !== a.b]; }), [1, true]);
       assert.equal(await page.evaluate(() => [1, 2, 3].at(-1)), 3);
       if (mode === "panel") {
-        assert(await page.locator("#ptabs").isVisible(), "the panel's tabs are the page's own, drawn by app.js");
-        for (const tab of ["usage", "routing", "agents"]) {
-          const b = page.locator(`#ptabs [data-ptab="${tab}"]`);
-          if (await b.isVisible()) await b.click();
-          await page.waitForTimeout(150);
+        assert.equal(await page.locator("#ptabs").count(), 0, "the panel has no icon rail");
+        assert(await page.locator("#pHome").isVisible(), "the panel opens on its overview");
+        for (const tab of ["stats", "routing", "agents"]) {
+          const b = page.locator(`#pHome [data-open="${tab}"]`);
+          if (!(await b.count())) continue;
+          await b.click();
+          await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
+          await page.keyboard.press("Escape");
+          await page.waitForFunction(() => document.body.dataset.ptab === "home");
         }
+        await page.locator('#pHome [data-open="agents"]').click();
         await page.locator("#profBtn").click();
         await page.locator("#save").click();
         assert(await page.locator(".profiles.naming > .chip-input").isVisible(), "Save current opens the name field");

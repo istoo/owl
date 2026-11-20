@@ -4,9 +4,6 @@
 // named and the refresh need, the sum was the one thing to give way, and
 // ≈$0.001 read "≈$0.". At every width from a phone's to a wide window the
 // sum is whole and on the page, and the page never scrolls sideways.
-// owl's head reads the sum as an estimate ("≈", at your model prices), so
-// the sum it checks for is owl's own: a cut sum would read "≈$0." all the
-// same, which is the cut this test is about.
 // English, Chinese, Japanese and German, Chromium and WebKit; no backend,
 // the API is faked here.
 const assert = require("node:assert/strict");

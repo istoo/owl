@@ -1392,7 +1392,16 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			return
 		}
 		s := state()
-		if sum, ok := writeStateJSON(rw, s); ok {
+		// ?shared=1: each field's option list sent once, which a page that
+		// knows List reads; v0.2.27's page reads each field's own options
+		var sum [32]byte
+		var ok bool
+		if r.URL.Query().Get("shared") == "1" {
+			sum, ok = writeStateJSONShared(rw, s)
+		} else {
+			sum, ok = writeStateJSON(rw, s)
+		}
+		if ok {
 			keepStateSummed(s, sum)
 		}
 	})

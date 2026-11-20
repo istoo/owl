@@ -50,8 +50,6 @@ function serve(lang, posts) {
     if (url.pathname === "/api/providers") return json(providers);
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
-    // the press marks owl in use so an update can wait: not a key action
-    if (url.pathname === "/api/update/using") return json({});
     if (url.pathname.startsWith("/api/") && route.request().method() === "POST") {
       const body = route.request().postDataJSON();
       posts.push({ path: url.pathname, body });
@@ -119,13 +117,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await rows(page).first().getAttribute("data-account-id"), idOf(0));
       assert.equal((await page.locator(".keys-more .n").textContent()).trim(), w.all);
       assert.deepEqual(await plain(page), { selects: 0, leftBorders: [] });
-      // the editor's rows are taller than the fold's foot: the reader
-      // wheels the button into sight before pressing it
-      await page.evaluate(() => document.querySelector(".keys-more").scrollIntoView({ block: "center" }));
-      await page.waitForTimeout(50);
       const sc = await scrolled(page);
-      // a press, not a browser scroll-into-view: the test wheels it there
-      await page.locator(".keys-more").evaluate((b) => b.click());
+      await page.locator(".keys-more").click();
       const filter = page.locator(".keys-tools .keys-filter");
       await filter.waitFor();
       assert.equal(await filter.getAttribute("aria-label"), await filter.getAttribute("placeholder"));
@@ -177,12 +170,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(last.body, { id: "relay", refs: [idOf(10), idOf(20), idOf(30)] });
       await page.waitForFunction(() => /297/.test(document.querySelector(".keys-count")?.textContent || ""));
       assert.equal(await page.getByRole("button", { name: w.failing }).count(), 0);
-      // the three rows removed shorten the list: a body held at its end
-      // lands nearer the top, but the click pushes nothing down and the
-      // page itself stays
-      const at = (s) => Number((/ebody[^ ]*:(\d+)/.exec(s) || [0, 0])[1]);
-      assert.equal(await page.evaluate(() => window.scrollY), 0, "a click scrolled the page");
-      assert.ok(at(await scrolled(page)) <= at(sc), "the click pushed the view down");
+      assert.equal(await scrolled(page), sc, "a click scrolled");
       // a typed filter offers removing what it matches
       await page.locator(".keys-filter").fill("sk-…004");
       await page.locator(".keys-filter").dispatchEvent("input");

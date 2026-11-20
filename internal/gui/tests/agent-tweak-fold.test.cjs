@@ -41,7 +41,7 @@ function agents({ ultracode = "", effort = "", tierEffort = "", subEffort = "", 
 const IDS = ["claude", "codex", "gemini", "opencode"];
 
 function serve(first) {
-  let state = { agents: agents(first), profiles: [], settings: { lang: "en", theme: "light", guideHidden: true } };
+  let state = { agents: agents(first), profiles: [], settings: { lang: "en", theme: "light" } };
   return async (route) => {
     const req = route.request();
     const url = new URL(req.url());

@@ -66,10 +66,7 @@
   });
   function watch(v) {
     if (!seen.has(v)) seen.add(v), sizes.observe(v), kids.observe(v, { childList: true });
-    // not app.js's .view-room: "where the reader is" sizes it while sizes
-    // are being told, and WebKit calls that a loop; it sets scrollTop with
-    // it, and the scroll is heard
-    for (const c of v.children) if (!seen.has(c) && !c.classList.contains("view-room")) seen.add(c), sizes.observe(c);
+    for (const c of v.children) if (!seen.has(c)) seen.add(c), sizes.observe(c);
   }
   function go(e, top) {
     const v = open();

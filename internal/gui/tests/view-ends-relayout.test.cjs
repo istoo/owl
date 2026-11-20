@@ -26,7 +26,7 @@ const groups = {
   // a pool in the list, as on a real page: an empty one's list is hidden
   // again on every draw, which happened to place the capsule again
   pools: [{ provider: "workbuddy-ai", name: "WorkBuddy AI", icon: "generic", kind: "account", who: ["a", "b", "c"], routing: "order" }],
-  groups: Array.from({ length: 30 }, (_, i) => ({ id: `g${i}`, name: `group ${i}`, routing: "order", members: ids, ready: true, memberInfo: ids.map((id) => ({ id, ready: true })), offers: [], shared: [] })),
+  groups: Array.from({ length: 16 }, (_, i) => ({ id: `g${i}`, name: `group ${i}`, routing: "order", members: ids, ready: true, memberInfo: ids.map((id) => ({ id, ready: true })), offers: [], shared: [] })),
 };
 const AGENTS = Array.from({ length: 40 }, (_, i) => ({
   id: "a" + i, name: "Agent " + i, path: "/t/a" + i + ".json", icon: "generic", wired: true,
@@ -100,15 +100,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => { if (!/^ResizeObserver loop/.test(e.message)) errors.push(e.message); });
           await page.route("**/*", serve(lang, web));
 
-          // Routing groups: a screen down, the capsule in sight (with the
-          // page to themselves, the groups need more rows to be a screen
-          // and more down)
-          await page.goto("http://owl.test/?view=groups");
+          // Routing: a screen down, the capsule in sight
+          await page.goto("http://owl.test/?view=routing");
           await page.locator(".rt-group").nth(15).waitFor();
-          const v = "#view-groups";
+          const v = "#view-routing";
           await page.mouse.move(width / 2, 300);
           const down = await page.evaluate(() => {
-            const v = document.querySelector("#view-groups"), g = document.querySelectorAll(".rt-group")[20];
+            const v = document.querySelector("#view-routing"), g = document.querySelectorAll(".rt-group")[9];
             return Math.round(g.getBoundingClientRect().top - v.getBoundingClientRect().top - v.clientHeight / 2);
           });
           await page.mouse.wheel(0, down);

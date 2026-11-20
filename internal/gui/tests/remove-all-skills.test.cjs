@@ -1,7 +1,6 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // #449: taking every skill out of the library was a row's Remove at a time.
-// "Remove all", last in the heading's ⋯ menu (library-bar-more), is red,
-// asks first in the page (no
+// "Remove all" beside "Turn all on/off" is red, asks first in the page (no
 // window.confirm) saying which agents lose them and where their folders go,
 // and Cancel posts nothing; confirming posts every skill's name at once;
 // the clicks scroll nothing; in English and Chinese. No backend: the API is
@@ -55,8 +54,7 @@ const press = async (page, loc) => {
   const b = await loc.boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 };
-// the skills' rows, not the router's under them
-const rows = (page) => page.locator("#view-library .lib-list:not(.lib-hublist) .lib-row").count();
+const rows = (page) => page.locator("#view-library .lib-row").count();
 
 const words = {
   en: { rm: "Remove all", tip: "Take all 3 skills out of the library", ask: "Remove all 3 skills?", agents: /out of the library and out of Claude Code, Codex, Pi\./, kept: /2 folders are moved to owl's backups/, linked: /1 linked from folders of your own are only unlinked/, cancel: "Cancel", go: "Remove all 3", done: "3 skills removed" },
@@ -91,20 +89,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await t.test(lang, async () => {
         const w = words[lang], posts = [];
         const page = await open(lang, posts);
-        // the item under the heading's ⋯, the menu opened for each click
-        const item = async () => {
-          await press(page, page.locator("#view-library .lib-skillshead .lib-barmore"));
-          const it = page.locator(".row-menu .rm-item.lib-everyrm");
-          await it.waitFor();
-          return it;
-        };
-        const rm = await item();
+        const rm = page.locator("#view-library .row-head button.lib-everyrm");
         assert.equal((await rm.textContent()).trim(), w.rm);
         assert.equal(await rm.getAttribute("title"), w.tip);
         const red = await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--red").trim());
         const color = await rm.evaluate((b) => getComputedStyle(b).color);
         const probe = await page.evaluate((c) => { const d = document.createElement("i"); d.style.color = c; document.body.append(d); const v = getComputedStyle(d).color; d.remove(); return v; }, red);
-        assert.equal(color, probe, "the item is red");
+        assert.equal(color, probe, "the button is red");
         assert.equal(await rows(page), 3);
         const before = await scrolled(page);
 
@@ -124,7 +115,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(posts, [], "Cancel posts nothing");
         assert.equal(await rows(page), 3);
 
-        await press(page, await item());
+        await press(page, rm);
         await sheet.waitFor();
         const go = sheet.locator(".bar button.danger-fill");
         assert.equal((await go.textContent()).trim(), w.go);

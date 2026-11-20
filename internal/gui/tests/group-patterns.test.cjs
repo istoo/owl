@@ -72,7 +72,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], posts = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, posts));
-      await page.goto("http://owl.test/?view=groups");
+      await page.goto("http://owl.test/?view=routing");
       const card = page.locator(".rt-group", { hasText: "Free" });
       await card.waitFor();
       const pats = (await card.locator(".mem.pat").allTextContents()).map((x) => x.trim());

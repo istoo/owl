@@ -54,11 +54,31 @@ const agentsNull = `{"agents":null`
 // now, straight to both, and only the rest of the state, without its
 // agents, is encoded twice (with the settings and without). false when
 // the sum wasn't found; s was written all the same, when it could be.
-// s goes as shareOptions has it, each option list once.
+// Each field carries its options, the shape v0.2.27's page reads; a page
+// that asks for them shared (?shared=1) gets that from
+// writeStateJSONShared instead.
 func writeStateJSON(rw http.ResponseWriter, s stateJSON) ([32]byte, bool) {
-	s = shareOptions(s)
-	agents, lists, opts := s.Agents, s.OptionLists, s.Options
+	return writeStateJSONAs(rw, s, false)
+}
+
+// writeStateJSONShared is writeStateJSON with each field's option list
+// sent once, as shareOptions has it.
+func writeStateJSONShared(rw http.ResponseWriter, s stateJSON) ([32]byte, bool) {
+	return writeStateJSONAs(rw, s, true)
+}
+
+func writeStateJSONAs(rw http.ResponseWriter, s stateJSON, shared bool) ([32]byte, bool) {
+	// the kept file is the state as v0.2.27's page reads it, whatever
+	// shape this answer is sent in, so ?last=1 and keepState both see it
 	f := keptFile(s)
+	if shared {
+		// the shared shape is a page asking for it alone; the page this
+		// build serves reads each field's own options, the path below
+		sum, err := encodedSum(f)
+		writeJSON(rw, shareOptions(s))
+		return sum, err == nil
+	}
+	agents, lists, opts := s.Agents, s.OptionLists, s.Options
 	s.Agents, f.State.Agents = nil, nil
 	s.OptionLists, f.State.OptionLists = nil, nil
 	s.Options, f.State.Options = nil, nil

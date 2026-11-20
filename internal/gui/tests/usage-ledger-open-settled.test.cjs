@@ -66,7 +66,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await navTo(p, "usage");
     await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
     await p.locator("#ledWrap .led tbody tr").first().waitFor();
-    await p.locator("#period .opt").nth(2).click();
+    await p.locator("#period .opt").nth(1).click();
     await p.waitForFunction(() => document.querySelectorAll("#ledWrap .led tbody tr.led-row").length === 100);
     await p.waitForTimeout(600);
     const fitted = await p.locator("#ledWrap table.led").getAttribute("class");

@@ -69,7 +69,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang));
-        await page.goto("http://owl.test/?view=groups");
+        await page.goto("http://owl.test/?view=routing");
         const say = (key, vars = {}) => page.evaluate(([lang, key, vars]) => {
           const s = (lang !== "en" && I18N[lang]?.[key]) || key;
           return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);

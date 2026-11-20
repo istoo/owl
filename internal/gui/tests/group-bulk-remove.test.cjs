@@ -83,7 +83,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], posts = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, posts));
-      await page.goto("http://owl.test/?view=groups");
+      await page.goto("http://owl.test/?view=routing");
       const card = (name) => page.locator(".rt-groups .rt-group", { hasText: name });
       await card("Model M").waitFor();
 

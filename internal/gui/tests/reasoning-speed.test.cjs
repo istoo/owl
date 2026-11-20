@@ -5,8 +5,8 @@
 // over the 1.5 s after counted 2200 tokens in 1.5 s, 1,467 tok/s; it is 200
 // in 1.5 s, 133. An older route without its own reasoning count takes its
 // served try's; a reply that reasoned and wrote only tool calls tells no
-// speed of its own, and both the Routing page's row and the Usage page's
-// tell the least its answer wrote at (zzzkl3994 on Discord); one that didn't reason is timed as before. The Routing page's rows,
+// speed of its own (the Usage page's row tells the least its answer wrote
+// at); one that didn't reason is timed as before. The Routing page's rows,
 // a session's average and the Usage page's rows and their tooltip all say
 // it, in English, Chinese, Japanese and German; no backend, the API is faked.
 const assert = require("node:assert/strict");
@@ -14,6 +14,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { navTo } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const now = new Date();
@@ -24,10 +25,10 @@ const at = (i) => new Date(now.getTime() - (i + 1) * 60e3).toISOString();
 const timing = [
   [2200, 2000, 0, 15500, 14000, 14000], // the turn: 200 in 1.5 s, 133 tok/s
   [1300, 0, 1000, 9000, 6000, 6000],    // an older route: 300 in 3 s, 100 tok/s
-  [1500, 1400, 0, 9000, 8000, 0],       // reasoning, then tool calls only: none measured, ≥100 on both pages
+  [1500, 1400, 0, 9000, 8000, 0],       // reasoning, then tool calls only: none measured, ≥100 on the Usage row
   [500, 0, 0, 7000, 2000, 2000],         // no reasoning: 500 in 5 s, 100 tok/s
   [1500, 1400, 0, 15000, 1000, 0],      // paced visible reasoning: 107 tok/s
-  [1500, 1400, 0, 9000, 8000, 0],       // a late summary stays untimed, ≥100 on both pages
+  [1500, 1400, 0, 9000, 8000, 0],       // a late summary stays untimed, ≥100 on the Usage row
   [120, 0, 0, 9000, 1000, 0],           // mixed redacted thinking without a reasoning count
 ];
 const routes = timing.map(([out, reasoning, usageReasoning, ms, ttft, firstText], i) => ({
@@ -53,7 +54,9 @@ function serve(lang) {
   const state = { agents: [{ id: "codex", name: "Codex", path: "/t/c.toml", icon: "codex-color", fields: [] }], profiles: [], settings: { lang, theme: "light" } };
   return async (route) => {
     const url = new URL(route.request().url());
-    const json = (data) => route.fulfill({ json: data });
+    // the fake answers as the server does, cross-origin allowed too: WebKit
+    // refused the routing page's own fetch as an access control failure
+    const json = (data) => route.fulfill({ json: data, headers: { "access-control-allow-origin": "*" } });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:false};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
@@ -96,7 +99,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       page.setDefaultTimeout(5000);
       page.setDefaultNavigationTimeout(60000);
       const errors = [];
-      page.on("pageerror", (e) => { if (engine === "webkit" && /due to access control checks/.test(e.message)) return; errors.push(e.message); }); // a goto in WebKit can cut off a fetch (#1350)
+      // a fetch the closing page had in flight (session titles) is refused
+      // as an access control failure by WebKit: it is the close, not the page
+      page.on("pageerror", (e) => { if (!/access control checks/.test(e.message)) errors.push(e.message); });
       await page.route("**/*", serve(lang));
 
       // the Routing page: each row, and the session's average
@@ -107,10 +112,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const speedOf = async (i) => (await reqs.nth(i).locator(".speed").count()) ? (await reqs.nth(i).locator(".speed .v").textContent()).trim() : "";
       assert.equal(await speedOf(0), w.s(133), "the turn's answer, not 1,467");
       assert.equal(await speedOf(1), w.s(100), "an older route's reasoning is its try's");
-      assert.equal(await speedOf(2), "≥" + w.s(100), "tool calls after reasoning tell the least, as the Usage row");
+      assert.equal(await speedOf(2), "", "tool calls after reasoning tell no speed");
       assert.equal(await speedOf(3), w.s(100), "no reasoning: as before");
       assert.equal(await speedOf(4), w.s(107), "visible reasoning timed from its first delta");
-      assert.equal(await speedOf(5), "≥" + w.s(100), "a late hidden summary tells the least, as the Usage row");
+      assert.equal(await speedOf(5), "", "late hidden summary stays untimed");
  assert.equal(await speedOf(6), "", "redacted reasoning stays untimed without a count");
       assert.match(await reqs.nth(0).locator(".speed").getAttribute("title"), w.rule);
       await reqs.nth(0).click();
@@ -126,7 +131,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the Usage page's requests: each row, its tooltip, and the period's
       await page.goto("http://owl.test/");
-      await page.locator('[data-view="usage"]').first().click();
+      await navTo(page, "usage");
       await page.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
       await page.locator("#ledWrap .led tbody tr").first().waitFor();
       await page.waitForTimeout(300);

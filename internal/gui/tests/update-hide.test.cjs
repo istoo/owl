@@ -1,11 +1,10 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // The header's Update pill can be kept away (Wang Hsiaohi on Discord). Its ×,
-// shown with the pointer over it, hides it for 3 days: it stays away after a
-// reload and through the releases out meanwhile (a release comes every few
-// minutes), and comes back once the 3 days are over; a right-click
+// shown with the pointer over it, hides it for that version: it stays away
+// after a reload and comes back once a newer version is out; a right-click
 // does the same, and the × sits off the pill, so a click meant for Update
 // never lands on it (#2291). Settings → Update button turns it off for good, and says
-// that it is hidden for 3 days, with a way to show it again. The version
+// which version it is hidden for with a way to show it again. The version
 // row still offers the restart. No click moves the page. English and
 // Chinese, in the tray panel and the window; no backend, the API is faked.
 const assert = require("node:assert/strict");
@@ -18,10 +17,10 @@ const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
 const assets = path.resolve(__dirname, "../assets");
 
 const words = {
-  en: { update: "Update", hide: "Hide for 3 days", pill: "Update button", off: "Off", on: "On",
-    hidden: "Hidden for 3 days", again: "Show again", restart: "Restart to update", version: "Version" },
-  zh: { update: "更新", hide: "隐藏 3 天", pill: "更新按钮", off: "关闭", on: "开启",
-    hidden: "已隐藏 3 天", again: "重新显示", restart: "重启以更新", version: "版本" },
+  en: { update: "Update", hide: "Hide until the next version", pill: "Update reminder", off: "Off", on: "On",
+    hidden: "Hidden for 0.1.401 until a newer version is out", again: "Show again", restart: "Restart to update", version: "Version" },
+  zh: { update: "更新", hide: "隐藏，直到下一个版本", pill: "更新提示", off: "关闭", on: "开启",
+    hidden: "0.1.401 已隐藏，更新的版本发布时再显示", again: "重新显示", restart: "重启以更新", version: "版本" },
 };
 
 function settingsPayload(lang, ctl) {
@@ -38,8 +37,7 @@ function settingsPayload(lang, ctl) {
   };
 }
 
-// ctl holds what the backend would: the version out, the two settings, and
-// whether the × still holds (hushed: /api/update's quiet)
+// ctl holds what the backend would: the version out, and the two settings
 function server(lang, ctl) {
   return async (route) => {
     const req = route.request(), url = new URL(req.url());
@@ -50,7 +48,6 @@ function server(lang, ctl) {
     if (url.pathname === "/api/settings/update-skip") {
       ctl.skips.push(req.postDataJSON().version);
       ctl.skip = req.postDataJSON().version;
-      ctl.hushed = !!ctl.skip;
       return json(settingsPayload(lang, ctl));
     }
     if (url.pathname === "/api/settings") {
@@ -61,7 +58,7 @@ function server(lang, ctl) {
       }
       return json(settingsPayload(lang, ctl));
     }
-    if (url.pathname === "/api/update") return json({ state: "ready", current: "0.1.400", latest: ctl.latest, ...(ctl.hushed ? { quiet: true } : {}) });
+    if (url.pathname === "/api/update") return json({ state: "ready", current: "0.1.400", latest: ctl.latest });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
     if (url.pathname === "/api/usage/quotas") return json([]);
     if (url.pathname === "/api/groups") return json({ groups: [], models: [] });
@@ -72,7 +69,7 @@ function server(lang, ctl) {
   };
 }
 
-const fresh = (over) => ({ latest: "0.1.401", off: false, skip: "", hushed: false, skips: [], saves: [], ...over });
+const fresh = (over) => ({ latest: "0.1.401", off: false, skip: "", skips: [], saves: [], ...over });
 // wheel a row into sight, as a user would; a click must then not move the page
 async function showRow(page, row) {
   await page.locator("#view-settings").hover();
@@ -106,7 +103,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     };
     for (const lang of ["en", "zh"]) {
       const w = words[lang];
-      await t.test(lang + ": the × hides it for 3 days, through newer versions", async () => {
+      await t.test(lang + ": the × hides it for this version, a newer one brings it back", async () => {
         const ctl = fresh();
         const { page, errors } = await open(lang, ctl, "?mode=panel");
         const pill = page.locator("#update"), x = page.locator("#updateHide");
@@ -130,11 +127,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await pill.isHidden(), true, "still hidden for 0.1.401");
         ctl.latest = "0.1.402";
         await page.reload();
-        await page.locator("#sync").waitFor();
-        await page.waitForTimeout(400);
-        assert.equal(await pill.isHidden(), true, "a release minutes later brought it back");
-        ctl.hushed = false; // the 3 days are over
-        await page.reload();
         await pill.waitFor({ state: "visible" });
         // and a right-click hides it as well
         await pill.click({ button: "right" });
@@ -153,8 +145,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const pill = page.locator("#update"), x = page.locator("#updateHide");
           await pill.waitFor({ state: "visible" });
           if (tight) {
-            // the header as fitTop leaves it when the tabs don't fit (#442)
-            await page.evaluate(() => { topFit.disconnect(); document.querySelector(".top").classList.add("tight"); });
+            // the header as fitTop leaves it when the tabs don't fit (#442),
+            // once every late fitTop has had its turn: the fonts, navmore.js
+            // and a frame the observer queued would each take .tight off
+            // again on a busy machine (#8)
+            await page.evaluate(async () => {
+              topFit.disconnect();
+              document.fonts.removeEventListener("loadingdone", fitTop);
+              await document.fonts.ready;
+              const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+              while (!navMoreOver) await frames();
+              await frames();
+              document.querySelector(".top").classList.add("tight");
+            });
             assert.equal(await pill.locator("span").evaluate((e) => getComputedStyle(e).display), "none", "the pill is its round arrow");
           }
           await pill.hover();
@@ -183,7 +186,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       }
 
       await t.test(lang + ": Settings turns it off, and shows it again", async () => {
-        const ctl = fresh({ skip: "0.1.400", hushed: true, latest: "0.1.402" });
+        const ctl = fresh({ skip: "0.1.401" });
         const { page, errors } = await open(lang, ctl, "?view=settings&tab=about");
         const row = page.locator("#about .row.pref", { has: page.locator(".name", { hasText: w.pill }) });
         await row.locator(".sub", { hasText: w.hidden }).waitFor();
@@ -198,7 +201,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // off for good: no pill, whatever version is out
         await showRow(page, row);
         const before = await scrolls(page);
-        await row.locator("button", { hasText: w.off }).click();
+        await row.getByRole("switch").click();
         await page.locator("#update").waitFor({ state: "hidden" });
         assert.equal(ctl.saves.at(-1).noUpdatePill, true);
         assert.equal(await scrolls(page), before, "the click must not scroll the page");
@@ -208,7 +211,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.waitForTimeout(400);
         assert.equal(await page.locator("#update").isHidden(), true);
         await showRow(page, row);
-        await page.locator("#about .row.pref", { has: page.locator(".name", { hasText: w.pill }) }).locator("button", { hasText: w.on }).click();
+        await page.locator("#about .row.pref", { has: page.locator(".name", { hasText: w.pill }) }).getByRole("switch").click();
         await page.locator("#update").waitFor({ state: "visible" });
         assert.equal(ctl.saves.at(-1).noUpdatePill, false);
         assert.deepEqual(errors, []);

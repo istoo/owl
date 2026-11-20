@@ -402,8 +402,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.route("**/*", server(posted));
           await page.goto("http://owl.test/?view=providers");
           await page.locator(".row.provider", { hasText: "Relay" }).click();
-          // a saved Balance URL opens Advanced, where it is asked
-          assert(await page.locator(".editor details.advanced").evaluate((d) => d.open), "Advanced is open");
+          await page.locator(".editor details.more:not(.advanced) > summary").click();
           await page.locator(".editor .bal-path").fill(typed);
           const to = "https://relay.example.com" + endpoint;
           await page.locator(".editor .bal-fix").getByRole("button", { name: "Use " + to, exact: true }).click();

@@ -1,10 +1,12 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// Settings at the sidebar's foot stays where it was clicked (jen_celeus on
-// X): its tabs used to be listed under it, so the foot grew upward and the
-// button rose with it, out from under the pointer. The list now opens
-// above the button, growing from it, and folds back the same way; the
-// button never moves, while the list unrolls or after, in a wide window, a
-// narrow one, a short one and one too short for the whole list.
+// Settings stays where it was clicked (jen_celeus on X): its tabs used to
+// be listed under its button at the sidebar's foot, so the foot grew upward
+// and the button rose with it, out from under the pointer. Beside the rail
+// its gear is at the right end of the status bar under the page, the
+// gateway's address at its left, and its tabs are the page's own strip:
+// the gear never moves, as Settings opens, as a tab is picked, or as
+// another page opens, in a wide window, a narrow one, a short one and one
+// shorter still.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -46,7 +48,6 @@ const sizes = [
   { name: "wide", width: 1200, height: 760 },
   { name: "narrow", width: 760, height: 760, side: true },
   { name: "short", width: 1200, height: 460 },
-  // too short for the page: the button stays in its bar
   { name: "tiny", width: 1200, height: 340 },
 ];
 const langs = ["en", "zh", "zh-TW", "ja", "de"];
@@ -66,36 +67,41 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("**/*", serve(lang));
       await page.goto("http://owl.test/");
       await page.waitForSelector("#nav button.on");
-      assert.ok(await page.evaluate(() => document.body.classList.contains("side-nav")), "the sidebar shows");
-      // owl keeps Settings in the status bar under the page, its tabs on the
-      // page's own strip (app.js layoutNav; no list in the sidebar)
+      assert.ok(await page.evaluate(() => document.body.classList.contains("side-nav")), "the rail shows");
       const prefs = page.locator("#sideStatus #prefs");
+      await page.locator("#sideStatus #sideGw").waitFor();
       const before = await prefs.boundingBox();
+      // in the status bar at the window's foot, at its right end, the
+      // gateway's address before it
+      const at = await page.evaluate(() => {
+        const bar = document.querySelector("#sideStatus").getBoundingClientRect(), g = document.querySelector("#sideGw").getBoundingClientRect(), p = document.querySelector("#prefs").getBoundingClientRect();
+        return { bar: bar.bottom, vh: innerHeight, gw: g.right, pl: p.left, pr: p.right, br: bar.right };
+      });
+      assert.ok(Math.abs(at.bar - at.vh) < 1 && at.br - at.pr < 16 && at.gw <= at.pl, `the gear at the bar's right, the address before it: ${JSON.stringify(at)}`);
 
-      // clicked, Settings opens and the button stays under the pointer
+      // clicked, Settings opens and the gear stays under the pointer
       await page.mouse.click(before.x + before.width / 2, before.y + before.height / 2);
       const opening = await drift(page, 700);
-      const tabs = page.locator("#setTabs [role=tab]");
-      await tabs.first().waitFor();
-      assert.equal(await tabs.evaluateAll((bs) => bs.filter((b) => !b.hidden).length), 8, "Settings' tabs are on its strip");
+      await page.locator("#view-settings:not([hidden])").waitFor();
+      await page.locator("#setTabs button").first().waitFor();
+      assert.equal(await page.locator(".nav-sub, .nav-s").count(), 0, "no list of tabs opens from it");
       const after = await prefs.boundingBox();
-      assert.ok(opening < 1, `the button moved ${opening}px while Settings opened`);
-      assert.ok(Math.abs(after.y - before.y) < 1 && Math.abs(after.x - before.x) < 1, `the button stays put: ${JSON.stringify(before)} then ${JSON.stringify(after)}`);
+      assert.ok(opening < 1, `the gear moved ${opening}px while Settings opened`);
+      assert.ok(Math.abs(after.y - before.y) < 1 && Math.abs(after.x - before.x) < 1, `the gear stays put: ${JSON.stringify(before)} then ${JSON.stringify(after)}`);
       assert.ok(await page.locator("#prefs").evaluate((b) => b.classList.contains("on")), "Settings is open");
-      assert.ok(await page.locator("#setTabs").isVisible(), "its strip is in sight");
 
-      // a tab picked there: the button still where it was
+      // a tab picked in the page's strip: the gear still where it was
       await page.locator("#setTab-network").click();
       await page.waitForFunction(() => document.querySelector("#setTab-network").classList.contains("on"));
-      assert.ok((await drift(page, 300)) < 1, "picking a tab leaves the button put");
+      assert.ok((await drift(page, 300)) < 1, "picking a tab leaves the gear put");
       assert.ok(Math.abs((await prefs.boundingBox()).y - before.y) < 1);
 
-      // another page: Settings' strip leaves and the button never moved
+      // another page: the gear never moved
       await page.locator('#nav button[data-view="agents"]').click();
       const closing = await drift(page, 600);
-      await page.waitForFunction(() => !document.querySelector("#setTabs")?.offsetParent);
-      assert.ok(closing < 1, `the button moved ${closing}px while Settings left`);
-      assert.ok(Math.abs((await prefs.boundingBox()).y - before.y) < 1, "the button is where it began");
+      assert.ok(closing < 1, `the gear moved ${closing}px as another page opened`);
+      assert.ok(Math.abs((await prefs.boundingBox()).y - before.y) < 1, "the gear is where it began");
+      assert.equal(await page.locator("#prefs").evaluate((b) => b.classList.contains("on")), false);
 
       assert.deepEqual(errors, []);
       await context.close();

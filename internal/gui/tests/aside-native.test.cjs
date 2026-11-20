@@ -21,7 +21,7 @@ for (const engine of ['chromium', 'webkit']) {
           { key: 'image', label: 'image', value: 'owl/art/gpt-image-1', options: [{ value: 'owl/art/gpt-image-1', ref: 'art/gpt-image-1', label: 'GPT image' }] },
         ],
       };
-      const state = () => ({ agents: [a], profiles: [], settings: { lang, theme: 'light', guideHidden: true } });
+      const state = () => ({ agents: [a], profiles: [], settings: { lang, theme: 'light' } });
       await page.route('**/*', async (route) => {
         const req = route.request(), url = new URL(req.url()), p = url.pathname;
         if (req.method() === 'POST') posts.push(p);
@@ -81,7 +81,7 @@ for (const engine of ['chromium', 'webkit']) {
         native: { provider: 'connected', runtime: 'applied', fields: {} },
         fields: [{ key: 'model', label: 'model', value: 'native/current', options: [{ value: 'native/current', label: 'Current model' }, { value: 'owl/relay/m1', ref: 'relay/m1', label: 'New model' }] }],
       };
-      const current = () => ({ agents: [a], profiles: [], settings: { lang, theme: 'light', guideHidden: true } });
+      const current = () => ({ agents: [a], profiles: [], settings: { lang, theme: 'light' } });
       await page.route('**/*', async route => {
         const req = route.request(), p = new URL(req.url()).pathname;
         if (req.method() === 'POST') posts.push({ path: p, body: req.postDataJSON() });

@@ -95,7 +95,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const { page, errors } = await open(engine, t, lang, 390, true);
       // a phone's pages are a tab bar at the foot (phonetabs.js): its own
       // More holds the pages past the fifth, the header's #navMore stays hidden
-      await page.waitForFunction(() => { const m = document.querySelector("#nav > button.nav-more:not(#navMore)"); return m && getComputedStyle(m).display !== "none"; });
+      await page.waitForFunction(() => { const m = document.querySelector("#nav .tb-more"); return m && getComputedStyle(m).display !== "none"; });
       assert.equal(await page.evaluate(() => document.querySelector("#navMore").hidden || getComputedStyle(document.querySelector("#navMore")).display === "none"), true, "the header's More is not the phone's");
       assert.equal(await page.evaluate(() => { const n = document.querySelector("#nav"); return n.scrollWidth <= n.clientWidth + 1; }), true);
       assert.ok((await page.evaluate(() => document.querySelectorAll("#nav > button[data-view].tb-over").length)) > 0, "some pages are under More");

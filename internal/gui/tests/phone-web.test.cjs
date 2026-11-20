@@ -1,7 +1,7 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // owl web on a phone (jiakun_zhao on X: 移动端的显示效果非常不友好，甚至滚动
-//会抽搐). The header is the owl and the icons, the tabs a bar at the
-// window's foot (geraldpppppp on X), the one open marked in sight; a setting's control
+//会抽搐). The header is two rows, the owl and the icons over the tabs at
+// their size, sliding sideways, the one open in sight; a setting's control
 // too wide beside its name goes under it rather than cut the name; iOS isn't
 // let zoom into a field it focuses. And a flick's scroll, which goes on
 // after the finger is lifted with no touch event, is the reader's: the page

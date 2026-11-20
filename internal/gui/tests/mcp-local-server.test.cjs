@@ -4,11 +4,7 @@
 // editor has one switch, "Sync to your other computers", on by default;
 // off saves the server as local and shows again off; the row says "Not
 // synced" with a tag. It said "This computer only", and bin.90 on Discord
-// read that as a sharing switch: the stored local keeps its meaning. A
-// Remote owl's server (bridge) holds this computer's key and is never
-// synced: its switch is off and held, and the hint and the tag say why,
-// where it showed on and went back off once saved (treeman_26897 on
-// Discord: "无法打开 同步到其它电脑按钮"). Every language,
+// read that as a sharing switch: the stored local keeps its meaning. Every language,
 // Chromium and WebKit, 1100 and 390 wide; nothing scrolls sideways. No
 // backend: the API is faked here.
 const assert = require("node:assert/strict");
@@ -29,8 +25,7 @@ function server(lang, calls) {
     dir: `${HOME}/.owl/library`, backups: `${HOME}/.owl/backups`, home: HOME,
     agents,
     instructions: { agents: [], sets: [] }, foundServers: [], projects: [], foundSkills: [], skills: [],
-    servers: [{ name: "mine", transport: "stdio", command: "/opt/mine/mcp", agents: ["claude"] },
-      { name: "home", transport: "http", url: "http://10.0.0.5:3425/mcp", headers: { Authorization: "Bearer sk-x" }, agents: ["claude"], local: true, bridge: "remote-owl" }],
+    servers: [{ name: "mine", transport: "stdio", command: "/opt/mine/mcp", agents: ["claude"] }],
   };
   return async (route) => {
     const req = route.request(), url = new URL(req.url());
@@ -71,7 +66,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       for (const width of [1100, 390]) {
         await t.test(`${lang} ${width}`, async () => {
           const w = (s, v) => tr(lang, s, v);
-          if (lang !== "en") for (const s of ["Sync to your other computers", "Not synced", "Added from a Remote owl with this computer's key for it, so it stays on this computer", "Sync never carries it to your other computers", "Off keeps it on this computer: sync never carries it to your other computers, and a sync from them neither removes it nor puts theirs in its place"]) assert.ok(I18N[lang][s], `${lang}: ${s}`);
+          if (lang !== "en") for (const s of ["Sync to your other computers", "Not synced", "Sync never carries it to your other computers", "Off keeps it on this computer: sync never carries it to your other computers, and a sync from them neither removes it nor puts theirs in its place"]) assert.ok(I18N[lang][s], `${lang}: ${s}`);
           const calls = [];
           const ctx = await browser.newContext({ viewport: { width, height: 800 } });
           await ctx.addInitScript(() => { try { localStorage.setItem("owl.libTab", "mcp"); } catch {} });
@@ -109,24 +104,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await save();
           assert.deepEqual(calls, ["mine true", "mine false"]);
           await tag.waitFor({ state: "detached" });
-          // a Remote owl's server: off and held, the hint and tag say why
-          const brow = page.locator("#view-library .lib-server", { has: page.locator('.lib-health[data-server="home"]') });
-          const btag = brow.locator(".lib-tag.lib-local");
-          assert.equal(await btag.getAttribute("title"), w("Added from a Remote owl with this computer's key for it, so it stays on this computer"));
-          await brow.locator(".name").click();
-          await ed.waitFor();
-          assert.equal(await sw.getAttribute("aria-checked"), "false");
-          assert.equal(await sw.getAttribute("aria-disabled"), "true");
-          await ed.locator(".hint", { hasText: w("Added from a Remote owl with this computer's key for it, so it stays on this computer") }).waitFor();
-          await sw.dispatchEvent("click"); // Playwright won't click an aria-disabled one
-          assert.equal(await sw.getAttribute("aria-checked"), "false", "a click doesn't turn it on");
-          await save();
-          assert.deepEqual(calls, ["mine true", "mine false", "home true"]);
           // Cancel keeps it as it was
           await open();
           await sw.click();
           await ed.locator(":scope > .bar button", { hasText: w("Cancel") }).click();
-          assert.deepEqual(calls, ["mine true", "mine false", "home true"]);
+          assert.deepEqual(calls, ["mine true", "mine false"]);
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
           await ctx.close();
         });

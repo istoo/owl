@@ -80,8 +80,8 @@ func keepState(s stateJSON) {
 
 // keptFile is what keepState keeps of s.
 func keptFile(s stateJSON) stateFile {
-	// kept as it is sent, each option list once
-	s = shareOptions(s)
+	// kept as it is sent: each field carries its options, the shape
+	// v0.2.27's page reads (writeStateJSON)
 	s.Settings = settings.Settings{}
 	// and what is told once: a notice, a file recovered after a crash
 	s.Notice, s.Connected, s.Recovered = "", nil, nil

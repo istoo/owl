@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The tray panel's height (fit) is the showing tab's, every part of it
+// The tray panel's height (fit) is its tallest tab's, every part of it
 // counted: the header, the tabs and the gap under them, the view's padding,
 // what sits around a tab's section (the Get started card, the fold under
 // the agents) and the foot. Summing the sections alone left the view short
@@ -7,9 +7,7 @@
 // (CyberCaius on Discord, on Windows). And on the first open, while the
 // trace is on its way, the Routing tab's skeleton is as tall as what comes,
 // so the panel doesn't grow when it lands; today's line is asked for at
-// once, not after the trace. Going back from a tall tab to a short one the
-// panel shrinks again, gliding there (refeccd on Discord: it stayed at the
-// tallest tab's height).
+// once, not after the trace.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -29,7 +27,7 @@ const ids = ["codex", "claude", "gemini", "opencode", "kimi", "qwen", "crush", "
 // held: promises the trace's and today's first answers wait for
 function serve(page, lang, agents, held = {}) {
   const state = { agents: ids.slice(0, agents).map((id) => ({ id, name: id, path: "/test/" + id, fields: [] })), profiles: [], settings: { lang, theme: "light" } };
-  const fits = [], asks = [];
+  const fits = [];
   const handler = async (route) => {
     const url = new URL(route.request().url());
     const json = (data) => route.fulfill({ json: data });
@@ -49,7 +47,6 @@ function serve(page, lang, agents, held = {}) {
       // the window takes the height asked for, as the tray's does
       const h = Number(url.searchParams.get("h"));
       fits.push(h);
-      asks.push(url.searchParams);
       await page.setViewportSize({ width: 380, height: h }).catch(() => {});
       return route.fulfill({ status: 204 });
     }
@@ -62,7 +59,7 @@ function serve(page, lang, agents, held = {}) {
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
     await route.fulfill({ body: await fs.readFile(file), contentType });
   };
-  return { handler, fits, asks };
+  return { handler, fits };
 }
 
 // the view's overflow on each tab, after the panel was fitted
@@ -83,17 +80,6 @@ async function overflows(page) {
     out[tab] = await page.evaluate(() => { const v = document.querySelector("#view-agents"); return v.scrollHeight - v.clientHeight; });
   }
   return out;
-}
-
-// owl's panel opens on its overview; a page is a card's › (panelhome.js),
-// where upstream's tab strip drew a row of tabs
-async function goTab(page, tab) {
-  if (!(await page.locator("#pHome").isVisible())) {
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.body.dataset.ptab === "home");
-  }
-  await page.locator(`#pHome [data-open="${tab}"]`).click();
-  await page.waitForFunction((t) => document.body.dataset.ptab === t, tab);
 }
 
 // a fit that has settled: no new height asked for a while
@@ -140,7 +126,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#agents .row.agent").nth(1).waitFor({ state: "attached" });
       await page.waitForFunction(() => /42/.test(document.querySelector("#panelRouting .pr-today")?.textContent || ""), null, { timeout: 3000 })
         .catch(() => assert.fail("today's line waited for the trace: " + JSON.stringify(fits)));
-      await goTab(page, "routing");
       const before = await settled(page, fits);
       release();
       await page.locator("#panelRouting .pr-req").first().waitFor({ state: "attached" });
@@ -176,42 +161,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(kept.top > 0, "the agents scroll in a short panel");
       assert.deepEqual({ now: kept.now, moved: kept.moved }, { now: kept.top, moved: 0 }, "measuring the tabs scrolled the view");
       assert.deepEqual(errors, []);
-    });
-
-    // two agents and Routing's eight requests: Routing is the tall tab
-    test(`${engine} ${lang}: the tray panel shrinks back to a short tab`, async (t) => {
-      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
-      t.after(() => browser.close());
-      for (const motion of ["reduce", "no-preference"]) {
-        const errors = [];
-        const page = await (await browser.newContext({ viewport: { width: 380, height: 200 }, reducedMotion: motion })).newPage();
-        page.setDefaultTimeout(8000);
-        page.setDefaultNavigationTimeout(60000);
-        page.on("pageerror", (e) => errors.push(e.message));
-        const s = serve(page, lang, 2);
-        await page.route("**/*", s.handler);
-        await page.goto("http://owl.test/?mode=panel");
-        await goTab(page, "agents");
-        await page.locator("#panelRouting .pr-req").first().waitFor({ state: "attached" });
-        await page.locator("#agents .row.agent").nth(1).waitFor();
-        const short = await settled(page, s.fits);
-        await goTab(page, "routing");
-        const tall = await settled(page, s.fits);
-        assert(tall > short, `${motion}: Routing asked no taller a panel than two agents: ${s.fits.join(" ")}`);
-        const over = await page.evaluate(() => { const v = document.querySelector("#view-agents"); return v.scrollHeight - v.clientHeight; });
-        assert(over <= 0, `${motion}: Routing overflows by ${over}px`);
-        const n = s.asks.length;
-        await goTab(page, "agents");
-        const back = await settled(page, s.fits);
-        assert.equal(back, short, `${motion}: back on two agents the panel kept ${back}, not ${short}: ${s.fits.join(" ")}`);
-        // the tab picked glides the edge on app.css's ease-out, a jump when
-        // motion is reduced
-        const ask = s.asks[n];
-        if (motion === "reduce") assert.equal(ask.get("ms"), null, `a glide under reduced motion: ${ask}`);
-        else assert.deepEqual([ask.get("ms"), ask.get("ease")], ["240", ".23,1,.32,1"], `the tab's fit: ${ask}`);
-        assert.deepEqual(errors, []);
-        await page.context().close();
-      }
     });
   }
 }

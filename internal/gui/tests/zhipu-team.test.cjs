@@ -172,6 +172,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the sheet is still open under it
       await sheet.locator('.tile[data-pick="Z.ai"]').click();
       await org(page).waitFor();
+      // the proxy's password in Advanced is a password box too, not the key
       await page.locator(".editor.new input[type=password]:not(.proxy-credential)").fill("zk-1");
       await click(page, org(page));
       await org(page).fill("org-9");

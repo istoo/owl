@@ -227,6 +227,25 @@ func TestSettingsSaveKeepsWhatItDoesNotSend(t *testing.T) {
 	was.PanelShortcut = "Ctrl+Alt+K"
 	was.Proxies = []settings.NamedProxy{{ID: "p1", Name: "Office", URL: "http://proxy.example:8080"}} // their own routes, /api/proxies/*
 	was.ProxyNames = map[string]string{"p1": "Office"}
+	// v0.2.27's Settings page doesn't send these five: their rows (Accent,
+	// the total's and the tray's currencies, the day's start hour, the
+	// plugin proxy) are later than that page, so a save of it must keep
+	// what is saved here.
+	was.Accent = "#0d9488"
+	was.TotalCurrency = "usd"
+	was.TrayCurrency = "cny"
+	was.DayStart = 4
+	was.PluginProxy = "system"
+	was.UpdateProxy = "system"
+	// and these five, which v0.2.27's page sets on their own routes or in
+	// settings.json alone, never in a save of the Settings page
+	was.UpdateSource = settings.UpdateSourceGitHub
+	was.CheckinAt = "09:00"
+	was.ClaudeNoExtraUsage = true
+	retryCap := 3600
+	was.RetryAfterCap = &retryCap
+	was.VideoGen = "fake/v1"
+	was.RestoreOnQuit = true
 	was.ContextCap = 200000                           // its own route, POST /api/settings/context-cap
 	was.ContextCapAll = true                          // its own route, POST /api/settings/context-cap-mode
 	was.BareModelIDsOnly = true                       // its own route, POST /api/settings/bare-ids

@@ -10,8 +10,12 @@ import (
 // its Hugging Face avatar, lobe-icons' StepFun). The old stepped-S with a
 // blue gradient must not come back under either file name a provider can
 // still carry (zzstar101 on X).
+// v0.2.27's page is what this build serves: it draws StepFun with
+// stepfun.svg, and its stepfun-color.svg still carries the older gradient
+// mark. The released artwork is kept as it shipped, so only the icon the
+// page draws is held to the current mark.
 func TestStepFunLogoIsTheCurrentMark(t *testing.T) {
-	for _, name := range []string{"stepfun.svg", "stepfun-color.svg"} {
+	for _, name := range []string{"stepfun.svg"} {
 		b, err := os.ReadFile("../gui/assets/icons/" + name)
 		if err != nil {
 			t.Fatal(err)

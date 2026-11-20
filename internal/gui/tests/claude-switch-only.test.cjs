@@ -56,7 +56,7 @@ const label = {
 };
 const strings = [
   "Only switch {agent}'s sign-in",
-  "When an account is used up, owl signs {agent} in to the next one. Requests on these accounts don't go through owl.",
+  "owl moves {agent}'s own sign-in to the next account with room when one is used up, and keeps it there till that one is used up too. Nothing on these accounts is served through owl.",
   "owl serves no requests on these accounts",
   "owl serves requests on these accounts again",
 ];

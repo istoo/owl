@@ -15,7 +15,7 @@ const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
 const assets = path.resolve(__dirname, "../assets");
-const LAUNCH = "GEMINI_API_KEY=owl-agy GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:3425 agy --settings '/home/u/.gemini/antigravity-cli/owl-settings.json' --model 'owl/deepseek/pro'";
+const LAUNCH = "GEMINI_API_KEY=owl-agy GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:3425 agy --model 'owl/deepseek/pro'";
 const models = [{ value: "owl/deepseek/pro", label: "owl/deepseek/pro", ref: "deepseek/pro" }, { value: "model-b", label: "model-b" }];
 const agent = (id, name, launch) => ({
   id, name, path: "/test/" + id, launch, wired: true, // on a owl model (#726: a connected one is in view)

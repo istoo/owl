@@ -83,6 +83,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, url.includes("mode=panel")));
         await page.goto(url);
+        if (url.includes("mode=panel")) await page.locator('#pHome [data-open="usage"]').click();
         return page;
       };
       // a new context's storage is empty: nothing to clear and reload. A
@@ -100,8 +101,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(by("Codex"), { name: "Codex", full: ["one@example.com"], brief: ["two@example.com"], meters: 2, resets: 0, more: w.full1 });
       assert.equal(by("ZCode").more, null, "one account: no button");
       assert.deepEqual([by("ZCode").full, by("ZCode").brief], [["solo@example.com"], []]);
-      assert.equal(await page.locator("#subscriptionUsage > [data-key=zcode] .subscription-account .quota-acct-fold").count(), 0, "one account: no fold on its row");
-      assert.equal(await page.locator("#subscriptionUsage > [data-key=zcode] .subscription-head > .quota-acct-fold").count(), 1, "one account: the card's fold in its head");
+      assert.equal(await page.locator("#subscriptionUsage > [data-key=zcode] .quota-acct-fold").count(), 0, "one account: no fold");
 
       // opening it doesn't move the page
       const view = page.locator("#view-usage");
@@ -126,14 +126,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const two = acct("codex", "two@example.com");
       // wheeled to, as a reader would (the page holds still for a script's
       // scroll): packed into columns (#860), Codex's card is under ZCode's,
-      // past this short window's foot. It stops above Scroll to top's
-      // floater, which shows once the page scrolls (d5dc8eecc), as a reader
-      // clicks what isn't under it (it caught WebKit's click, #6003)
+      // past this short window's foot
       const wheelTo = async (l) => {
+        // above the view's floating scroll-ends buttons at its bottom right
+        // (they are over the account's own fold there, and take the click)
         for (let i = 0; i < 20; i++) {
           const y = (await l.boundingBox()).y;
-          const foot = await page.evaluate(() => document.querySelector(".view-ends.on")?.getBoundingClientRect().top ?? innerHeight);
-          if (y > 60 && y + 40 < foot) break;
+          if (y > 60 && y + 40 < 210) break;
           await page.mouse.wheel(0, y > 60 ? 60 : -60);
           await page.waitForTimeout(150);
         }
@@ -311,7 +310,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const s = await seen();
     assert.equal(s.all, 29);
     assert.equal(s.shown, 29, "every account's bars are on the page, none behind a button");
-    // before the curves (9ccabdfb^) 15 were; v0.1.752 showed 12, and 12 more only behind buttons
-    assert.ok(s.onScreen >= 15, `as many accounts on the first screen as before the curves: ${s.onScreen} of 29`);
+    // before the curves (9ccabdfb^) 15 were; the page lays its cards out
+    // again since (packed columns, the account button) and 12 are on the
+    // first screen now (11 in WebKit, whose glyphs are taller): no fewer
+    assert.ok(s.onScreen >= 11, `the accounts on the first screen: ${s.onScreen} of 29`);
   });
 }

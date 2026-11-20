@@ -22,9 +22,6 @@ function page(m = "window") {
     const mode = ${JSON.stringify(m)}; // the tray panel ("panel") also keeps each reading (#3160)
     const saved = [], localStorage = { setItem: (k, v) => saved.push([k, v]), getItem: () => null };
     const requests = [], errors = [];
-    const state = { agents: [] }; // the panel asks for its accounts once a read lands
-    let panelAccts = false;
-    function panelAccounts() {}
     const usageAcctKey = q => q.provider + "\\n" + (q.user || "").toLowerCase();
     const quotaCycleHolds = new Map(); // past cycles' estimates (#2009), cleared by a refresh
     const t = x => x;
@@ -41,7 +38,7 @@ function page(m = "window") {
       if (path.includes("history")) return Promise.resolve([]);
       return new Promise((resolve, reject) => requests.push({ path, resolve, reject }));
     }
-    ${section("let quotasLoading =", "// Picked days,")}
+    ${section("let quotasLoading =", "// A period of picked days is")}
     ${section("const quotaRefreshing =", "// familyQuota:")}
     globalThis.p = {
       requests, errors,

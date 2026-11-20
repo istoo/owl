@@ -91,10 +91,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.match(hint, /max_tokens/, hint);
         assert.match(hint, /Anthropic/, hint);
         if (lang !== "en") assert.doesNotMatch(hint, /sent as max_tokens/, "translated: " + hint);
-        // a roomy editor's explanations rest out of sight (editor-hints), so
-        // what has to fit is the page: the hint never widens it
-        const over = await box.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
-        assert.equal(over, 0, "the hint widens the window");
+        const over = await box.evaluate((b) => {
+          const h = document.getElementById(b.getAttribute("aria-describedby").split(" ").pop());
+          return h.scrollWidth - h.clientWidth + Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        });
+        assert.equal(over, 0, "the hint wraps inside the window");
         assert.deepEqual(errors, []);
       });
     }

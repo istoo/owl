@@ -174,13 +174,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await watchSettingsReads(page);
     await page.goto("http://owl.test/?view=agents");
     await openAgentSettings(page, "claude");
-    // Long conversations, its one row (the owner merged the two, 11-12), and
-    // Claude Code's own rows under it
-    await page.locator('.row.agent[data-id="claude"] .ag-prefs .agent-compact').waitFor();
-    assert.equal(await page.locator('.row.agent[data-id="claude"] .ag-prefs #fullContextRow').isHidden(), true, "every agent's row gives its place");
-    const shown = await page.locator(".ag-prefs .row.pref").evaluateAll((rs) => rs.filter((r) => r.checkVisibility()).map((r) => r.className.replace("row pref", "").trim()));
-    assert.deepEqual(shown.filter((c) => !/^(agent-compact|claude-cache|claude-attribution|agent-window)$/.test(c)), [], "Claude Code's settings are Long conversations and its own: " + shown);
-    assert.equal(await page.locator(".ag-prefs .row.pref.claude-cache").count(), 2);
+    await page.locator('.row.agent[data-id="claude"] .ag-prefs #fullContextRow').waitFor();
+    assert.equal(await page.locator(".ag-prefs .row.pref").count(), 1, "Claude Code's settings are Long conversations alone");
     assert.equal(await page.locator("#codexMemoriesRow").isHidden(), true);
     assert.deepEqual(errors, []);
   });

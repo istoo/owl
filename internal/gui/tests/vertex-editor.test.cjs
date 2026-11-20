@@ -106,8 +106,6 @@ const STRINGS = [
   "Signed as the service account {account}, with your Google credentials", "Application Default Credentials",
   "One more {name} provider, with its own project, credentials, headers and models",
   "A new provider with {name}'s project, credentials, headers and models, to change before adding",
-  "Instead of the above: a Vertex AI API key (express mode). Gemini models only, no project needed.",
-  "Only with an API key: where requests go in place of Google's address, such as a proxy.",
 ];
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -162,24 +160,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
   for (const lang of ["en", "zh"]) {
     const w = words[lang];
-    test(`${engine} ${lang}: Google Vertex AI is added with an API key alone, at the global address or a base URL`, async (t) => {
-      const { page, errors, posts } = await start(t, lang, "express", [relay], presets(false));
-      await page.locator("#addProvider").click();
-      await page.locator('#addSheet .tile[data-pick="Vertex AI"]').click();
-      const ed = page.locator(".editor.new");
-      await ed.locator(".ehead b", { hasText: "Google Vertex AI" }).waitFor();
-      assert.equal(await press(page, posts, w.add, "save", 400), null, "nothing typed");
-      assert.equal(await ed.locator(".editor-error").textContent(), w.needed);
-      await ed.locator("input[type=password]:not(.proxy-credential)").fill("  AQ.Ab8RN6-express ");
-      assert.deepEqual(await endpointsOf(ed), [["Gemini", "https://aiplatform.googleapis.com/v1"]]);
-      await ed.locator("input.vertex-base-url").fill(" proxy.example.com/v1/ ");
-      assert.deepEqual(await endpointsOf(ed), [["Gemini", "https://proxy.example.com/v1"]]);
-      const added = await press(page, posts, w.add);
-      assert.equal(added.key.trim(), "AQ.Ab8RN6-express");
-      assert.equal(added.vertex.project, "");
-      assert.equal(added.vertex.baseUrl, "proxy.example.com/v1/");
-      assert.deepEqual(errors, []);
-    });
     test(`${engine} ${lang}: Google Vertex AI is added with its project, not a key`, async (t) => {
       const { page, errors, posts } = await start(t, lang, "add", [relay], presets(false));
       await page.locator("#addProvider").click();
@@ -190,11 +170,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // its four fields where the key would be, in order, each labelled,
       // with its example and what it is for
-      // below them, the optional API key (express mode) and a base URL for it
-      assert.equal(await ed.locator("input[type=password]:not(.proxy-credential)").count(), 1, "the API key, below the project's fields");
+      // no key to paste: the proxy's password in Advanced is not a key
+      assert.equal(await ed.locator("input[type=password]:not(.proxy-credential)").count(), 0, "no key to paste");
       const labels = await ed.locator("label").allTextContents();
-      assert(labels.includes(w.key), labels.join(" | "));
-      assert.equal(await ed.locator("input.vertex-base-url").count(), 1);
+      assert(!labels.includes(w.key), labels.join(" | "));
       const placeholders = ["my-project-123", "global", "~/.config/gcloud/application_default_credentials.json", w.account];
       let above = -Infinity;
       for (const [i, cls] of FIELDS.entries()) {
@@ -241,7 +220,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const added = await posted(page, posts, "save", n);
       assert.equal(added.new, true);
       assert.equal(added.preset, "google-vertex");
-      assert.deepEqual(added.vertex, { project: "My-Project-123", location: "us-central1", credentials: "~/keys/sa.json", impersonate: SA, baseUrl: "" });
+      assert.deepEqual(added.vertex, { project: "My-Project-123", location: "us-central1", credentials: "~/keys/sa.json", impersonate: SA });
       assert.equal(added.key, "");
 
       // another preset's editor asks for its key, and none of these
@@ -262,7 +241,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: a saved Vertex AI provider's project is shown, tested and saved`, async (t) => {
       const { page, errors, posts } = await start(t, lang, "edit", [saved, adc, relay], presets(true));
       let ed = await edit(page, "google-vertex");
-      assert.equal(await ed.locator("input[type=password]:not(.proxy-credential)").count(), 1, "the API key, empty");
+      assert.equal(await ed.locator("input[type=password]:not(.proxy-credential)").count(), 0);
       assert.deepEqual(await values(ed), ["my-project-123", "us", "~/keys/vertex-sa.json", SA]);
       assert.deepEqual(await endpointsOf(ed), [["Gemini", "https://aiplatform.us.rep.googleapis.com/v1/projects/my-project-123/locations/us"]]);
       assert.equal(await ed.locator(".eps .ep .pl").getAttribute("title"), w.gemini);
@@ -288,7 +267,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const tested = await posted(page, posts, "test", n);
       assert.equal(tested.id, "google-vertex");
       assert.equal(tested.typed, true);
-      assert.deepEqual(tested.vertex, { project: "my-project-123", location: "eu", credentials: "~/keys/vertex-sa.json", impersonate: "", baseUrl: "" });
+      assert.deepEqual(tested.vertex, { project: "my-project-123", location: "eu", credentials: "~/keys/vertex-sa.json", impersonate: "" });
       assert(!tested.key);
       await ed.locator(".eps .ep .res.ok").waitFor();
       assert.equal(await ed.locator(".eps .ep .res.ok").textContent(), w.ms);
@@ -303,7 +282,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(body.id, "google-vertex");
       assert.equal(body.preset, "google-vertex");
       assert.equal(body.key, "");
-      assert.deepEqual(body.vertex, { project: "my-project-123", location: "eu", credentials: "~/keys/vertex-sa.json", impersonate: "", baseUrl: "" });
+      assert.deepEqual(body.vertex, { project: "my-project-123", location: "eu", credentials: "~/keys/vertex-sa.json", impersonate: "" });
       assert.deepEqual(body.headers, { "X-Vertex-AI-LLM-Request-Type": "shared" });
 
       // Duplicate: a new one on the same project and credentials
@@ -315,7 +294,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const copy = await press(page, posts, w.add);
       assert.equal(copy.new, true);
       assert.equal(copy.copyOf, "google-vertex");
-      assert.deepEqual(copy.vertex, { project: "my-project-123", location: "us", credentials: "~/keys/vertex-sa.json", impersonate: SA, baseUrl: "" });
+      assert.deepEqual(copy.vertex, { project: "my-project-123", location: "us", credentials: "~/keys/vertex-sa.json", impersonate: SA });
 
       // another saved one's editor has its own
       await page.locator(".editor").waitFor({ state: "detached" });
@@ -379,8 +358,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             const ir = inside(i, cls), lr = inside(l, cls + "'s label");
             inside(h, cls + "'s hint");
             if (l.scrollWidth > l.clientWidth || l.scrollHeight > l.clientHeight) out.push(`${cls}'s label cut: ${l.textContent}`);
-            // a hint resting out of sight (--hint: 1) is read in its hover card, not cut
-            if (getComputedStyle(h).getPropertyValue("--hint").trim() !== "1" && h.scrollWidth > h.clientWidth) out.push(`${cls}'s hint cut`);
+            if (h.scrollWidth > h.clientWidth) out.push(`${cls}'s hint cut`);
             if (lr.right > ir.left && lr.bottom > ir.top && lr.top < ir.bottom) out.push(`${cls}'s label over its box`);
             if (ir.width < 140) out.push(`${cls} ${ir.width}px wide`);
           }

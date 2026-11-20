@@ -1,8 +1,8 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // Each route keeps the folder its agent works in, its last two levels only
 // (#1068, emo172: two Claude Code runs in two projects read as one). The
-// Routing page's By session heads a session with its title ("Claude Code ·
-// title") and the folder dim beside it, the session id under the pointer; a request's
+// Routing page's By session heads a session with it ("Claude Code ·
+// workspace/owl · title"), the session id under the pointer; a request's
 // row says it under the pointer; the stage's agent, working in two folders
 // at once, names both by their last level; the tray panel's agent says them
 // under the pointer. A session that says no folder reads as before. In every
@@ -27,7 +27,6 @@ function fixture() {
     req(3, "s-dial", "src/dial", 3),
     req(4, "s-none", "", 2),
     req(5, "", "", 1),
-    req(6, "s-old", "", 0.5),
   ];
 }
 
@@ -40,11 +39,10 @@ function serve(lang, routes) {
     if (url.pathname === "/api/state") return json({ agents: [{ id: "claude", name: "Claude Code", fields: [] }], profiles: [], settings: { lang, theme: "light" } });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.has("wait")) return new Promise(() => {});
-      return json({ mine: true, now: new Date().toISOString(), seq: 6, totals: { requests: 6, rerouted: 0, errors: 0 }, routes });
+      return json({ mine: true, now: new Date().toISOString(), seq: 5, totals: { requests: 5, rerouted: 0, errors: 0 }, routes });
     }
     if (url.pathname === "/api/gateway/history") return json({ cut: false, days: [], routes: [] });
-    // a session named by its first prompt, as sessions.Titles gives it
-    if (url.pathname === "/api/gateway/session-titles") return json({ titles: { "claude:s-old": "Rename foo\n  to bar" } });
+    if (url.pathname === "/api/gateway/session-titles") return json({ titles: {} });
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/providers") return json({ providers: [], gateway: { running: true, window: true } });
     if (url.pathname === "/api/usage/quotas") return json([]);
@@ -78,28 +76,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve(lang, fixture()));
         try { await page.addInitScript(() => localStorage.setItem("owl.routingBySession", "1")); } catch {}
         await page.goto("http://owl.test/?view=routing");
-        await page.locator(".rt-session").nth(4).waitFor();
-        await page.waitForFunction(() => [...document.querySelectorAll(".rt-session .nm")].some((e) => e.textContent.includes("Rename")));
+        await page.locator(".rt-session").nth(3).waitFor();
 
-        // By session: the agent and the session's title, its folder dim
-        // beside it (flandern1211_58540 on Discord: "路由这里的会话名只能
-        // 看到目录名和会话ID吗"); with no title, the folder stands in, and
-        // with neither, the id
-        const names = await page.locator(".rt-session").evaluateAll((es) => es.map((e) => {
-          const nm = e.querySelector(".nm"), dir = e.querySelector(".dir");
-          return { text: nm.textContent, title: nm.title, dir: dir && !dir.hidden ? dir.textContent : "", dirTitle: dir?.title || "" };
-        }));
+        // By session: the folder after the agent, before the title
+        const names = await page.locator(".rt-session .nm").evaluateAll((es) => es.map((e) => ({ text: e.textContent, title: e.title })));
         const of = (re) => names.find((n) => re.test(n.title)) || assert.fail(`no group for ${re}: ${JSON.stringify(names)}`);
-        assert.equal(of(/s-owl$/).text, "Claude Code · Fix the gateway");
-        assert.equal(of(/s-owl$/).dir, "workspace/owl", "the folder beside the title");
-        assert.equal(of(/s-old$/).text, "Claude Code · Rename foo to bar", "the first prompt, on one line");
-        assert.equal(of(/s-old$/).dir, "");
+        assert.equal(of(/s-owl$/).text, "Claude Code · workspace/owl · Fix the gateway");
         assert.equal(of(/s-dial$/).text, "Claude Code · src/dial", "a folder stands in for the session id");
-        assert.equal(of(/s-dial$/).dir, "", "the folder said once");
         assert.equal(of(/s-none$/).text, "Claude Code · s-none", "no folder: as before");
-        assert.match(of(/s-old$/).title, new RegExp(`^Rename foo to bar\\n${w.session}: s-old$`));
-        const clipped = await page.locator(".rt-session").evaluateAll((es) => es.some((e) => [...e.children].some((c) => c.getBoundingClientRect().right > e.getBoundingClientRect().right + 1)));
-        assert.equal(clipped, false, "each heading's parts inside it");
         assert.match(of(/s-owl$/).title, new RegExp(`${w.folder}: workspace/owl\\n${w.session}: s-owl$`));
         assert.doesNotMatch(of(/s-none$/).title, new RegExp(w.folder));
 

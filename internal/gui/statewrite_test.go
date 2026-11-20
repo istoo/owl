@@ -68,7 +68,7 @@ func TestStateWrittenAsEncoded(t *testing.T) {
 	// Big after small and small after big: the held buffers are used again.
 	for _, s := range []stateJSON{bigState(), {Agents: []agentJSON{}}, {}, bigState(), {}} {
 		w := &sinkWriter{keep: true}
-		sum, ok := writeStateJSON(w, s)
+		sum, ok := writeStateJSONShared(w, s)
 		var want bytes.Buffer
 		if err := json.NewEncoder(&want).Encode(shareOptions(s)); err != nil {
 			t.Fatal(err)
@@ -144,7 +144,7 @@ func TestStateSendsEachOptionListOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := &sinkWriter{keep: true}
-	writeStateJSON(w, s)
+	writeStateJSONShared(w, s)
 	var sent struct {
 		Agents []struct {
 			ID     string `json:"id"`

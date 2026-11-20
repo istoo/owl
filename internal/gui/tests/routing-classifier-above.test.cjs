@@ -84,7 +84,7 @@ async function open(t, engine, lang, width) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", serve(lang, routeOf()));
   await page.goto("http://owl.test/?view=routing");
-  await page.locator("#view-routing .rt-stage").waitFor();
+  await page.locator(".rt-group").first().waitFor();
   return { page, errors };
 }
 

@@ -5,7 +5,7 @@
 // strip that scrolled sideways, and nothing said it did). Imported by
 // layoutNav the first time the page is a phone's.
 const nav = $("#nav");
-const more = el("button", "nav-more");
+const more = el("button", "tb-more");
 more.type = "button";
 more.setAttribute("aria-haspopup", "menu");
 more.setAttribute("aria-expanded", "false");

@@ -61,7 +61,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#usageKeys .row").last().waitFor();
       assert.equal(await page.locator("#usageKeys .row").count(), 3);
       assert.match(await page.locator("#usageKeys").textContent(), /Laptop/);
-      assert.equal(await page.locator("#usageKeysHead .label").textContent(), lang === "zh" ? "网关密钥" : "Gateway keys");
+      assert.equal(await page.locator("#usageKeysHead").textContent(), lang === "zh" ? "网关密钥" : "Gateway keys");
       assert.equal(await page.locator("#usageCallerKeys").count(), 0, "there is only one API key section");
       await page.locator(":is(#usageTab .opt, .nav-s):visible", { hasText: new RegExp("^" + w.requests + "(?!\\p{L})", "u") }).click();
       await page.locator("#ledKey").click();
@@ -135,8 +135,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await confirmKeyAction(page, tablet, w.remove);
       await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length === 4);
       await page.setViewportSize({ width: 560, height: 740 });
-      // the nav fits once the resize is handled: wait for it, and a real
-      // overflow still fails at the timeout
+      // the narrow window's layout lands with the next frame: wait for it,
+      // not read the wide one's width
       await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth);
       assert.deepEqual(errors, []);
       if (process.env.ARTIFACT_DIR) {

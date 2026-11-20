@@ -15,6 +15,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { navTo } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const midnight = new Date();
@@ -172,9 +173,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the tray panel's Usage tab: not dimmed, not drawn again
       const pc = { state: 0, overview: 0, requests: 0 };
       const panel = await open("http://owl.test/?mode=panel", { width: 440, height: 560 }, pc, { v: 0 });
-      // owl's panel opens on its overview; today's numbers are a card's ›
       await panel.locator('#pHome [data-open="stats"]').click();
-      await panel.waitForFunction(() => document.body.dataset.ptab === "stats");
       const PCOL = "#panelUsage .led-chart rect.col";
       await panel.locator(PCOL).first().waitFor();
       await panel.waitForTimeout(2300); // the panel reads again on focus once 2 s have passed
@@ -184,9 +183,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(await flashes(panel), [], "the panel's chart isn't dimmed or blanked");
       assert.deepEqual(await kept(panel, PCOL), Array.from({ length: pcols }, (_, i) => i + 1), "the same columns stay");
 
-      // the Routing groups page: the same cards stay
-      await p.locator('[data-view="groups"]').first().click();
-      const GRP = "#view-groups .rt-group";
+      // the Routing page's groups: the same cards stay
+      await navTo(p, "routing");
+      const GRP = "#view-routing .rt-group";
       await p.locator(GRP).first().waitFor();
       await p.waitForTimeout(300);
       await watch(p, GRP);

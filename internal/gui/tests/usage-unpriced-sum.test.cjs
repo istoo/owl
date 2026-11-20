@@ -20,11 +20,11 @@ const today = new Date().toISOString().slice(0, 10);
 const at = (min) => new Date(Date.now() - min * 60e3).toISOString();
 
 const want = {
-  en: { calls: "2 calls unpriced", tile: "2 calls unpriced", models: "1 model unpriced" },
-  zh: { calls: "2 次调用未计价", tile: "2 次调用未计价", models: "1 个模型未计价" },
-  "zh-TW": { calls: "2 次呼叫未計價", tile: "2 次呼叫未計價", models: "1 個模型未計價" },
-  ja: { calls: "2 件の呼び出しは価格不明", tile: "2 件の呼び出しは価格不明", models: "1 個のモデルは価格不明" },
-  de: { calls: "2 Aufrufe ohne Preis", tile: "2 Aufrufe ohne Preis", models: "1 Modell ohne Preis" },
+  en: { calls: "2 calls unpriced", tile: "2 unpriced", models: "1 model unpriced" },
+  zh: { calls: "2 次调用未计价", tile: "2 个没有价格", models: "1 个模型未计价" },
+  "zh-TW": { calls: "2 次呼叫未計價", tile: "2 個沒有價格", models: "1 個模型未計價" },
+  ja: { calls: "2 件の呼び出しは価格不明", tile: "2 件は価格不明", models: "1 個のモデルは価格不明" },
+  de: { calls: "2 Aufrufe ohne Preis", tile: "2 ohne Preis", models: "1 Modell ohne Preis" },
 };
 
 // some: one call priced, two of Kimi K3 Auto not; none: only those two
@@ -128,7 +128,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await page.locator("#usageCost").getAttribute("title"), /2/, "the tooltip says how many");
       const tile = await page.locator("#stats .tile, #stats > *").evaluateAll((ts, n) => ts.some((x) => x.textContent.includes(n)), w.tile);
       assert(tile, `the calls tile says "${w.tile}"`);
-      // owl marks a sum with unpriced calls as an estimate: "≈$0.001+"
       await sweep(page, "≈$0.001+", w.calls);
       if (process.env.ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${lang}-unpriced-overview.png`) });
 

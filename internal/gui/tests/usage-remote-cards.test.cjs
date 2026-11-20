@@ -3,11 +3,10 @@
 // another's owl (remote-owl) shows that owl's cards, each named
 // with the computer ("Codex · Office"), without the buttons that would act
 // on this computer's accounts. The remote's own card says why it has none
-// (nothing read there yet, a owl too old to share, or a key it holds
-// to models or a budget and tells no quotas) in the reader's
+// (nothing read there yet, or a owl too old to share) in the reader's
 // language, and its refresh asks for it by its id (?provider=office), the
-// remote's card by its own (?provider=office/codex). English, Chinese
-// (both scripts), Japanese and German; no backend, the API is faked here.
+// remote's card by its own (?provider=office/codex). English, Chinese,
+// Japanese and German; no backend, the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -33,10 +32,6 @@ function fixtures(now) {
       error: "remote owl isn't shared; turn on Share on local network on that computer" },
     { provider: "osprey", name: "Osprey", icon: "owl", from: "Osprey", kind: "subscription", windows: [],
       error: "remote owl didn't take this key; use one of its enabled gateway keys" },
-    // yi_time on Discord: a key held to models there was told no quotas,
-    // and the remote's Claude showed nowhere here, with no word why
-    { provider: "egret", name: "Egret", icon: "owl", from: "Egret", kind: "subscription", windows: [],
-      error: "remote owl tells this key none of its quotas, as it holds the key to a budget, models or accounts; on that computer, turn on Quotas for the key under Gateway keys, and let it use every model of a provider whose usage it is to see" },
     { provider: "heron", name: "Heron", icon: "owl", from: "Heron", kind: "subscription", windows: [],
       error: "couldn't reach the remote owl Heron: dial tcp 10.0.0.9:3425: connect: connection refused" },
   ];
@@ -74,15 +69,14 @@ function serve(lang, state) {
 }
 
 const words = {
-  en: { none: "Nothing read on that computer yet — refresh this card to have it read", old: "That computer's owl doesn't share its quotas yet — update owl there", shed: "That computer's owl isn't shared — turn on Settings → Network and sharing → Share on local network there", den: "That computer's owl didn't take this key — use one of its gateway keys in this provider", held: "That computer's owl tells this key no quotas: it holds the key to a budget, models or accounts — hover for what to change there", barn: "Couldn't reach that computer's owl — check that it is running and its address" },
-  zh: { none: "那台电脑还没有读过额度 — 刷新这张卡片让它读取", old: "那台电脑的 owl 还不能共享额度 — 请在那台电脑上更新 owl", shed: "那台电脑的 owl 没有共享 — 请在那台电脑上打开 设置 → 网络与共享 → 局域网共享", den: "那台电脑的 owl 不认这个密钥 — 请在这个服务商里填它的一个网关密钥", held: "那台电脑的 owl 不向这个密钥显示额度：那边给它限定了预算、模型或账号 — 悬停查看那边要改什么", barn: "连不上那台电脑的 owl — 请确认它在运行、地址正确" },
-  ja: { none: "そのコンピューターではまだ読み取っていません — このカードを更新すると読み取ります", old: "そのコンピューターの owl はまだ利用枠を共有できません — そちらの owl を更新してください", shed: "そのコンピューターの owl は共有されていません — そちらで 設定 → ネットワークと共有 → ローカルネットワークで共有 をオンにしてください", den: "そのコンピューターの owl はこのキーを受け付けませんでした — このプロバイダーにそちらのゲートウェイキーを入れてください", held: "そのコンピューターの owl はこのキーに利用枠を伝えません：そちらで予算・モデル・アカウントが制限されています — そちらで変える点はホバーで表示", barn: "そのコンピューターの owl に接続できません — 起動しているか、アドレスが正しいか確認してください" },
-  de: { none: "Auf diesem Computer wurde noch nichts gelesen — diese Karte aktualisieren, um es lesen zu lassen", old: "Das owl dieses Computers teilt seine Kontingente noch nicht — aktualisiere owl dort", shed: "Das owl dieses Computers ist nicht freigegeben — schalte dort Einstellungen → Netzwerk und Freigabe → Im lokalen Netzwerk freigeben ein", den: "Das owl dieses Computers hat diesen Schlüssel nicht angenommen — trage bei diesem Anbieter einen seiner Zugangsschlüssel ein", held: "Das owl dieses Computers nennt diesem Schlüssel keine Kontingente: Er ist dort auf ein Budget, Modelle oder Konten beschränkt — für das, was dort zu ändern ist, darüberfahren", barn: "Das owl dieses Computers ist nicht erreichbar — prüfe, ob es läuft und die Adresse stimmt" },
-  "zh-TW": { none: "那臺電腦還沒有讀過額度 — 重新整理這張卡片讓它讀取", old: "那臺電腦的 owl 還不能共享額度 — 請在那臺電腦上更新 owl", shed: "那臺電腦的 owl 沒有共享 — 請在那臺電腦上開啟 設定 → 網路與共享 → 區域網共享", den: "那臺電腦的 owl 不認這個金鑰 — 請在這個服務商裡填它的一個閘道金鑰", held: "那臺電腦的 owl 不向這個金鑰顯示額度：那邊給它限定了預算、模型或帳號 — 懸停查看那邊要改什麼", barn: "連不上那臺電腦的 owl — 請確認它在執行、位址正確" },
+  en: { none: "Nothing read on that computer yet — refresh this card to have it read", old: "That computer's owl doesn't share its quotas yet — update owl there", shed: "That computer's owl isn't shared — turn on Settings → Network and sharing → Share on local network there", den: "That computer's owl didn't take this key — use one of its gateway keys in this provider", barn: "Couldn't reach that computer's owl — check that it is running and its address" },
+  zh: { none: "那台电脑还没有读过额度 — 刷新这张卡片让它读取", old: "那台电脑的 owl 还不能共享额度 — 请在那台电脑上更新 owl", shed: "那台电脑的 owl 没有共享 — 请在那台电脑上打开 设置 → 网络与共享 → 局域网共享", den: "那台电脑的 owl 不认这个密钥 — 请在这个服务商里填它的一个网关密钥", barn: "连不上那台电脑的 owl — 请确认它在运行、地址正确" },
+  ja: { none: "そのコンピューターではまだ読み取っていません — このカードを更新すると読み取ります", old: "そのコンピューターの owl はまだ利用枠を共有できません — そちらの owl を更新してください", shed: "そのコンピューターの owl は共有されていません — そちらで 設定 → ネットワークと共有 → ローカルネットワークで共有 をオンにしてください", den: "そのコンピューターの owl はこのキーを受け付けませんでした — このプロバイダーにそちらのゲートウェイキーを入れてください", barn: "そのコンピューターの owl に接続できません — 起動しているか、アドレスが正しいか確認してください" },
+  de: { none: "Auf diesem Computer wurde noch nichts gelesen — diese Karte aktualisieren, um es lesen zu lassen", old: "Das owl dieses Computers teilt seine Kontingente noch nicht — aktualisiere owl dort", shed: "Das owl dieses Computers ist nicht freigegeben — schalte dort Einstellungen → Netzwerk und Freigabe → Im lokalen Netzwerk freigeben ein", den: "Das owl dieses Computers hat diesen Schlüssel nicht angenommen — trage bei diesem Anbieter einen seiner Zugangsschlüssel ein", barn: "Das owl dieses Computers ist nicht erreichbar — prüfe, ob es läuft und die Adresse stimmt" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
-  for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) {
+  for (const lang of ["en", "zh", "ja", "de"]) {
     const w = words[lang];
     test(`${engine} ${lang}: another computer's quota cards`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
@@ -103,7 +97,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal((await home.locator(".subscription-error").textContent()).trim(), w.none);
       const attic = page.locator(".subscription-card", { hasText: "Attic" });
       assert.equal((await attic.locator(".subscription-error").textContent()).trim(), w.old);
-      for (const [k, name] of [["shed", "Kestrel"], ["den", "Osprey"], ["held", "Egret"], ["barn", "Heron"]]) {
+      for (const [k, name] of [["shed", "Kestrel"], ["den", "Osprey"], ["barn", "Heron"]]) {
         const card = page.locator(".subscription-card", { hasText: name });
         assert.equal((await card.locator(".subscription-error").textContent()).trim(), w[k], k);
       }

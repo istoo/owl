@@ -98,6 +98,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await browser.close();
         });
         await page.goto("http://owl.test/" + (where === "panel" ? "?mode=panel" : ""));
+        // the tray panel opens on its home; the agents are one step in
+        if (where === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(cd).waitFor();
         let menu;
         if (where === "window") menu = page.locator(`${cd} > .ag-menu`);

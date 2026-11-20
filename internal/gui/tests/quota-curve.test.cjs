@@ -204,26 +204,6 @@ test("quotaEta: said only from a falling run of this cycle, never for one that i
   assert.equal(eta(line(past, [-5, 60], [-4, 50], [-3, 40]), now), null);
 });
 
-test("quotaCycle: an early reset starts the cycle though the card's reset has milliseconds history doesn't (steven_4422)", async () => {
-  const source = await fs.readFile(path.join(assets, "app.js"), "utf8");
-  const piece = (from, to) => source.slice(source.indexOf(from), source.indexOf("\n}\n", source.indexOf(to)) + 2);
-  const quotaCycle = vm.runInNewContext(piece("function quotaCycleBreak(a, b) {", "function quotaCycleBreak(a, b) {") + "\n" +
-    piece("const quotaCyclesRead", "function quotaRecordedCycles(l) {") + "\n" + piece("function quotaCycle(l, now) {", "function quotaCycle(l, now) {") + "; quotaCycle");
-  const T = (s) => Date.parse(s);
-  const start = T("2026-11-04T10:40:00Z"), reset = T("2026-11-11T10:40:00Z");
-  // a weekly window refilled early at 02:00 on the 9th, its deadline kept
-  const points = [["2026-11-08T12:00:00Z", 30], ["2026-11-09T01:50:00Z", 20], ["2026-11-09T02:05:00Z", 100], ["2026-11-09T12:00:00Z", 90]]
-    .map(([at, left]) => ({ at: T(at), left, start, reset }));
-  const now = T("2026-11-09T13:00:00Z");
-  for (const resetsAt of ["2026-11-11T10:40:00Z", "2026-11-11T10:40:00.437Z", "2026-11-11T10:40:02Z"]) {
-    const c = quotaCycle({ window: { resetsAt }, points }, now);
-    assert.equal(new Date(c.start).toISOString(), "2026-11-09T02:05:00.000Z", resetsAt);
-  }
-  // a deadline the card moved by a day is another cycle: the vendor's start, carried along
-  const c = quotaCycle({ window: { resetsAt: "2026-11-12T10:40:00Z" }, points }, now);
-  assert.equal(new Date(c.start).toISOString(), "2026-11-05T10:40:00.000Z");
-});
-
 test("quota curve distinguishes fixed refills, rolling recovery and clock rounding", async () => {
   const source = await fs.readFile(path.join(assets, "app.js"), "utf8");
   const start = source.indexOf("function quotaCycleBreak(a, b) {");
@@ -269,9 +249,9 @@ function serve(lang, theme, panel, data) {
 }
 
 const words = {
-  en: { head: "Left over time", two: "2 days", cycle: "Cycle", off: "Off", seven: "7 days", thirty: "30 days", other: "Other number of days…", trend: (r) => "Trends: " + r, five: "5 hours", week: "Weekly", dashes: /Dashed: an even pace/,
+  en: { head: "Left over time", two: "2 days", cycle: "Cycle", off: "Off", trend: (r) => "Trends: " + r, five: "5 hours", week: "Weekly", dashes: /Dashed: an even pace/,
     lasts: "Lasts past the reset at this pace", runsOut: /^Runs out .+ at this pace$/ },
-  zh: { head: "剩余额度走势", two: "2 天", cycle: "本周期", off: "关闭", seven: "7 天", thirty: "30 天", other: "其他天数…", trend: (r) => "走势：" + r, five: "5 小时", week: "每周", dashes: /虚线：匀速用量/,
+  zh: { head: "剩余额度走势", two: "2 天", cycle: "本周期", off: "关闭", trend: (r) => "走势：" + r, five: "5 小时", week: "每周", dashes: /虚线：匀速用量/,
     lasts: "按此速度，能撑到重置", runsOut: /^按此速度，预计 .+ 用完$/ },
 };
 
@@ -325,7 +305,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await curve.locator("path.qc-line.qc-short").getAttribute("data-name"), "5 hours");
         assert.equal(await curve.locator("line.qc-now").count(), 1);
         const five = await curve.locator('path.qc-line[data-name="5 hours"]').getAttribute("d");
-        assert.equal((five.match(/M/g) || []).length, 1, "the 5-hour line is its current cycle only, no comb of earlier drops: " + five);
+        assert.equal((five.match(/M/g) || []).length, 2, "the 5-hour line breaks where its window started again: " + five);
         const legend = await curve.locator(".qc-key").allTextContents();
         assert.deepEqual(legend, [w.five + "40%", w.week + "70%"]);
         assert.equal(await page.locator(".subscription-card", { hasText: "Kimi" }).locator(".quota-curve").count(), 0, "no readings, no curve");
@@ -344,14 +324,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const second = card.locator(".subscription-account", { hasText: "b@x.com" });
           // (after the curve, a Codex account's Auto-use row, #719, then its
           // Use credits row, which closes its section)
-          // (the account's name comes first, then its windows, then the curve, a
-          // Codex account's Auto-use row (#719), then its Use credits row)
-          assert.deepEqual(await second.evaluate((e) => { const c = e.parentElement.children, k = [...c].indexOf(e); return [c[k + 2].className, c[k + 3].className, c[k + 4].className]; }), ["quota-curve", "quota-autoreset ar-split", "quota-credits on"]);
-          assert.notEqual(await second.evaluate((e) => getComputedStyle(e.parentElement).borderTopStyle), "none", "a rule between the accounts");
+          assert.deepEqual(await second.evaluate((e) => [e.previousElementSibling.previousElementSibling.previousElementSibling.className, e.previousElementSibling.previousElementSibling.className, e.previousElementSibling.className]), ["quota-curve", "quota-autoreset ar-split", "quota-credits on"]);
+          assert.notEqual(await second.evaluate((e) => getComputedStyle(e).borderTopStyle), "none", "a rule between the accounts");
           const choose = async (name) => {
             await pick.click();
             const items = page.locator(".sess-menu .pm-item");
-            assert.deepEqual(await items.locator(".pm-name").allTextContents(), [w.off, w.two, w.cycle, w.seven, w.thirty, w.other]);
+            assert.deepEqual(await items.locator(".pm-name").allTextContents(), [w.off, w.two, w.cycle]);
             await items.filter({ hasText: name }).click();
           };
           // 2 days: the range turns, the page doesn't move, the pick is kept
@@ -582,9 +560,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const row = page.locator("#colorblindRow");
       await row.waitFor();
       assert.equal(await row.locator(".name").innerText(), w.label);
-      assert.equal(await row.locator('#colorblindSegs [data-seg="on"]').getAttribute("aria-pressed"), "false", "off by default");
+      assert.equal(await row.locator("#colorblindSegs [role=switch]").getAttribute("aria-checked"), "false", "off by default");
       const scroll0 = await page.locator("#view-settings").evaluate((v) => v.scrollTop);
-      await row.locator('#colorblindSegs [data-seg="on"]').click();
+      await row.locator("#colorblindSegs [role=switch]").click();
       for (let i = 0; i < 50 && !posts.length; i++) await page.waitForTimeout(40);
       assert.equal(posts.at(-1)?.colorblind, true);
       assert.equal(await page.locator("#view-settings").evaluate((v) => v.scrollTop), scroll0, "toggling colorblind mode never scrolls");
@@ -666,8 +644,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://owl.test/?view=settings&tab=general");
       await row.waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.dataset.colorblind), "1", "kept across reload via boot.js");
-      assert.equal(await row.locator('#colorblindSegs [data-seg="on"]').getAttribute("aria-pressed"), "true");
-      await row.locator('#colorblindSegs [data-seg="off"]').click();
+      assert.equal(await row.locator("#colorblindSegs [role=switch]").getAttribute("aria-checked"), "true");
+      await row.locator("#colorblindSegs [role=switch]").click();
       for (let i = 0; i < 50 && posts.at(-1)?.colorblind !== false; i++) await page.waitForTimeout(40);
       assert.equal(posts.at(-1)?.colorblind, false);
       await page.waitForFunction(() => !document.documentElement.dataset.colorblind);

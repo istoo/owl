@@ -73,8 +73,7 @@ function serve(lang, calls) {
       return json(out);
     }
     if (url.pathname.startsWith("/api/")) {
-      // the window's in-use ping (update/using) and its page-away are no part of a delete
-      if (req.method() === "POST" && url.pathname !== "/api/update/using" && url.pathname !== "/api/page-away") calls.push({ path: url.pathname });
+      if (req.method() === "POST") calls.push({ path: url.pathname });
       return json({});
     }
     const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);

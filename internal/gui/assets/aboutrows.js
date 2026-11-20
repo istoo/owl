@@ -27,14 +27,13 @@ export function aboutRows(ctx) {
   }
   // the header's Update pill, kept away for good or for one version; the
   // version row above still says what is out and offers it
-  const pill = row(t("Update button"), t("Shows in the header when a newer owl is out"),
-    "", segsOO(!s.noUpdatePill, (on) => savePrefs({ ...keep, noUpdatePill: !on }).then(renderUpdateBadge)));
+  const pill = row(t("Update reminder"), t("Shows in the title bar when a newer owl is out"),
+    "", settingSwitch(t("Update reminder"), !s.noUpdatePill, (on) => savePrefs({ ...keep, noUpdatePill: !on }).then(renderUpdateBadge)));
   pill.classList.add("update-pill-row");
-  // hidden by its × for 3 days, across the releases out meanwhile (u.quiet)
-  if (!s.noUpdatePill) {
+  if (s.updateSkip && !s.noUpdatePill) {
     api(updatePath("update")).then((u) => {
-      if (!pill.isConnected || !u?.quiet) return;
-      pill.querySelector(".sub").textContent = t("Hidden for 3 days");
+      if (!pill.isConnected || !u || u.latest !== s.updateSkip) return;
+      pill.querySelector(".sub").textContent = t("Hidden for {v} until a newer version is out", { v: u.latest });
       const back = el("button", "text", t("Show again"));
       back.onclick = () => skipUpdate("");
       pill.querySelector(".val").prepend(back);
@@ -47,19 +46,18 @@ export function aboutRows(ctx) {
   // kept in place while off, dimmed, its height the same (a row or a line
   // taken away would shorten the page under the click), for when they are
   // turned on again
-  row(t("Update check interval"), s.noAutoUpdate ? t("While automatic updates are on") : t("How often owl looks for a newer version"), "",
+  row(t("Check every"), s.noAutoUpdate ? t("While automatic updates are on") : t("How often owl looks for a newer version"), "",
     segs(UPDATE_EVERY.map((m) => [m, m < 60 ? t("{n} min", { n: m }) : t("{n} h", { n: m / 60 })]), s.updateEvery || 360,
       (updateEvery) => savePrefs({ ...keep, updateEvery }))).classList.add("update-every-row", ...(s.noAutoUpdate ? ["off"] : []));
   // which versions an update offers (ssharpcc on X): every one as it comes
-  // out; Daily, one a day that passed its tests (fishmagic80 on X); or
-  // Stable, one a week; urgent ones at once on both, chosen by the update
-  // feed. It holds for the version row's Check too, so it stays lit with
-  // automatic updates off.
-  const uc = ["stable", "daily"].includes(s.updateChannel) ? s.updateChannel : "every";
-  row(t("Update channel"), t(uc === "stable" ? "One version a week, out for three days first, and urgent fixes at once. What's new lists every change since yours"
-    : uc === "daily" ? "One version a day, the newest that passed its tests, and urgent fixes at once. What's new lists every change since yours" : "Every version as soon as it is out"), "",
-    segs([["every", t("Every version")], ["daily", t("Daily")], ["stable", t("Stable")]], uc,
-      (v) => savePrefs({ ...keep, updateChannel: v === "every" ? "" : v }))).classList.add("update-channel-row");
+  // out, or Stable, one a week and an urgent one at once, chosen by the
+  // update feed. It holds for the version row's Check too, so it stays lit
+  // with automatic updates off.
+  row(t("Update channel"), s.updateChannel === "stable"
+    ? t("One version a week, out for three days first, and urgent fixes at once. What's new lists every change since yours")
+    : t("Every version as soon as it is out"), "",
+    segs([["every", t("Every version")], ["stable", t("Stable")]], s.updateChannel === "stable" ? "stable" : "every",
+      (v) => savePrefs({ ...keep, updateChannel: v === "stable" ? "stable" : "" }))).classList.add("update-channel-row");
   // whether a newer version found is downloaded at once, or only said to
   // be out and downloaded on a click (#2296): a metered network or a
   // proxy billed by traffic. It holds for the version row's Check too.
@@ -91,10 +89,6 @@ export function aboutRows(ctx) {
   }
   // OWL_PUBLIC_URL, where other machines reach it (#1551)
   if (s.publicURL && gw !== s.publicURL) row(t("Public address"), t("OWL_PUBLIC_URL: where other computers reach the gateway, with a gateway key"), s.publicURL, copyBtn(s.publicURL, t("Public address"))).id = "publicURLRow";
-  // every build's third-party notices (notices.js, loaded when opened)
-  const lic = el("button", "text", t("View"));
-  lic.onclick = () => showNotices();
-  row(t("Open-source licenses"), t("the notices of the code and data owl is built with"), "", lic);
   // issues and the code are on GitHub
   const repo = el("button", "github");
   repo.innerHTML = GITHUB_SVG;
@@ -111,10 +105,8 @@ export function aboutRows(ctx) {
     row(t("Uninstall owl"), t("Disconnects every agent, putting back what each had, then removes owl's service and files"), "", go).id = "uninstallRow";
   }
   // gateway mode leaves out what is written into this computer's agents'
-  // files, and the alerts its desktop would show: the section's head and its
-  // list, not each row, so no empty "Alerts" heading is left standing
-  // (bare-ids.test.cjs asks the list itself)
-  for (const r of [$("#plainNamesSegs").parentElement, $("#alertHead"), $("#alertList")]) r.hidden = gatewayMode;
+  // files, and the alerts its desktop would show
+  for (const r of [$("#plainNamesSegs").parentElement, $("#usageAlertRow"), $("#balanceAlertRow"), $("#resetReminderRow"), $("#turnDoneRow")]) r.hidden = gatewayMode;
   // the parts' tabs, one gone whose rows are all hidden here
   setSetTab(setTab);
 }

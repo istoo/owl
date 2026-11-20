@@ -98,6 +98,9 @@ func TestSettingsCLISetsWhatTheWindowSaves(t *testing.T) {
 		if !settingsapi.Known(k) {
 			t.Errorf("ownRoute names %q, which `owl settings` can't set: take it out", k)
 		}
+		if pageLater[k] {
+			continue
+		}
 		saved := false
 		for rest := pages; ; {
 			i := strings.Index(rest, own.call)
@@ -120,10 +123,37 @@ func TestSettingsCLISetsWhatTheWindowSaves(t *testing.T) {
 		}
 	}
 	for _, k := range settingsapi.Keys {
+		if pageLater[k] {
+			continue
+		}
 		if _, own := ownRoute[k]; !own && !slices.Contains(gui, k) {
 			t.Errorf("`owl settings` sets %q, which no page sends", k)
 		}
 	}
+}
+
+// pageLater are the settings this backend serves v0.2.27's page for: its
+// Settings rows, the groups page's defaults call and the routing page's
+// entry came after that page, so it neither sends them nor calls
+// ownRoute's call. `owl settings` still sets them, and a save of that page
+// keeps them (settingsapi.Merge).
+var pageLater = map[string]bool{
+	"accent":             true,
+	"checkinAt":          true,
+	"claudeNoExtraUsage": true,
+	"dayStart":           true,
+	"groupFirstToken":    true,
+	"groupPatience":      true,
+	"groupSink":          true,
+	"name":               true,
+	"pluginProxy":        true,
+	"restoreOnQuit":      true,
+	"retryAfterCap":      true,
+	"totalCurrency":      true,
+	"trayCurrency":       true,
+	"updateProxy":        true,
+	"updateSource":       true,
+	"videoGen":           true,
 }
 
 // ownRoute are the settings `owl settings` sets that a page saves

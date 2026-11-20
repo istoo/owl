@@ -57,7 +57,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.goto("http://owl.test/?view=providers");
         const S = L[lang];
         await page.locator("#addProvider").click();
-        await page.locator("#addSheet .row-head .custom").click();
+        await page.locator("#addSheet .custom-foot .custom").click();
         const ed = page.locator(".editor.new");
         await ed.locator(".base-url").waitFor();
         await ed.locator(`input[placeholder="${S.name}"]`).fill("Gem Relay");

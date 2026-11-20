@@ -305,15 +305,43 @@ func Merge(body []byte, cur settings.Settings, web bool) (settings.Settings, err
 	// Bark has its own route (bark); the page never sees its key
 	in.BarkServer, in.BarkKey, in.BarkDaily = cur.BarkServer, cur.BarkKey, cur.BarkDaily
 
-	in.Port = cur.Port                           // set on its own (port), which moves the gateway
-	in.CORSOrigins = cur.CORSOrigins             // set on its own (cors)
-	in.AllowIPs = cur.AllowIPs                   // set on its own (allowips)
-	in.MTLS = cur.MTLS                           // set on its own (mtls)
-	in.HTTPS = cur.HTTPS                         // set on its own (https)
-	in.FetchPrivate = cur.FetchPrivate           // in settings.json only
-	in.RouterNote = cur.RouterNote               // set on its own (the Library's servers/hub-note)
-	in.RouterAllTools = cur.RouterAllTools       // set on its own (the Library's servers/hub-tools)
-	in.GitHubToken = cur.GitHubToken             // set on its own (github-token), never sent to the page
+	in.Port = cur.Port                     // set on its own (port), which moves the gateway
+	in.CORSOrigins = cur.CORSOrigins       // set on its own (cors)
+	in.AllowIPs = cur.AllowIPs             // set on its own (allowips)
+	in.MTLS = cur.MTLS                     // set on its own (mtls)
+	in.HTTPS = cur.HTTPS                   // set on its own (https)
+	in.FetchPrivate = cur.FetchPrivate     // in settings.json only
+	in.RouterNote = cur.RouterNote         // set on its own (the Library's servers/hub-note)
+	in.RouterAllTools = cur.RouterAllTools // set on its own (the Library's servers/hub-tools)
+	in.GitHubToken = cur.GitHubToken       // set on its own (github-token), never sent to the page
+	// the currencies costs are shown in, the hour a day starts at and
+	// the proxies plugins and updates download through: v0.2.27's Settings
+	// page, which this backend also serves, sends none of them, and a
+	// save of it would otherwise clear them
+	if _, sent := fields["totalCurrency"]; !sent {
+		in.TotalCurrency = cur.TotalCurrency
+	}
+	if _, sent := fields["trayCurrency"]; !sent {
+		in.TrayCurrency = cur.TrayCurrency
+	}
+	if _, sent := fields["dayStart"]; !sent {
+		in.DayStart = cur.DayStart
+	}
+	if _, sent := fields["pluginProxy"]; !sent {
+		in.PluginProxy = cur.PluginProxy
+	}
+	if _, sent := fields["updateProxy"]; !sent {
+		in.UpdateProxy = cur.UpdateProxy
+	}
+	if _, sent := fields["updateSource"]; !sent {
+		in.UpdateSource = cur.UpdateSource
+	}
+	if _, sent := fields["checkinAt"]; !sent {
+		in.CheckinAt = cur.CheckinAt
+	}
+	if _, sent := fields["claudeNoExtraUsage"]; !sent {
+		in.ClaudeNoExtraUsage = cur.ClaudeNoExtraUsage
+	}
 	in.ProxyCustom = cur.ProxyCustom             // set by settings.Save from the proxy, never by the page
 	in.PluginProxyCustom = cur.PluginProxyCustom // and plugin downloads' from theirs
 	in.UpdateProxyCustom = cur.UpdateProxyCustom // and updates'
