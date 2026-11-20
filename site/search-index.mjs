@@ -73,7 +73,12 @@ export async function build() {
   return out;
 }
 
-// run as a script, it writes every file built from the docs (docs-index.mjs)
+// run as a script, it writes every file built from the docs (docs-index.mjs).
+// Not awaited at the top: docs-index.mjs imports this module, and a top-level
+// await on that cycle never settles (node exits 13 having written nothing).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await (await import("./docs-index.mjs")).writeAll();
+  import("./docs-index.mjs").then((m) => m.writeAll()).catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
 }
