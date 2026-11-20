@@ -180,8 +180,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await home(page);
       assert(await page.locator("#pHome").isVisible());
 
-      // an agent's row opens the agents page with that row open
-      await page.locator('#pHome .ph-agent[data-key="a:claude"]').click();
+      // an agent's row opens the agents page with that row open (its name
+      // is the control; the model beside it opens the picker)
+      await page.locator('#pHome .ph-agent[data-key="a:claude"] .ph-agent-go').click();
       await page.waitForFunction(() => document.body.dataset.ptab === "agents");
       const row = page.locator('#agents .row.agent[data-id="claude"]');
       await row.waitFor();

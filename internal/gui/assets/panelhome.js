@@ -208,8 +208,12 @@ function quotaCard() {
   return s;
 }
 
+function modelField(a) {
+  return a.fields?.find((x) => x.key === "model" && x.options?.length) || a.fields?.find((x) => x.key === "model");
+}
+
 function modelOf(a) {
-  const f = a.fields?.find((x) => x.key === "model" && x.options?.length) || a.fields?.find((x) => x.key === "model");
+  const f = modelField(a);
   if (!f) return "";
   return optionFor(f, f.value)?.label || f.value || "";
 }
@@ -220,18 +224,39 @@ function agentCard() {
   const s = el("section", "ph-mod");
   s.append(head("Agents", t("{n} connected", { n: wired.length }), "Manage", "agents"));
   for (const a of wired) {
-    const b = el("button", "ph-agent");
-    b.type = "button";
-    b.dataset.key = "a:" + a.id;
-    b.setAttribute("aria-label", t("Open {name}", { name: a.name }));
+    // the row opens the detail; its model is a picker of its own, the same
+    // one the window's row opens, so a model or a routing group is changed
+    // here without leaving the panel (the pick writes through /api/set and
+    // says how it takes effect, as the window's does)
+    const row = el("div", "ph-agent");
+    row.dataset.key = "a:" + a.id;
     const name = el("span", "ph-agent-name");
-    name.append(el("b", "", a.name), el("span", "", modelOf(a)));
+    const go = el("button", "ph-agent-go");
+    go.type = "button";
+    go.setAttribute("aria-label", t("Open {name}", { name: a.name }));
+    go.append(el("b", "", a.name));
+    go.onclick = (e) => { e.stopPropagation(); openTab("agents", a.id); };
+    const f = modelField(a);
+    const pickable = !!f?.options?.length;
+    const model = el(pickable ? "button" : "span", "ph-agent-model");
+    if (pickable) {
+      model.type = "button";
+      model.title = t("Pick one of owl's models: {agent} is connected and starts on it", { agent: a.name });
+    }
+    model.append(el("span", "", modelOf(a)));
+    if (pickable) {
+      const c = el("span", "chev");
+      c.append(svg(CHEV, 10, 1.6));
+      model.append(c);
+      model.onclick = (ev) => { ev.stopPropagation(); openPicker(a, f, model, ev); };
+    }
+    name.append(go, model);
     const shares = today?.by?.agent || [];
     const u = shares.find((s) => s.id === a.id) || shares.find((s) => s.id === a.name) || shares.find((s) => s.name === a.name);
     const cost = u && u.cost > 0 ? fmtCost(u) : "";
-    b.append(icon(a.icon), name, el("span", "ph-a-cost" + (cost ? "" : " none"), cost || "—"), chev());
-    b.onclick = () => openTab("agents", a.id);
-    s.append(b);
+    row.append(icon(a.icon), name, el("span", "ph-a-cost" + (cost ? "" : " none"), cost || "—"), chev());
+    row.onclick = (e) => { if (!e.target.closest("button")) openTab("agents", a.id); };
+    s.append(row);
   }
   if (rest > 0) {
     const b = el("button", "ph-rest");
