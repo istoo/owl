@@ -117,6 +117,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#view-providers").waitFor({ state: "visible" });
       const dialog = page.locator(".editor.importapps");
       await dialog.waitFor({ state: "visible" });
+      // the dialog draws its sources once they are in
+      await page.waitForFunction(() => document.querySelector(".editor.importapps")?.textContent.includes("relay.example"));
       assert.match(await dialog.textContent(), /Relay/);
       assert.match(await dialog.textContent(), /relay\.example/);
       assert.match(await dialog.textContent(), /sk-…abcd/, "the key is shown as the server masked it");
