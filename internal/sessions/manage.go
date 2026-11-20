@@ -322,7 +322,11 @@ func listAgentWith(agent string, all []file, quick bool) []Managed {
 		m := Managed{Session: s, Files: len(fs)}
 		m.Deletable, m.Undeletable = rowDeletable(agent, s, fs)
 		m.Forget = !Deletable(agent) && Forgettable(agent)
-		m.Deletable = m.Deletable || m.Forget
+		// Deletable stays what v0.2.27's page drew a Delete for: a kind
+		// of session owl moves to its trash. Forget is this backend's own
+		// way off the list, and the page the fork ships reads neither it
+		// nor a row marked deletable only by it (the row would show a
+		// Delete it had no word for).
 		for _, f := range fs {
 			m.Size += f.size
 			m.Pending = m.Pending || pending[f.path]

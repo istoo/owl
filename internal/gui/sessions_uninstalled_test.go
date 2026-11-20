@@ -14,9 +14,9 @@ import (
 
 // _SekiBetu_ on X: OpenCode was uninstalled and its sessions stayed on the
 // management page with a Resume and no Delete. With its command gone, the
-// page lists them with a Delete that takes them off the list (OpenCode's
-// files are not touched) and no Resume; Restore in the trash lists them
-// again. With the command there, as before: no Delete.
+// row keeps the Resume v0.2.27 drew, and still no Delete: what leaves the
+// list is forget's, which the released page has no control for. Restore in
+// the trash lists it again. With the command there, as before: no Delete.
 func TestManageDeleteOfAnUninstalledAgentTakesItOffTheList(t *testing.T) {
 	h := sandboxHome(t)
 	t.Setenv("XDG_DATA_HOME", "")
@@ -63,7 +63,7 @@ func TestManageDeleteOfAnUninstalledAgentTakesItOffTheList(t *testing.T) {
 
 	t.Cleanup(sessions.ForceCLIGone("opencode"))
 	m = call("GET", "/api/sessions/manage?agent=opencode", "")
-	if len(m.Sessions) != 2 || !m.Sessions[0].Deletable || !m.Sessions[0].Forget || m.Sessions[0].Resume == "" || !m.Agents[0].Deletable {
+	if len(m.Sessions) != 2 || m.Sessions[0].Deletable || !m.Sessions[0].Forget || m.Sessions[0].Resume == "" || !m.Agents[0].Deletable {
 		t.Fatalf("uninstalled: %+v %+v", m.Agents, m.Sessions)
 	}
 	call("POST", "/api/sessions/delete", `{"agent":"opencode","ids":["`+id+`"]}`)

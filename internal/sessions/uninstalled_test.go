@@ -6,9 +6,12 @@ import (
 )
 
 // _SekiBetu_ on X: OpenCode uninstalled, its sessions stayed listed with a
-// Resume and no Delete. With its command gone Delete takes the row off the
-// list (its database is not touched), and Restore lists it again. The
-// Resume stays: v0.2.27's page draws no row without one, the command
+// Resume and no Delete. With its command gone the row says it can be
+// forgotten (Forget takes it off the list, its database is not touched,
+// and Restore lists it again), while Deletable stays false: v0.2.27's page
+// draws a Delete for a deletable row, and has no control for forget, so a
+// row marked deletable only by Forget would show one with no word for it.
+// The Resume stays: v0.2.27's page draws no row without one, the command
 // fails when run, as it did before (resumeFor).
 func TestUninstalledAgentSessionsAreForgotten(t *testing.T) {
 	inZone(t, 0)
@@ -37,7 +40,7 @@ func TestUninstalledAgentSessionsAreForgotten(t *testing.T) {
 	if oc := find(t, List(0), "opencode", ocMain); oc.Resume == "" {
 		t.Fatal("resume gone with opencode gone; v0.2.27's page draws no Resume for it")
 	}
-	if m := row(); m.Resume == "" || !m.Deletable || !m.Forget {
+	if m := row(); m.Resume == "" || m.Deletable || !m.Forget {
 		t.Fatalf("uninstalled: resume %q deletable %v forget %v", m.Resume, m.Deletable, m.Forget)
 	}
 	m := row()
