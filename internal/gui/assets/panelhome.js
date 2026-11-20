@@ -6,7 +6,23 @@
 // panel (panelhome.js), so the window's core carries none of it.
 const TITLES = { usage: "Allowances", stats: "Usage", routing: "Routing", agents: "Agents" };
 let home = null, status = null, statusDot = null, statusText = null, back = null, title = null;
-let today = null;
+let today = null, todayDay = "";
+// a day as this page and the requests page name it, in the zone it read in
+const dayKey = () => {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
+// the requests page's own window start: the day its data is of, whatever
+// day the answer landed on; "" when the answer has no chart
+const dataDay = (u) => (u?.series?.[0]?.time || "").slice(0, 10);
+// what agentlive.js reads for an agent's today's spend: the panel's own
+// read of the requests page (panelTodayPage), the card's cost column's.
+// A read of yesterday says nothing of today.
+window.agentToday = (a) => {
+  if (todayDay !== dayKey()) return null;
+  const s = today?.by?.agent || [];
+  return s.find((x) => x.id === a.id) || s.find((x) => x.id === a.name) || s.find((x) => x.name === a.name) || null;
+};
 let gateway = window.bootPrefs?.sideGateway || null, gatewayKnown = !!gateway;
 let drawn = "";
 
@@ -69,12 +85,19 @@ function readGateway() {
 function readToday(force) {
   const p = window.panelTodayPage?.(force);
   if (!p) return;
-  p.then((u) => { if (!u) return; today = u; draw(); }, () => {} /* a failed read is unknown: keep the last */);
+  const sentDay = dayKey(); // the request's day, not the answer's
+  p.then((u) => {
+    if (!u) return;
+    today = u;
+    todayDay = dataDay(u) || sentDay;
+    draw();
+    window.agentLive?.paint?.();
+  }, () => {} /* a failed read is unknown: keep the last */);
 }
 
 // the overview as it stands, redrawn only when what it shows changed
 function signature() {
-  return JSON.stringify([state.agents.map((a) => [a.id, a.name, a.icon, !!a.wired, a.fields?.find((f) => f.key === "model")?.value]),
+  return JSON.stringify([state.agents.map((a) => [a.id, a.name, a.icon, !!a.wired, a.fields?.find((f) => f.key === "model")?.value, a.live]),
     quotas, quotaLeft, today, [...featuresOff], gatewayKnown && !!gateway?.running]);
 }
 
@@ -251,6 +274,16 @@ function agentCard() {
       model.onclick = (ev) => { ev.stopPropagation(); openPicker(a, f, model, ev); };
     }
     name.append(go, model);
+    // where its last request went, under the model; today's cost is the
+    // row's own figure at the right
+    const live = window.agentLive?.say(a, false);
+    if (live) {
+      name.classList.add("with-live");
+      row.classList.add("with-live");
+      const l = el("span", "ph-agent-live", live);
+      l.title = window.agentLive.full(a);
+      name.append(l);
+    }
     const shares = today?.by?.agent || [];
     const u = shares.find((s) => s.id === a.id) || shares.find((s) => s.id === a.name) || shares.find((s) => s.name === a.name);
     const cost = u && u.cost > 0 ? fmtCost(u) : "";

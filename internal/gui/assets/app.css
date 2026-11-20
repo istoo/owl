@@ -1044,6 +1044,8 @@ body.window .field.solo { grid-column: auto; }
   body.window .row.agent > .fields { grid-column: 2; grid-row: 2; width: 100%; min-width: 0; margin-left: 0; }
   body.window #agents.extras .row.agent > .fields { grid-template-columns: minmax(0, 1fr) 124px var(--extras-w); }
   body.window .row.agent > .ag-conn { grid-column: 2; grid-row: 1; justify-self: end; margin-left: 0; }
+  /* the live line sits above the opened sheet, which keeps order 2 */
+  body.window .row.agent > .ag-live { order: 1; }
 }
 .field:hover, .field.open { background: var(--pill-hover); }
 .field.open { box-shadow: inset 0 0 0 1px var(--accent); }
@@ -4809,6 +4811,29 @@ body.panel .modal { padding: 16px 12px; }
 .usage-refresh .icon.busy svg > * { transform-box: view-box; transform-origin: 50% 50%; animation: spin .8s linear infinite; }
 .usage-refresh .sess-pick { height: 24px; }
 .led-rank .rk .rk-b { overflow-wrap: anywhere; }
+
+/* ---- the agent's last request (P1-1) ------------------------------------- */
+/* a line of its own across the row: where it went, with which account, and
+   today's spend, in the row's quiet words; the line takes the width and is
+   cut with an ellipsis, its title holding the whole of it */
+body.window .row.agent.with-live { flex-wrap: wrap; }
+/* under the row's other lines, and above the sheet a row opens */
+body.window .row.agent > .ag-live { flex: 0 0 100%; min-width: 0; order: 1; }
+body.window .row.agent > .ag-exp { order: 2; }
+/* the row's line is 18px high as its status line is, so the row's height
+   stays in whole pixels, which what slides open measures */
+body.window .row.agent.with-live .who, body.window .row.agent > .ag-live,
+body.panel #agents > .row.agent > .ag-live, .ph-agent-name .ph-agent-live { line-height: 18px; }
+/* the window's card layout (1200 and up): under the model, above today's
+   calls at the card's foot */
+body.window.side-nav #agents > .row.agent > .ag-live { grid-column: 1 / -1; order: 4; }
+body.window.side-nav #agents > .row.agent > .ag-exp { order: 5; }
+body.panel #agents > .row.agent > .ag-live { grid-row: 3; grid-column: 2 / 4; min-width: 0; }
+body.panel #agents > .row.agent > .ag-open { grid-row: 4; }
+/* the tray panel's overview: the same words under the model */
+.ph-agent.with-live { height: auto; min-height: 42px; padding-top: 5px; padding-bottom: 5px; }
+.ph-agent-name.with-live { flex-wrap: wrap; row-gap: 1px; }
+.ph-agent-name .ph-agent-live { flex: 0 0 100%; }
 
 /* ---- an agent's model list ------------------------------------------------ */
 /* the line under an agent's name: quiet words, a pill only on hover */

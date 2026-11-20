@@ -33,20 +33,49 @@ const num = (n, s) => { const p = t(s, { n: "\u0000" }).split("\u0000"), e = el(
 
 // today's calls on each agent's card, read while the Agents page is on
 // screen, at most every 30s, and only with the Usage page there to read
-let today = null, todayAt = 0, todayAsk = null;
+let today = null, todayAt = 0, todayAsk = null, todayDay = "";
+// a day as the page and the server name it, in the zone the request read
+const dayKey = () => {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
+// today as this page read it, when that read is of today: one sent before
+// midnight and answered after it is yesterday's, whatever day it landed
+const todayNow = () => (todayDay === dayKey() ? today : null);
+// what agentlive.js reads for an agent's today's spend: this page's read,
+// by the agent's name, which the Usage page's groups use
+window.agentToday = (a) => {
+  const td = todayNow();
+  const u = td && a && (td.agents || []).find((g) => g.name === a.name);
+  return u && u.calls ? u : null;
+};
+// whether this page's own read of today will supply an agent's live line:
+// the same gate readToday takes. Where it won't (a narrow window, the
+// Usage page hidden), agentlive.js reads the light requests page instead,
+// once a day; where it will, that read is reused and no second one is made.
+window.agentTodayWillRead = () => {
+  const ub = $('#nav button[data-view="usage"]');
+  return mode === "window" && wide.matches && !!ub && !ub.hidden && !featureHides(ub);
+};
 function readToday() {
   const ub = $('#nav button[data-view="usage"]');
   if (!ub || ub.hidden || featureHides(ub) || todayAsk || Date.now() - todayAt < 30e3) return;
   let tz = "";
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch {}
+  const sentDay = dayKey(); // the request's day; `since` says the answer's
   todayAsk = api("usage?period=today" + (tz ? "&tz=" + encodeURIComponent(tz) : ""))
-    .then((u) => { today = u; todayAt = Date.now(); }, () => { todayAt = Date.now(); })
+    .then((u) => {
+      today = u;
+      todayAt = Date.now();
+      todayDay = (u?.since || "").slice(0, 10) || sentDay;
+    }, () => { todayAt = Date.now(); })
     .finally(() => { todayAsk = null; later(); });
 }
 function todayLines() {
+  const td = todayNow();
   for (const r of document.querySelectorAll("#agents > .row.agent")) {
     const a = state.agents.find((x) => x.id === r.dataset.id);
-    const u = today && a && (today.agents || []).find((g) => g.name === a.name);
+    const u = td && a && (td.agents || []).find((g) => g.name === a.name);
     let line = r.querySelector(":scope > .ag-today");
     if (!u || !u.calls) { line?.remove(); continue; }
     if (!line) r.append(line = el("div", "ag-today"));
@@ -56,6 +85,9 @@ function todayLines() {
     line.replaceChildren(el("span", "", t("Today")), num(fmtN(u.calls), u.calls === 1 ? "{n} call" : "{n} calls"), num(fmtN(u.input + u.output), "{n} tokens"));
     if (cost) line.append(el("span", "cost", "≈" + cost));
   }
+  // the live line under the row drops its own figure now that this one has
+  // it (agentlive.js)
+  window.agentLive?.paint?.();
 }
 
 function status(v) {
@@ -86,6 +118,11 @@ function draw() {
   const v = typeof view === "string" ? view : "";
   const page = (v === "agents" || v === "providers") && $("#view-" + v);
   const layout = sideNav() && mode === "window";
+  // where this page won't read today itself, the agents' live lines take
+  // the light read (agentlive.js), asked for now; where it will, theirs is
+  // the one read, with no second request. Only the Agents view with a
+  // connected agent has a line to fill.
+  if (v === "agents" && state?.agents?.some((a) => a.wired) && !window.agentTodayWillRead()) window.agentLive?.readSpend?.();
   // A head stays with its page while another shows: taking it out (with the
   // search and Add provider inside) and putting them back on every switch
   // had the hidden Providers page drawn again (routing-return-cost). Only a
@@ -137,5 +174,8 @@ export function start() {
   watch.observe(document.body, { attributes: true, attributeFilter: ["class"] });
   watch.observe($("#nav"), { attributes: true, subtree: true, attributeFilter: ["class", "hidden"] });
   for (const id of ["#agents", "#providers", "#offProviders"]) { const e = $(id); if (e) watch.observe(e, { childList: true }); }
+  // the cards' layout changes at 1200px: the agents' live lines' spend
+  // comes from this page there and from the light read below it
+  wide.addEventListener?.("change", later);
   later();
 }

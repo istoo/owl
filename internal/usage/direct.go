@@ -103,6 +103,8 @@ func direct(p Period, now time.Time, rows []Row) Summary {
 		put(agents, id, Group{ID: id}, r)
 		if a := agents[id]; r.Time.After(a.Last) {
 			a.Last = r.Time
+			// not a.LastCall: these are the calls no gateway saw, so they
+			// say nothing of a request owl carried
 		}
 		model := r.Model
 		if alias != nil {

@@ -167,3 +167,10 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 规则：对话框先以 loading 态出现（这里是 `.editor.importapps` 里的「Reading other apps…」），`waitFor({state:"visible"})` 之后立刻读 `textContent()` 会读到 loading 文案。要么等真正内容出现（等待某个只可能来自加载完毕的字符串或行），要么等 loading 节点被替换。
 - 原因：`first-run-guide` 在 en 下碰巧通过，zh/zh-TW/ja/de 全部读到 loading 文案而红；同一份测试在另一台机器连跑两次都绿，差点被当成偶发负载。
 - 怎么验证：把等待条件退回「可见即读」，zh 下十次里十次红；换成等内容后两引擎五种语言全绿。
+
+## 全局状态刷新不承担整份用量汇总，数据源先实测再选（2026-11-20，协调者退回 Agent 卡片 v1）
+
+- 规则：给 `/api/state` 这类「几乎每次点击都读」的接口加字段时，字段的来源必须是内存里现成的（网关最近调用环、启动或其它页面已经算好并发布的小表），或由页面自己的既有读取提供；不允许在 state() 里调用 `usage.SummarizeTop` 一类整份汇总——即使命中缓存也不是轻量的（先读日志快照、按全部供应商目录算定价哈希、克隆所有列表）。若必须新增读取，先在真实规模的历史上量冷/热成本，把命令与数字写进提交说明；需要新路由或架构取舍时先交替代方案，不直接写。
+- 原因：v1 在 state() 里每次读今日汇总。40 万行日志、今日 2.6 万次调用时，SummarizeTop 冷 750ms、热 1.2ms；而 state() 本身热态约 6ms。改为只读网关环 + `usage.LastCalls()`（ReadAhead 与 Usage 页已经算好的汇总顺手发布）后，agentLives 热态 0.13ms（3 个 agent）、无记录 0.4µs。
+- 怎么验证：临时测量测试打印 state() 与 agentLives 的冷/热耗时（空日志、单条、40 万行/2.6 万今日）；`SummaryReads()` 计数在 state() 前后不变。红证：在 agentLives 里加回 SummarizeTop，`TestAgentLiveFromTheLastCall` 报 "state() read 1 summaries"。
+- 同一教训的语义部分：「最近一次实际命中的供应商」只算 owl 真正送到供应商的请求——客户端自报的（reported）、owl 自己用 key 跑的搜索（SourceSearch）、标题生成（Provider "owl"）、以及在任何供应商被询问前就被拒的请求都不算；到达供应商后失败的请求算（它确实命中了）。直连/导入的会话用量不进 topSummary，也不会被当成经 owl 的请求。请求身份用 `Record.RouteID`/`Call.Route`，时间与用量记录同一瞬间；对应的测试是 `TestAgentLastCallSkipsWhatOwlDidNotCarry`、`TestAgentLiveSkipsWhatOwlDidNotCarry` 和 `TestAgentLiveFromTheLastCall`。

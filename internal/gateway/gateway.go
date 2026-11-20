@@ -487,13 +487,22 @@ type Call struct {
 	// For: the request a call of owl's own (a web search) was made for
 	For *CallFor `json:"for,omitempty"`
 	// Masked: what masking swapped in it, nil for nothing
-	Masked   *Masked           `json:"masked,omitempty"`
-	Model    string            `json:"model"`
-	Provider string            `json:"provider"`
-	From     provider.Protocol `json:"from"`
-	To       provider.Protocol `json:"to"`
-	Status   int               `json:"status"`
-	Millis   int64             `json:"ms"`
+	Masked   *Masked `json:"masked,omitempty"`
+	Model    string  `json:"model"`
+	Provider string  `json:"provider"`
+	// ServedModel is the model that answered it, as the usage record
+	// names it (Record.Model): the one asked for with its provider
+	// prefix, an alias or a routing group's pick resolved. "" when it is
+	// Model itself.
+	ServedModel string `json:"servedModel,omitempty"`
+	// Account is the subscription account that answered it, as the usage
+	// record names it (Record.ProviderAccount); "" when the provider's
+	// call names none.
+	Account string            `json:"account,omitempty"`
+	From    provider.Protocol `json:"from"`
+	To      provider.Protocol `json:"to"`
+	Status  int               `json:"status"`
+	Millis  int64             `json:"ms"`
 	// TTFT: ms from the request to its reply's first content — text,
 	// reasoning or a tool call — and FirstText to its first text, when
 	// it was streamed (#196)
@@ -5919,6 +5928,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		t.Archive = call.archiveName()
 	})
 	call.Route = tr.ID
+	call.ServedModel = model
+	call.Account = providerAccount
 	call.Masked = s.trace.maskedOf(tr)
 	s.record(call)
 	if call.To != "" {

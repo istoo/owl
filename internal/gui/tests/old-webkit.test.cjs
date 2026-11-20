@@ -165,9 +165,9 @@ test("compat.js is the first of the page's own scripts", async () => {
   // the window is up (⌘1–9 and the sidebar's arrows), pagehead.js with
   // it (each page's head), usagelayout.js with
   // it (where a dragged Usage card's neighbours stand), pmorder.js when
-  // the Plugins page is drawn (Discover's kinds and order); the checks above
-  // still read them
-  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "panelupdate.js", "panelhome.js", "guideimport.js", "agymove.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quitask.js", "checkinnow.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "aboutrows.js", "providerserr.js", "navmore.js", "palette.js", "editor.js", "phonetabs.js", "navkeys.js", "pagehead.js", "usagelayout.js", "pmorder.js", "providerhealth.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
+  // the Plugins page is drawn (Discover's kinds and order), agentlive.js
+  // when the Agents page draws a row; the checks above still read them
+  for (const f of await scripts()) if (!["webfonts.js", "cfgblocked.js", "signsheets.js", "ruleedit.js", "ratewindows.js", "traywindows.js", "autoresetown.js", "registry.js", "navlamp.js", "panelupdate.js", "panelhome.js", "guideimport.js", "agymove.js", "whatsnew.js", "claudemode.js", "ctxtext.js", "resetask.js", "quotaall.js", "quitask.js", "checkinnow.js", "autobackup.js", "scrollends.js", "profilerename.js", "settingshints.js", "keyspend.js", "syncfiles.js", "aboutrows.js", "providerserr.js", "navmore.js", "palette.js", "editor.js", "phonetabs.js", "navkeys.js", "pagehead.js", "usagelayout.js", "pmorder.js", "providerhealth.js", "agentlive.js"].includes(f)) assert(all.includes(f), f + " is not loaded by index.html");
 });
 
 test("the styles hold up in Safari 15.0", async () => {

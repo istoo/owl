@@ -85,6 +85,9 @@ const winRuntime = !web ? import("/wails/runtime.js").catch(() => null) : Promis
 if (window.bootPrefs) setLocale(window.bootPrefs.lang);
 
 let state = { agents: [], profiles: [], catalog: "", settings: {} };
+// the rows' line saying where each agent's last request went (agentlive.js),
+// loaded beside the page so the core carries only this call
+import("./agentlive.js").then((m) => m.start()).catch(() => {});
 let prefs = null; // the settings page: theme, lang, version, dir, gateway
 let providers = null; // { providers, presets, gateway }
 let view = "agents";
@@ -760,6 +763,7 @@ function renderAgents() {
       }
       row.append(agentHandle(a, row, inFold), who);
       connectRow(a, row, who, { fields, extras, fieldBtn, sw, kind });
+      window.agentLive?.mark(row, a); // last, under the row's other lines
       return row;
     }
     const acct = openBox && switchEntry(a);
@@ -772,6 +776,7 @@ function renderAgents() {
     row.append(agentHandle(a, row, inFold), who);
     if (sum) row.append(sum, ...(openBox ? [openBox] : []));
     else row.append(fields, ...(sw ? [sw] : []));
+    window.agentLive?.mark(row, a); // last, under the row's other lines
     return row;
   };
   // the extras column is there for every row once any agent has one, so the

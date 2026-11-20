@@ -411,6 +411,16 @@ func (r Record) IsRejected() bool { return r.Rejected || r.Provider == "" && r.S
 // calls long past and none of them were owl's to route.
 func (r Record) IsReported() bool { return r.Source == SourceReported }
 
+// throughOwl is a record of a request owl carried to a provider for the
+// agent itself: not one the agent's app reported it made on its own, not a
+// search owl ran with its own key (SourceSearch), not owl's own call for
+// it (a title, under the "owl" provider), and not a try handed on to the
+// provider that then answered. It is what the Agents page's row means by
+// the provider in use.
+func (r Record) throughOwl() bool {
+	return !r.IsReported() && r.Source != SourceSearch && !r.HandedOn && r.Provider != "" && r.Provider != "owl"
+}
+
 // Load streams complete records from the log. Historical request bodies are
 // not retained by a global cache after the caller finishes with this snapshot.
 func Load(since time.Time) []Record {
@@ -1018,6 +1028,21 @@ type Group struct {
 	// only): the Usage page folds a small client idle for days into one
 	// "Other" row (WJaunita45604 on X: dozens of test clients).
 	Last time.Time `json:"last,omitzero"`
+	// LastCall is when the agent's newest request owl carried to a provider
+	// was made, and LastProvider, LastModel, LastAccount and LastRoute are
+	// where it went (agents only): the provider as the record names it,
+	// the model it served, the subscription account that answered it and
+	// its request id. A call the agent's app reported it made itself
+	// (Record.IsReported), a search owl ran with its own key
+	// (SourceSearch) and owl's own call (a title, under the "owl"
+	// provider) are not requests owl carried for the agent and never set
+	// these; Last above is the group's newest call of any kind, the Usage
+	// page's.
+	LastCall     time.Time `json:"lastCall,omitzero"`
+	LastProvider string    `json:"lastProvider,omitempty"`
+	LastModel    string    `json:"lastModel,omitempty"`
+	LastAccount  string    `json:"lastAccount,omitempty"`
+	LastRoute    int64     `json:"lastRoute,omitempty"`
 	Totals
 	// Own is the share of these calls owl made by itself (Record.ByOwl):
 	// a routing classifier's, a web search's or an image description's,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/istoo/owl/internal/catalog"
@@ -34,6 +35,69 @@ var summaries struct {
 	sync.Mutex
 	entries map[summaryKey]summaryEntry
 	worked  int // how many summaries were worked out, for the tests
+}
+
+// LastCall is where an agent's newest call of today went, as the newest
+// summary of today names it.
+type LastCall struct {
+	At       time.Time
+	Route    int64 // the request's id (Record.RouteID)
+	Provider string
+	Model    string
+	Account  string
+}
+
+type lastCallsEntry struct {
+	path  string // the log it was read from
+	calls map[string]LastCall
+}
+
+// lastCalls is what the newest summary of today said of each agent's last
+// call. A view that must not read the whole summary (the Agents page's
+// state, every refresh) reads this instead: the summary is already worked
+// out at start (ReadAhead) and by the Usage page, so most of the time it
+// costs nothing. It is keyed by the log's path, so a test's or a changed
+// home's log never answers for another.
+var lastCalls atomic.Pointer[lastCallsEntry]
+
+// SummaryReads counts the summaries read since the process started, for
+// the tests that check a view leaves the whole summary alone.
+var summaryReads atomic.Int64
+
+// SummaryReads is how many summaries have been read: a view not reading
+// the whole usage summary leaves it unchanged.
+func SummaryReads() int64 { return summaryReads.Load() }
+
+// VisitLastCalls calls fn for each agent's newest call of today, id to
+// call, as the log at Path was last summed, and not at all when today has
+// not been summed for it. The map stays the package's: a view reads what
+// it is told, never keeps or changes it.
+func VisitLastCalls(fn func(id string, c LastCall)) {
+	e := lastCalls.Load()
+	if e == nil || e.path != Path() {
+		return
+	}
+	for id, c := range e.calls {
+		fn(id, c)
+	}
+}
+
+// noteLastCalls keeps what a summary of today says of each agent's last
+// call for VisitLastCalls. A summary of any other period says nothing of
+// today.
+func noteLastCalls(p Period, snapshot *logSnapshot, s Summary) Summary {
+	if p != Today {
+		return s
+	}
+	m := make(map[string]LastCall, len(s.Agents))
+	for _, g := range s.Agents {
+		if g.LastCall.IsZero() {
+			continue
+		}
+		m[g.ID] = LastCall{At: g.LastCall, Route: g.LastRoute, Provider: g.LastProvider, Model: g.LastModel, Account: g.LastAccount}
+	}
+	lastCalls.Store(&lastCallsEntry{path: snapshot.path, calls: m})
+	return s
 }
 
 func indexedSummary(p Period, now time.Time) Summary { return topSummary(p, now, -1) }
@@ -66,6 +130,7 @@ func SummarizeTopIn(p Period, n int, zone *time.Location) Summary {
 }
 
 func topSummary(p Period, now time.Time, n int) Summary {
+	summaryReads.Add(1)
 	p = p.shown()
 	snapshot := readLogSnapshot()
 	work := func() Summary {
@@ -78,7 +143,7 @@ func topSummary(p Period, now time.Time, n int) Summary {
 		// a picked range is read afresh each time, so ranges never pile up
 		// in the cache (#1492), and so is a rolling window, whose start
 		// moves with the clock though the log hasn't changed (#2075)
-		return topOf(work(), n)
+		return topOf(noteLastCalls(p, snapshot, work()), n)
 	}
 	meta := usagePriceCacheKey(now)
 	summaries.Lock()
@@ -86,7 +151,7 @@ func topSummary(p Period, now time.Time, n int) Summary {
 	old, ok := summaries.entries[k]
 	summaries.Unlock()
 	if ok && old.version == snapshot.version && old.meta == meta && (n >= 0 && n <= len(old.value.Sessions) || old.value.SessionCount == len(old.value.Sessions)) {
-		return topOf(cloneSummary(old.value), n)
+		return topOf(noteLastCalls(p, snapshot, cloneSummary(old.value)), n)
 	}
 	summaries.Lock()
 	summaries.worked++
@@ -105,7 +170,7 @@ func topSummary(p Period, now time.Time, n int) Summary {
 		summaries.entries[k] = summaryEntry{snapshot.version, meta, kept}
 	}
 	summaries.Unlock()
-	return topOf(value, n)
+	return topOf(noteLastCalls(p, snapshot, value), n)
 }
 
 // topOf is s with its top n sessions (all for n < 0).

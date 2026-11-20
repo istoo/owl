@@ -235,6 +235,11 @@ type agentJSON struct {
 	// StaleCopies: those copies, each with what it is and when it
 	// started, for the opened row to say which is left to reopen and how
 	StaleCopies []agent.StaleCopy `json:"staleCopies,omitempty"`
+	// Live: the provider, account and model the agent's last request
+	// through owl reached, for its row to say which is in use
+	// (agentlive.go, agentlive.js); today's spend beside it comes from
+	// the page or panel that already reads it, not from this answer
+	Live *agentLiveJSON `json:"live,omitempty"`
 	// AppRestart: its desktop app (Claude Desktop, WorkBuddy) running on
 	// what it read before owl's last change, for the row's Restart
 	// (agent.AppBehind)
@@ -3428,6 +3433,10 @@ func state() stateJSON {
 		s.Clients = append(s.Clients, clientJSON{ID: a.ID, Name: a.Name, Icon: a.Icon})
 	}
 	detected := agent.DetectedIn(all)
+	// the lines are for the connected agents' rows only: with none
+	// connected, not even the gateway's ring is read
+	var lives map[string]*agentLiveJSON
+	livesRead := false
 	now := make(map[string]map[string]string, len(detected))
 	for _, a := range detected {
 		if a.Follow != nil {
@@ -3442,6 +3451,10 @@ func state() stateJSON {
 		aj.Drift = a.Drift()
 		aj.Wired = a.Wired()
 		if aj.Wired {
+			if !livesRead {
+				lives, livesRead = agentLives(), true
+			}
+			aj.Live = lives[a.ID]
 			aj.StaleCopies = a.StaleCopies()
 			aj.Stale = len(aj.StaleCopies)
 			aj.Joined = a.Joined != nil && a.Joined()

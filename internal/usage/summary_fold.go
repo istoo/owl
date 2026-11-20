@@ -243,6 +243,10 @@ func (c *summaryCounts) add(u *summaryRun, k *summaryKeying, r Record) {
 	if r.Time.After(a.Last) {
 		a.Last = r.Time
 	}
+	if r.throughOwl() && r.Time.After(a.LastCall) {
+		a.LastCall = r.Time
+		a.LastProvider, a.LastModel, a.LastAccount, a.LastRoute = r.Provider, r.Model, r.Account(), r.RouteID
+	}
 	model := r.Model
 	if u.alias != nil {
 		model = u.alias(model)
