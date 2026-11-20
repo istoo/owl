@@ -118,6 +118,7 @@ const usage = `owl — one place to pick every agent's model
   owl accounts alias <agent> <email> [<name>|--clear]   a name of your own for an account, shown on its card, in the menu bar and in owl quota
   owl accounts switch-only codex [on|off]   only switch Codex's own sign-in to an account with room; its requests go straight to OpenAI, never through owl
   owl accounts switch-only claude [on|off]  only switch Claude Code's own sign-in to an account with room; owl serves no requests on the Claude accounts
+  owl install [<agent> [N] [--yes]]   the agents not on this computer, and their vendors' install commands; --yes runs one (a script is downloaded and checked first)
   owl claude-code [install [--yes]|remove]   the Claude Code a Claude subscription runs; install downloads Anthropic's own build, checked against its manifest, for a server or container without one
   owl plugin [add <package>|rm|update|on|off|login <provider>|logout <provider>]
                                   OpenCode provider plugins and pi packages: subscriptions signed in to, and served, through a plugin
@@ -668,6 +669,8 @@ func run(args []string) error {
 		return githubCmd(args[1:])
 	case "claude-code":
 		return claudeCodeCmd(args[1:])
+	case "install":
+		return installCmd(args[1:])
 	case "settings":
 		return settingsCmd(args[1:])
 	}

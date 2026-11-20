@@ -2736,10 +2736,10 @@ function updatedSay() {
 
 // ---------- installing the agents not here (#727) ----------
 // Under the list, the agents owl knows that aren't on this machine, each
-// with its vendor's install commands to copy into a terminal: the vendor's
-// installer first, then Homebrew's or npm's. owl doesn't run them — a
-// new computer may have no Node.js for npm yet, and an installer may ask
-// for things in the terminal. Folded unless no agent is here at all.
+// with its vendor's install commands: the vendor's installer first, then
+// Homebrew's or npm's. Copy one into a terminal, or Install runs it here
+// (agentinstall.js) after asking; an npm command that wants an
+// administrator is for a terminal only. Folded unless no agent is here at all.
 
 let installInfo = []; // [{ id, name, icon, commands: [{ via, command }] }]
 
@@ -2832,9 +2832,16 @@ function paintInstalls() {
       }
       who.append(icon(x.icon || x.id), name);
       const cmds = el("div", "ag-install-cmds");
-      for (const c of x.commands) {
+      for (const [i, c] of x.commands.entries()) {
         const line = el("div", "ag-install-cmd");
         line.append(el("span", "ag-install-via", c.node ? t("Node.js + npm") : t(VIA[c.via] || c.via)), el("code", "", c.command), copyBtn(c.command, t("{agent}'s install command", { agent: x.name })));
+        // an npm command that wants an administrator is for a terminal, as the note says
+        if (!c.admin) {
+          const go = el("button", "text ag-install-go", t("Install"));
+          go.type = "button";
+          go.onclick = (e) => { e.stopPropagation(); import("./agentinstall.js").then(() => agentInstall(x, i), statusErr); };
+          line.append(go);
+        }
         cmds.append(line);
       }
       r.append(who, cmds);

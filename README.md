@@ -82,7 +82,7 @@ it was. Each card shows today's calls, tokens and cost. **Profiles** save the
 whole page under a name (Work, Cheap, Review) to switch back to later.
 
 The page also shows each CLI's version, updates it the way it was installed,
-and gives the install command for the ones you don't have.
+and gives the install command for the ones you don't have; Install runs it here after showing the exact command and where it comes from (`owl install <agent>` does the same from a terminal).
 
 ### Providers: keys, subscriptions, plugins
 

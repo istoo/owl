@@ -156,7 +156,7 @@ func npmInstall(pkg, goos string, node bool) InstallCmd {
 		how = "nvm-mac"
 	}
 	return InstallCmd{Via: "npm", Node: how, Command: `export NVM_DIR="$HOME/.nvm" && mkdir -p "$NVM_DIR" && ` +
-		"t=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/" + nvmVersion + `/install.sh -o "$t" && ` +
+		"t=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/" + nvmVersion + `/install.sh -o "$t" && [ -s "$t" ] && ` +
 		`bash "$t" && . "$NVM_DIR/nvm.sh" && nvm install --lts && ` + plain}
 }
 
@@ -192,7 +192,9 @@ func npmIn(dirs []string, goos string) bool {
 
 // Installs is every agent owl knows a command for that isn't on this
 // machine, in the Agents page's order.
-func Installs() []Install {
+func Installs() []Install { return installList() }
+
+func listInstalls() []Install {
 	node := nodeHere()
 	out := installsOf(All(), runtime.GOOS, node)
 	if node && adminNPM {

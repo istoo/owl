@@ -22,7 +22,7 @@
 
 ## 1. 安装与第一次接入
 
-Owl 管理的是 **Agent 的接入配置**和**请求发往哪里的本地网关**。以「Codex 使用 DeepSeek」为例：Codex 仍在自己的应用里运行；Owl 给它配置模型和网关地址；请求经 Owl 发到你配置的 DeepSeek 供应商。Owl 不替你安装所有 Agent，也不附送模型额度。
+Owl 管理的是 **Agent 的接入配置**和**请求发往哪里的本地网关**。以「Codex 使用 DeepSeek」为例：Codex 仍在自己的应用里运行；Owl 给它配置模型和网关地址；请求经 Owl 发到你配置的 DeepSeek 供应商。Owl 不会自动安装 Agent，也不附送模型额度；对本机没有的 Agent，**Agent** 页底部的「安装另一个 Agent」列出厂商给的安装命令，点「安装」会先显示确切命令和来源，由你确认后才在本机运行（终端里用 `owl install <agent>`，加 `--yes` 才执行）。需要管理员权限的 npm 命令不会在应用里运行，只提示到终端里执行。
 
 1. 到 [GitHub Releases](https://github.com/istoo/owl/releases/latest) 下载与你系统及架构匹配的版本。macOS、Linux 也可用下列官方发行版安装命令。Linux 无桌面时用终端版；桌面版需要 WebKitGTK 4.1。Windows 桌面版需要 WebView2。Docker、WSL 或 Termux 的使用方式见第 14 节。
 2. 打开 Owl，进 **供应商 → 添加供应商**。选厂商预设填 API key，或选受支持的订阅走其登录流程。先在供应商编辑器中测试连接，再确认需要的模型已启用。
