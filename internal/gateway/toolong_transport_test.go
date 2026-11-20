@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -100,17 +100,15 @@ func TestPlain502IsNotTooLong(t *testing.T) {
 	}
 }
 
-// A provider that can't be reached at all hands the agent the failure to
-// connect, not an overflow, whatever the request's size.
+// 上游没有发回 HTTP 响应时，无论请求多长，都该报告传输失败，而非上下文超限。
 func TestUnreachableIsNotTooLong(t *testing.T) {
-	setup(t, provider.Responses, &fake{})
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	ln.Close() // nothing listens there now
-	p := provider.Provider{ID: "fake", Name: "Codex relay", Key: "k", Models: []string{"m1"}, Responses: "http://" + addr + "/v1", Contexts: map[string]int{"m1": 2000}}
+	fresh(t)
+	// 保留监听端口，只断开请求连接，避免端口被并行测试的服务重新占用。
+	up := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(up.Close)
+	p := provider.Provider{ID: "fake", Name: "Codex relay", Key: "k", Models: []string{"m1"}, Responses: up.URL + "/v1", Contexts: map[string]int{"m1": 2000}}
 	if err := provider.Save(p); err != nil {
 		t.Fatal(err)
 	}
