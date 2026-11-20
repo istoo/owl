@@ -111,9 +111,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // the box is over the list, in the shown language, inside the window
         assert(await q.isVisible(), "no search box on the Providers page");
-        assert.equal(await q.getAttribute("placeholder"), await tr("Find a provider"));
-        assert.equal(await q.getAttribute("aria-label"), await tr("Find a provider"));
-        if (lang !== "en") assert.notEqual(await tr("Find a provider"), "Find a provider", "no translation");
+        assert.equal(await q.getAttribute("placeholder"), await tr("Find a configured provider"));
+        assert.equal(await q.getAttribute("aria-label"), await tr("Find a configured provider"));
+        if (lang !== "en") assert.notEqual(await tr("Find a configured provider"), "Find a configured provider", "no translation");
         assert.deepEqual(await overflow(page), []);
         assert.deepEqual(await shown(page), { on: ON, off: [] }, "the ones off start folded");
         const y0 = await scrolled(page);

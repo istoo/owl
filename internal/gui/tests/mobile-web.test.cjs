@@ -448,6 +448,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
                 for (const p of [current, original]) await p.addStyleTag({ content: ".opt.on { font-weight: 400 !important; }" });
                 await current.waitForTimeout(350);
               }
+              // The add sheet's search box (what an empty Providers page
+              // shows) says "Find a preset to add…" and the list's "Find a
+              // configured provider": until BASE_REF has them, both pictures
+              // show the old words; add-sheet-exits.test.cjs checks the new
+              // ones in every language.
+              if (view === "providers" && !baselineFile("app.js").toString().includes("Find a preset to add")) {
+                for (const p of [current, original]) await p.evaluate(() => {
+                  for (const q of document.querySelectorAll("#addSheet .find, #pvQ")) q.placeholder = "Find a vendor…";
+                });
+                await current.waitForTimeout(350);
+              }
               // Gateway's line now says "one address for every API format" (the review
               // asked for it in place of "five APIs, one URL"): until BASE_REF
               // has it, both pictures show the same line; gateway-systemone
