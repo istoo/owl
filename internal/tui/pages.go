@@ -473,6 +473,9 @@ func (m *model) openPresets() {
 		provider.NoticePartners(shown...)
 	}()
 	for _, d := range provider.Presets() {
+		if d.Unlisted {
+			continue
+		}
 		items = append(items, agent.Option{Value: d.ID, Note: d.Name + " · " + kindNote(d.Kind)})
 	}
 	for _, c := range customAPIs {

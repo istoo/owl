@@ -63,6 +63,11 @@ type PresetDef struct {
 	// NoList: the vendor has no list of models to ask for (Bedrock's
 	// runtime serves no /models), so Models are its list
 	NoList bool `json:"noList,omitempty"`
+	// Unlisted: not offered to add (no catalog row in the app, `owl
+	// presets` or the TUI) unless a provider is made from it already.
+	// Its id still resolves, so saved providers, `owl provider add <id>`
+	// and import links keep working.
+	Unlisted bool `json:"unlisted,omitempty"`
 	// Endpoint, for a vendor reached at the user's own resource (Azure
 	// OpenAI), is an example of its address: the preset gives no URL, and
 	// the editor asks for the one the user's resource is at, with
@@ -364,7 +369,7 @@ var presets = []PresetDef{
 	// quota spent only at the plan's own endpoints under /plan (v2 for chat
 	// completions, anthropic for messages; its Claude Code, OpenClaw, Cherry
 	// Studio and CodeArts pages), a MaaS key to either. No Responses.
-	{ID: "huaweicloud", Name: "Huawei Cloud MaaS", Short: "Huawei Cloud", Icon: "huaweicloud-color", Kind: KindVendor,
+	{ID: "huaweicloud", Name: "Huawei Cloud MaaS", Short: "Huawei Cloud", Icon: "huaweicloud-color", Kind: KindVendor, Unlisted: true,
 		Chat: "https://api.modelarts-maas.com/plan/v2", Anthropic: "https://api.modelarts-maas.com/plan/anthropic",
 		Note:    "Token Plan · 西南-贵阳一",
 		Website: "https://support.huaweicloud.com/Token-plan-maas/tokenplan-maas-0001.html", KeysURL: "https://console.huaweicloud.com/modelarts/?#/model-studio/authmanage",
@@ -570,7 +575,7 @@ var presets = []PresetDef{
 	// api.gmi-serving.com/v1, its model list at /v1/models, the key as Bearer
 	// (docs.gmicloud.ai quickstart and LLM API reference). Its docs name no
 	// Responses or Messages endpoint, so only Chat is set
-	{ID: "gmicloud", Name: "GMI Cloud", Icon: "gmicloud", Kind: KindRelay,
+	{ID: "gmicloud", Name: "GMI Cloud", Icon: "gmicloud", Kind: KindRelay, Unlisted: true,
 		Chat:    "https://api.gmi-serving.com/v1",
 		Website: "https://www.gmicloud.ai", KeysURL: "https://console.gmicloud.ai"},
 	{ID: "opencode-go", Name: "OpenCode Go", Icon: "opencode", Kind: KindRelay, Catalog: "opencode-go",
@@ -603,7 +608,7 @@ var presets = []PresetDef{
 	// Kilo Code's gateway, at the OpenRouter-style API its own clients use
 	// (kilo.go): its free models (isFree, ":free") are served with no key,
 	// as Kilo serves them signed out; a Kilo key reaches the rest
-	{ID: "kilo", Name: "Kilo Gateway", Icon: "kilo", Kind: KindRelay, NoKey: true,
+	{ID: "kilo", Name: "Kilo Gateway", Icon: "kilo", Kind: KindRelay, Unlisted: true, NoKey: true,
 		Chat:    "https://api.kilo.ai/api/openrouter",
 		Note:    "free models with no key",
 		KeyHint: "optional: free models need no key",
@@ -665,7 +670,7 @@ var presets = []PresetDef{
 	{ID: "pipellm", Name: "PipeLLM", Icon: "pipellm-color", Kind: KindRelay,
 		Chat: "https://api.pipellm.ai/openai/v1", Responses: "https://api.pipellm.ai/v1", Anthropic: "https://api.pipellm.ai",
 		Website: "https://www.pipellm.ai", KeysURL: "https://console.pipellm.ai"},
-	{ID: "302ai", Name: "302.AI", Icon: "ai302-color", Kind: KindRelay,
+	{ID: "302ai", Name: "302.AI", Icon: "ai302-color", Kind: KindRelay, Unlisted: true,
 		Chat: "https://api.302.ai/v1", Anthropic: "https://api.302.ai",
 		Website: "https://302.ai", KeysURL: "https://302.ai/api-keys/list"},
 	{ID: "cherryin", Name: "CherryIN", Icon: "cherryin-color", Kind: KindRelay,
@@ -755,7 +760,7 @@ var presets = []PresetDef{
 	// path), a Bearer API key from its UI, and GET /v1/models lists the
 	// ready models the key may use. The server is the user's own: port 80 by
 	// default, on this machine or another.
-	{ID: GPUStackPreset, Name: "GPUStack", Icon: "gpustack", Kind: KindLocal,
+	{ID: GPUStackPreset, Name: "GPUStack", Icon: "gpustack", Kind: KindLocal, Unlisted: true,
 		Chat: "http://localhost/v1",
 		Note: "your own server and API key", Website: "https://github.com/gpustack/gpustack"},
 	// its decision models (Clef, Clef-Flash, Kev, Laya, D1), served at

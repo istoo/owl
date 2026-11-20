@@ -376,6 +376,9 @@ func presets() error {
 	provider.CountPartner(provider.PartnerShown, shown...)
 	provider.NoticePartners(shown...)
 	for _, pr := range append(all, provider.Presets()...) {
+		if pr.Unlisted && !have[pr.ID] {
+			continue
+		}
 		if pr.Kind != kind {
 			kind = pr.Kind
 			fmt.Println(faint.Render("  " + map[provider.Kind]string{provider.KindPartner: "partners (sponsors)", provider.KindVendor: "vendors", provider.KindRelay: "relays", provider.KindLocal: "local", provider.KindRemote: "another computer's owl"}[kind]))
