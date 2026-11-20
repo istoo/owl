@@ -274,14 +274,14 @@ var ccForked = []byte(`"forkedFrom":{`)
 
 // ccUUIDsOf is the uuids of the messages in f, read on from where the last
 // read stopped while the file only grew.
-func ccUUIDsOf(f file) uuidSet {
+func ccUUIDsOf(f file) *uuidSet {
 	m := ccUUIDMemo[f.path]
 	if m == nil || f.size < m.size || f.size == m.size && f.mod.UnixNano() != m.mod {
 		m = &ccUUIDs{set: uuidSet{}}
 		ccUUIDMemo[f.path] = m
 	}
 	if m.size == f.size && m.mod == f.mod.UnixNano() {
-		return m.set
+		return &m.set
 	}
 	off, err := scanThin(f.path, m.off, nil, thinClaude, func(b []byte, _, _ int64) bool {
 		if !bytes.Contains(b, ccUser) && !bytes.Contains(b, ccAssistant) {
@@ -300,7 +300,7 @@ func ccUUIDsOf(f file) uuidSet {
 		m.off = off
 	}
 	m.size, m.mod = f.size, f.mod.UnixNano()
-	return m.set
+	return &m.set
 }
 
 // ccJoin is copies and branches (ccFamily) in one map, each by the key of
