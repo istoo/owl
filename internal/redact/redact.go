@@ -180,7 +180,7 @@ var rules = append([]rule{
 	{kind: "API_KEY", re: lazyre.New(`(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|glpat-[A-Za-z0-9_-]{20,})`), markers: []string{"gh", "github_pat_", "glpat-"}, bound: tokenCh},
 	{kind: "API_KEY", re: lazyre.New(`AIza[0-9A-Za-z_-]{35}`), markers: []string{"AIza"}, bound: tokenCh},
 	{kind: "API_KEY", re: lazyre.New(`xox[abposr]-[0-9A-Za-z-]{10,}`), markers: []string{"xox"}, bound: tokenCh},
-	{kind: "API_KEY", re: lazyre.New(`(?:sk|rk)_live_[0-9A-Za-z]{20,}`), markers: []string{"_live_"}, bound: tokenCh},
+	{kind: "API_KEY", re: lazyre.New(`(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}`), markers: []string{"_live_", "_test_"}, bound: tokenCh},
 	{kind: "API_KEY", re: lazyre.New(`(?:AKIA|ASIA)[0-9A-Z]{16}`), markers: []string{"AKIA", "ASIA"}, bound: alnum},
 	{kind: "API_KEY", re: lazyre.New(`(?:hf_[A-Za-z0-9]{30,}|gsk_[A-Za-z0-9]{40,}|xai-[A-Za-z0-9]{40,}|npm_[A-Za-z0-9]{36}|pypi-[A-Za-z0-9_-]{50,}|dop_v1_[a-f0-9]{64}|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})`),
 		markers: []string{"hf_", "gsk_", "xai-", "npm_", "pypi-", "dop_v1_", "SG."}, bound: tokenCh},
@@ -206,18 +206,21 @@ var rules = append([]rule{
 	{kind: "TOKEN", re: lazyre.New(`eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), markers: []string{"eyJ"}, bound: tokenCh},
 	// the password of user:password@host, or of :password@host as a Redis
 	// URL has it with no user
-	{kind: "PASSWORD", re: lazyre.New(`[A-Za-z][A-Za-z0-9+.-]*://[^\s:@/?#"'<>]*:([^\s@/?#"'<>]{3,})@`), markers: []string{"://"}, ok: notAVariable, at: hiddenInURL},
+	{kind: "PASSWORD", re: lazyre.New(`[A-Za-z][A-Za-z0-9+.-]*://[^\s:@/?#"'<>]*:([^\s@/?#"'<>]{3,})@`), markers: []string{"://"}, ok: urlPassword, at: hiddenInURL},
 	// password = …, API_KEY: "…", as .env files and configs have them
 	{kind: "SECRET", re: lazyre.New(`(?i)[A-Za-z0-9_.-]*(?:` + secretNames.pattern() + `)[A-Za-z0-9_.-]*` + quote + `[ \t]*[:=][ \t]*` + quote + `(` + secretCh + `{8,})`),
 		markers: secretNames.markers(), ok: secretValue, at: fieldAt, field: true},
+	// 明确的口令字段不要求含数字；不要放宽通用密钥规则，否则会误遮包名。
+	{kind: "SECRET", re: lazyre.New(`(?:^|[^A-Za-z0-9_.-])(?:(?:[A-Za-z0-9_.-]*[_.-])?(?:(?i:password|passwd)|[A-Za-z0-9_.-]+_PASS)|[A-Z0-9_]*PASSWORD|[A-Z0-9_]*_PWD)` + quote + `[ \t]*[:=][ \t]*` + quote + `(` + secretCh + `{8,})`),
+		markers: []string{"pass", "Pass", "PASS", "PWD"}, ok: passValue, at: passAt, field: true},
 	// an env var's name says what it holds in the upper case: a
 	// SERVICE_X_KEY, a DB_PASS (#2946). The names above have a word for the
 	// secret in them; these only end in one, and only in the upper case is
 	// that a secret's name — in the lower case a name that ends in key is
 	// code's: a sort key, a cache key, a public key (notAPlainKey turns the
 	// upper-case ones of those away too).
-	{kind: "SECRET", re: lazyre.New(`(?:^|[^A-Za-z0-9_.-])[A-Za-z0-9_.-]*_(?:KEY|PASS)` + quote + `[ \t]*[:=][ \t]*` + quote + `(` + secretCh + `{8,})`),
-		markers: fieldNames{{"key", "key"}, {"pass", "pass"}}.markers(), ok: secretValue, at: namedSecretAt, field: true},
+	{kind: "SECRET", re: lazyre.New(`(?:^|[^A-Za-z0-9_.-])[A-Za-z0-9_.-]*_(?:KEY|PASS|AK|SK)` + quote + `[ \t]*[:=][ \t]*` + quote + `(` + secretCh + `{8,})`),
+		markers: fieldNames{{"key", "key"}, {"pass", "pass"}, {"_ak", "_ak"}, {"_sk", "_sk"}}.markers(), ok: secretValue, at: namedSecretAt, field: true},
 	// an Authorization or Cookie header's value is a secret whatever it
 	// looks like: an opaque bearer token, a session value (#2946)
 	{kind: "SECRET", re: lazyre.New(`(?im)^[ \t]*(?:authorization|cookie)[ \t]*:[ \t]*(\S[^\r\n]{7,})`),
@@ -241,7 +244,7 @@ var rules = append([]rule{
 	// an English name for one before 为, 為, 是 or ：, as a Chinese message
 	// has it: apikey 为 …, token 是 …, API Key：… (CyberCaius on Discord).
 	// password = … and API_KEY: … in a config are the SECRET rule's above.
-	{kind: "SECRET", re: lazyre.New(`(?i)(?:` + secretNames.pattern() + `|pwd|api[ ]key|access[ ]key|secret[ ]key|key|\bpin(?:[ ]?code)?)` + quote +
+	{kind: "SECRET", re: lazyre.New(`(?i)(?:` + secretNames.pattern() + `|pwd|api[ ]key|access[ ]key|secret[ ]key|key|\bak|\bsk|\bpin(?:[ ]?code)?)` + quote +
 		`[ \t]*(?:[为為是][ \t]*[:：]?|：)[ \t]*(?:\\?["'“「])?(` + secretCh + `{3,}[A-Za-z0-9_\-/+=~!@#%^&*])`),
 		fold: cjkCopulas, back: 24, ahead: 260, at: keyAt, field: true},
 
@@ -249,7 +252,7 @@ var rules = append([]rule{
 	{kind: "ID_CARD", re: lazyre.New(`[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`), bound: alnum, ok: chineseID, cat: catPersonal},
 	{kind: "PHONE", re: lazyre.New(`(?:\+?86[- ]?)?1[3-9]\d{9}`), bound: alnum, at: phoneAt, cat: catPersonal},
 	{kind: "BANK_CARD", re: lazyre.New(`[3-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?`), bound: alnum, ok: luhn, cat: catPersonal},
-}, append(moreRules, cryptoRules...)...)
+}, slices.Concat(credRules, moreRules, cryptoRules)...)
 
 // cjkPasswordNames are what a password is called in Chinese, Japanese and
 // Korean.
@@ -326,7 +329,7 @@ const (
 	// in JSON written inside a string
 	quote = `(?:\\?["'])?`
 	// secretCh are the characters of a secret's value
-	secretCh = `[A-Za-z0-9_\-./+=~!@#%^&*]`
+	secretCh = `[A-Za-z0-9_\-./+=~!@#%^&*$]`
 )
 
 // placeholderRe is a placeholder as Mask writes it.
@@ -348,10 +351,40 @@ var openBraces = []byte("{{")
 
 // notAVariable turns away what stands in for a value: ${PASS}, <password>, ****.
 func notAVariable(v string) bool {
-	if strings.ContainsAny(v[:1], "$%{<[*") {
+	if strings.ContainsAny(v[:1], "$%{<[") {
+		return false
+	}
+	if v[0] == '*' && (len(v) < 2 || v[1] == '*' || v[1] == '_' || v[1] >= 'A' && v[1] <= 'Z' || v[1] >= 'a' && v[1] <= 'z') {
+		// ****、*** 是掩码，*cfg.Password、*int32 是代码；*-6*31tH… 是口令
 		return false
 	}
 	return strings.Trim(v, "*xX.") != ""
+}
+
+// urlPassword 是 URL 里 user:口令@ 的口令。URL 里的 % 是百分号编码：
+// %23a+wP… 是编码过的口令，不是 %VAR% 变量。
+func urlPassword(v string) bool {
+	if v[0] == '%' {
+		return len(v) >= 8 && percentEncoded(v)
+	}
+	return notAVariable(v)
+}
+
+// percentEncoded 说 v 里每个 % 后面都是两位十六进制：URL 编码，不是变量。
+func percentEncoded(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if v[i] != '%' {
+			continue
+		}
+		if i+2 >= len(v) || !isHexByte(v[i+1]) || !isHexByte(v[i+2]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isHexByte(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
 // keyValue is a key's or a token's value, not a word or a number: letters
@@ -400,10 +433,60 @@ var quantityUnits = []string{"位", "比特", "字节", "字節", "个", "個", 
 // secretValue is a value that looks like a secret, not code: letters and
 // digits both, and not a call, a reference or a placeholder of its own.
 func secretValue(v string) bool {
-	if !notAVariable(v) || strings.HasPrefix(v, "process.env") || strings.HasPrefix(v, "os.") {
+	if !literalSecretValue(v) {
 		return false
 	}
 	return strings.ContainsAny(v, digits) && strings.IndexFunc(v, func(r rune) bool { return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' }) >= 0
+}
+
+// passValue 是口令字段的值：字面值，不是文件路径（PWD=/home/app 是目录）。
+func passValue(v string) bool {
+	// www.google.com/、//host：文档里写在 password: 后面的地址
+	return literalSecretValue(v) && !pathValue(v) && !strings.HasPrefix(v, "+") && !strings.HasPrefix(v, "www.") && !strings.Contains(v, "//")
+}
+
+// labelWord 说 v 是口令字段名本身，像界面文案里的 password: "Password"。
+func labelWord(v string) bool {
+	for _, w := range []string{"password", "passwd", "passphrase", "pass", "pwd", "secret", "token"} {
+		if strings.EqualFold(v, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// passAt 判断口令字段的值是否可信。只有字母的值，在没有引号、跟在冒号后面时
+// 多半是文档和 YAML 里的一个词（// Password: Required.、pass: recovering、
+// sonatype_password:sigstore-secrets/…），只有词中间还有大写字母才算口令；
+// 等号后（.env、ini）和引号里的照旧都算。
+func passAt(s string, a, b int) bool {
+	v := s[a:b]
+	if labelWord(v) {
+		return false // 界面文案：password: "Password"
+	}
+	if strings.IndexFunc(v, func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') }) >= 0 &&
+		!strings.HasSuffix(v, ".") {
+		return fieldAt(s, a, b)
+	}
+	quoted := a > 0 && (s[a-1] == '"' || s[a-1] == '\'')
+	before := strings.TrimRight(s[:a], " \t\"'\\")
+	if !quoted && strings.HasSuffix(before, ":") {
+		w := strings.TrimSuffix(v, ".")
+		if w == v && strings.IndexFunc(w[1:], func(r rune) bool { return r >= 'A' && r <= 'Z' }) >= 0 {
+			return fieldAt(s, a, b)
+		}
+		return false
+	}
+	if strings.HasSuffix(v, ".") && !quoted {
+		return false
+	}
+	return fieldAt(s, a, b)
+}
+
+// literalSecretValue 排除未展开的变量引用和代码中的环境变量读取。
+func literalSecretValue(v string) bool {
+	// 末尾的 $ 是后面跟着的 ${{ … }}、$(…) 的开头，值到这里被截断了
+	return notAVariable(v) && !strings.HasPrefix(v, "process.env") && !strings.HasPrefix(v, "os.") && !strings.HasSuffix(v, "$")
 }
 
 // identPath is a name in code, or a field read through one: Uint8Array,
@@ -1264,6 +1347,9 @@ func ruleSpans(s string, o Options) []span {
 					found = append(found, span{a, b, r.kind, r.by(), 0, false})
 				}
 			}
+		}
+		if o.Secrets {
+			found = append(found, truncatedKeySpans(s)...)
 		}
 		for _, sp := range split {
 			found = slices.DeleteFunc(found, func(f span) bool {

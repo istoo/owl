@@ -216,6 +216,9 @@ func digestShaped(v string) bool {
 // an id, a cursor, a request or cua-driver's element_token, and not a
 // bare "key".
 func credentialField(s string, at int) bool {
+	if cjkKeyBefore(s, at) {
+		return true // 令牌：…、密钥是 …
+	}
 	words := fieldWords(s, at)
 	if len(words) == 1 && words[0] == "key" && keyPhrase(s, at) {
 		return true // api key: …, Secret Key = …
@@ -238,6 +241,27 @@ func credentialField(s string, at int) bool {
 		}
 	}
 	return true
+}
+
+// cjkKeyBefore 说 s[at] 开始的值紧跟在中文、日文、韩文的密钥或口令名后面：
+// 令牌：…、密钥为 …。这些名字没有用来叫 id 的，值是 32 位 hex 也是凭据。
+func cjkKeyBefore(s string, at int) bool {
+	before := strings.TrimRight(s[:at], " \t\"'“「\\")
+	for _, c := range cjkCopulas {
+		before = strings.TrimSuffix(before, c)
+	}
+	before = strings.TrimRight(strings.TrimSuffix(before, ":"), " \t")
+	for _, n := range cjkKeyNames {
+		if strings.HasSuffix(before, n) {
+			return true
+		}
+	}
+	for _, n := range cjkPasswordNames {
+		if strings.HasSuffix(before, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // keyPhrase says the bare key whose value starts at s[at] is the second
@@ -265,10 +289,23 @@ func fieldWords(s string, at int) []string {
 	for i > 0 && strings.IndexByte(" \t\"'\\", s[i-1]) >= 0 {
 		i--
 	}
-	if i == 0 || s[i-1] != ':' && s[i-1] != '=' {
-		return nil
+	switch {
+	case i > 0 && (s[i-1] == ':' || s[i-1] == '='):
+		i--
+	default:
+		// 中文消息里的 token：…、密钥是 …、AK 为 …：全角冒号和系词也隔开名字和值
+		sep := ""
+		for _, c := range cjkCopulas {
+			if strings.HasSuffix(s[:i], c) {
+				sep = c
+				break
+			}
+		}
+		if sep == "" {
+			return nil
+		}
+		i -= len(sep)
 	}
-	i--
 	for i > 0 && strings.IndexByte(" \t\"'\\", s[i-1]) >= 0 {
 		i--
 	}

@@ -357,6 +357,42 @@ could match the same key.**
   start (20bdf1e9).
 - Seen 1× (2026-10-05).
 
+**A filter the user set says what it hides, where they would look for it,
+and a name it holds that is gone never blocks saving it.**
+- 11-18: Codex's settings.Visible named five providers. Two added later
+  (an Azure Foundry resource and a LiteLLM relay) were in no Codex list,
+  /v1/models or config.toml, and the Agents page showed no sign of them;
+  the user reported "Codex can't use the new provider's models". The list
+  also held two deleted providers and six deleted groups, and
+  `owl visible codex …,<new>` refused to save over "ark is no family,
+  provider or group".
+- 0148a493d (upstream 331057743) lists the kept models in the agent's
+  list, off, and ticking one widens the filter. 021f2b7b6 drops a deleted
+  provider's or group's names from every agent's Visible, PickedModels and
+  HiddenModels, and `owl visible` drops a stale name it meets instead of
+  refusing.
+- When adding any narrowing (allow-list, hidden list, per-agent filter),
+  test "add a provider after the filter is set" and "delete something the
+  filter names, then edit the filter".
+- Seen 1× (2026-11-18).
+
+**A vendor's list of what is deployed is a lower bound: check it against
+something deployed today before trusting it as complete.**
+- 11-18: azureModels read the data plane's
+  `/openai/deployments?api-version=2022-12-01`. On the user's Foundry
+  resource it listed eight deployments and left out gpt-6.2-sol and
+  gpt-6.2-astra, deployed the day before; `GET /deployments/<name>` was
+  404 for them too, yet both answered requests. Upstream has the same
+  code.
+- 169b068d8 asks the v1 catalog for chat models no older than the newest
+  listed one, and gives each an empty chat: 400 is a deployment it serves,
+  404 or a "deploymentless" 400 is none, anything else is unknown and left
+  out. Bounded at 32 asks, 4 at once, 10s.
+- Before shipping a model-list reader, deploy (or find) the newest model
+  on a real account and check that the list names it. A list that is
+  missing it is not proof the model is absent.
+- Seen 1× (2026-11-18).
+
 ## Verification
 
 **A fixed date in a test is checked against every clock the code reads.**

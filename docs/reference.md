@@ -80,7 +80,10 @@ line; agents connected to owl lose it when it quits.
   when it is switched on stay, and a model added later, of any provider,
   stays out of that agent's picker and its config until it is ticked
   (`owl visible <agent> --only-picked`, back with `--show-new`). A
-  model asked for by name still works either way.
+  model asked for by name still works either way. A provider that
+  `owl visible` keeps out of an agent's list is still in that list, off,
+  under its own name: tick one of its models and the agent is shown that
+  provider from then on.
 - **Profiles.** Snapshot every agent's settings under a name and switch all of
   them back in one move. The profile in use, the one applying would change
   nothing, is ticked, the tray panel's Profiles button shows its name, and
