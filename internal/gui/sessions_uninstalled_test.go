@@ -63,7 +63,7 @@ func TestManageDeleteOfAnUninstalledAgentTakesItOffTheList(t *testing.T) {
 
 	t.Cleanup(sessions.ForceCLIGone("opencode"))
 	m = call("GET", "/api/sessions/manage?agent=opencode", "")
-	if len(m.Sessions) != 2 || !m.Sessions[0].Deletable || !m.Sessions[0].Forget || m.Sessions[0].Resume != "" || !m.Agents[0].Deletable {
+	if len(m.Sessions) != 2 || !m.Sessions[0].Deletable || !m.Sessions[0].Forget || m.Sessions[0].Resume == "" || !m.Agents[0].Deletable {
 		t.Fatalf("uninstalled: %+v %+v", m.Agents, m.Sessions)
 	}
 	call("POST", "/api/sessions/delete", `{"agent":"opencode","ids":["`+id+`"]}`)

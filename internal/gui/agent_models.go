@@ -91,10 +91,21 @@ func ownFields(a *agent.Agent, vals map[string]string) []fieldJSON {
 	return fieldsOf(a, vals, true)
 }
 
+// fieldsPastRelease are the agent fields added after v0.2.27, whose page
+// draws every field as a row and so would show settings it has no word
+// for (Codex's and dsh's "compaction model", Codex's "applies to", Claude
+// Code's "advisor", omp's "advisor review", Pi's "protocol", Kimi Code's
+// "subagent pool", Claude Desktop's "gateway"): left out of its state. A
+// field the page knows, and the user's own (Field.Own), are kept.
+var fieldsPastRelease = map[string]bool{
+	"compact_model": true, "scope": true, "advisor": true, "advisor_review": true,
+	"protocol": true, "subagent_pool": true, "gateway": true,
+}
+
 func fieldsOf(a *agent.Agent, vals map[string]string, own bool) []fieldJSON {
 	out := []fieldJSON{}
 	for _, f := range a.Fields {
-		if f.Own != own {
+		if f.Own != own || fieldsPastRelease[f.Key] {
 			continue
 		}
 		opts := a.Picks(f, vals)

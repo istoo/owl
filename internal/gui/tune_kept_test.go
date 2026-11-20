@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"net/http"
 	"path/filepath"
 	"testing"
 
@@ -94,6 +95,32 @@ func TestTuneKeepsWhatItPutIn(t *testing.T) {
 // The cache this computer's Claude Code keeps is on the card whoever set
 // it, with no calls at all: the user's own 1h too, which Use 5 min puts
 // at 5m and Undo puts back. No Claude Code folder here, no card.
+// v0.2.27's page reads r.cost of every row's compact or ttl, and a row
+// kept only for its Undo has neither: /api/tune leaves those out, while
+// what tune kept stays for the next ask (the page has no Undo to show).
+func TestTuneAPIDropsRowsWithNoCurve(t *testing.T) {
+	sandboxHome(t)
+	if err := agent.TuneApply("", "claude", agent.TuneCache, "", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	tuneForget()
+	t.Cleanup(tuneForget)
+	if st := tuneFor(7); len(st.Agents) != 1 || len(st.Agents[0].Advice) != 1 || !st.Agents[0].Advice[0].Few {
+		t.Fatalf("tuneFor: %+v; want the kept cache row", st)
+	}
+	mux := http.NewServeMux()
+	tuneRoutes(mux)
+	var st tuneState
+	getJSON(t, mux, "/api/tune?days=7", &st)
+	for _, a := range st.Agents {
+		for _, ad := range a.Advice {
+			if ad.Compact == nil && ad.TTL == nil {
+				t.Fatalf("/api/tune: a row with no curve: %+v", ad)
+			}
+		}
+	}
+}
+
 func TestTuneTellsTheCacheHere(t *testing.T) {
 	sandboxHome(t)
 	home := t.TempDir()

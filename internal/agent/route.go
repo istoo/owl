@@ -76,6 +76,24 @@ func joinedVia(own, via []Option, key [2]string) []Option {
 	return out
 }
 
+// joinedViaAfter is via then own, for a field whose picker lists the
+// catalog before the agent's own models: the order v0.2.27's page draws
+// (its routing groups first). Kept under key as joinedVia is.
+func joinedViaAfter(via, own []Option, key [2]string) []Option {
+	joinedOptions.Lock()
+	defer joinedOptions.Unlock()
+	if j, ok := joinedOptions.m[key]; ok && sameList(j.via, via) && slices.EqualFunc(j.own, own, sameOption) {
+		return j.out
+	}
+	out := make([]Option, 0, len(via)+len(own))
+	out = append(append(out, via...), own...)
+	if joinedOptions.m == nil {
+		joinedOptions.m = map[[2]string]joinedList{}
+	}
+	joinedOptions.m[key] = joinedList{own: out[len(via):], via: via, out: out}
+	return out
+}
+
 var joinedOptions struct {
 	sync.Mutex
 	m map[[2]string]joinedList
@@ -94,6 +112,7 @@ func sameOption(a, b Option) bool {
 	return a.Value == b.Value && a.Label == b.Label && a.Note == b.Note && a.Icon == b.Icon &&
 		slices.Equal(a.Icons, b.Icons) && a.Group == b.Group && a.GroupIcon == b.GroupIcon &&
 		a.Ref == b.Ref && a.Free == b.Free && a.Zero == b.Zero && a.Rate == b.Rate && a.RateWas == b.RateWas &&
+		a.Named == b.Named &&
 		a.Context == b.Context && a.Takes == b.Takes && a.Direct == b.Direct && a.Via == b.Via &&
 		a.Same == b.Same && a.Served == b.Served && a.Alias == b.Alias && a.FastFor == b.FastFor &&
 		a.Fast == b.Fast && a.OwnFast == b.OwnFast && a.UltraOK == b.UltraOK && a.Ultra == b.Ultra &&

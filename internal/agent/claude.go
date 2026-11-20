@@ -2122,7 +2122,12 @@ func claudeIn(at place) *Agent {
 			if fold {
 				key += "-folded"
 			}
-			return joinedVia(group(name, own), claudeViaShared(fold), [2]string{key, at.id})
+			// v0.2.27's picker draws the options in this order: its
+			// routing groups first, then the catalog's providers. Claude
+			// Code's own models come after them, where this fork's page
+			// has always put whatever the catalog didn't have; upstream
+			// lists them first.
+			return joinedViaAfter(claudeViaShared(fold), group(name, own), [2]string{key, at.id})
 		},
 	}, {
 		// the effort Claude Code starts with, as its /effort saves it: under
@@ -2873,6 +2878,9 @@ func claudeDated(opts []Option) []Option {
 	for k, is := range twins {
 		if len(is) == 1 {
 			opts[is[0]].Alias = opts[alias[k]].Value
+			// the alias is the model's name, not a user's account:
+			// v0.2.27's page hides a bare alias as an account name
+			opts[is[0]].Named = true
 		}
 	}
 	return opts
