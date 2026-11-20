@@ -84,6 +84,12 @@ func TestClaudeCodeHeadersReachAnthropicRelay(t *testing.T) {
 	// another agent's request goes with its own User-Agent (a key+URL
 	// provider is sent the agent's, nb5p on Discord) and none of Claude
 	// Code's headers
+	// owl sends its own User-Agent unless the provider is set to pass
+	// the agent's (v0.2.27's default, kept); this provider is
+	if p, _ := provider.Find("fake"); p != nil {
+		p.PassUserAgent = true
+		provider.Save(*p)
+	}
 	send("/v1/messages?beta=true", http.Header{"User-Agent": {"opencode/1.0"}, "X-App": {"other"}, "X-Stainless-Lang": {"js"}})
 	if ua := f.head.Get("User-Agent"); ua != "opencode/1.0" || f.head.Get("X-App") != "" || f.head.Get("X-Stainless-Lang") != "" || query != "" {
 		t.Errorf("other agent: %q %v %q", ua, f.head, query)
