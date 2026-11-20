@@ -16498,7 +16498,7 @@ function renderPanelUse() {
   open.type = "button";
   open.dataset.feature = "usage"; // it opens on the Usage page
   open.onclick = (e) => {
-    api("window/main?" + new URLSearchParams({ view: "usage", tab: "requests", ...(panelUseProvider ? { provider: panelUseProvider } : {}), ...(panelUseComputer ? { computer: panelUseComputer } : {}) }), {}).catch(() => {});
+    api("window/main?" + new URLSearchParams({ view: "usage", tab: "requests", ...(panelUseProvider ? { provider: panelUseProvider } : {}), ...(panelUseComputer ? { computer: panelUseComputer } : {}), ...(panelUsePeriod !== "today" ? { period: panelUsePeriod } : {}), ...(panelUseDay ? { day: panelUseDay } : {}) }), {}).catch(() => {});
     e.currentTarget.blur();
   };
   // as the window's Usage has it: what is shown read again now

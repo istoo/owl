@@ -369,6 +369,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       for (let i = 0; i < 50 && !opened.length; i++) await p.waitForTimeout(40);
       assert.equal(opened.at(-1), "?view=usage&tab=requests&provider=anthropic");
       assert.equal((await p.locator("#panelUsage .pu-bar .text").textContent()).trim(), w.open);
+      // a period and a day picked in the panel go with it: the window opens on the same ones
+      await p.locator("#panelUsage .pu-bar .segs .opt").nth(1).click();
+      await settled(asked, (q) => q.get("period") === "7d");
+      await p.locator("#panelUsage:not(.pu-loading)").waitFor();
+      await p.locator("#panelUsage .led-day").nth(4).click();
+      await settled(asked, (q) => q.has("day"));
+      await p.locator("#panelUsage:not(.pu-loading)").waitFor();
+      const goneDay = asked.at(-1).get("day");
+      opened.length = 0;
+      // the computer picked goes too (set as the picker would, just before the click)
+      await p.evaluate(() => { panelUseComputer = "studio"; });
+      await p.locator("#panelUsage .pu-bar .text").click();
+      for (let i = 0; i < 50 && !opened.length; i++) await p.waitForTimeout(40);
+      assert.equal(opened.at(-1), "?view=usage&tab=requests&provider=anthropic&computer=studio&period=7d&day=" + goneDay);
+      await p.evaluate(() => { panelUseComputer = ""; });
+      await p.locator("#panelUsage .pu-bar .segs .opt").nth(0).click(); // back to today, which clears the day
+      await settled(asked, (q) => q.get("period") === "today" && !q.has("day"));
+      await p.locator("#panelUsage:not(.pu-loading)").waitFor();
 
       // the picker lists the providers, and all of them again
       await p.locator("#panelUsage .sess-pick").click();
@@ -430,6 +448,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await settled(asked, (q) => q.get("provider") === "relay" && q.get("agent") === "codex");
       assert.equal(await w2.locator("#usageTab .opt.on").textContent(), lang === "zh" ? "请求" : "Requests");
       assert(!/provider=|tab=/.test(w2.url()), "the address is clean: " + w2.url());
+      // the period and day the panel had: the window's Requests ask for the same day of the same period
+      // (its own list of what is asked: the panel's timer still asks too, and the window drops a
+      // computer the answer doesn't list after its first ask, so the first ask is the one to read)
+      const askedW = [];
+      const w3 = await open("http://owl.test/?view=usage&tab=requests&computer=studio&period=7d&day=" + goneDay, { width: 1100, height: 700 }, askedW, opened);
+      await w3.locator("#ledWrap, #ledDash").first().waitFor({ state: "attached" });
+      for (let i = 0; i < 60 && !askedW.length; i++) await p.waitForTimeout(40);
+      assert.equal(askedW[0]?.get("period"), "7d", "asked: " + askedW[0]);
+      assert.equal(askedW[0]?.get("day"), goneDay);
+      assert.equal(askedW[0]?.get("computer"), "studio");
+      assert(!/period=|day=|computer=/.test(w3.url()), "the address is clean: " + w3.url());
       // Every distinct chart color has a named legend row, with the rest grouped.
       const ranked = await p.evaluate(() => {
         const rows = Array.from({length:9}, (_,i) => ({id:"p"+i,name:"Provider "+i,calls:9-i,input:(9-i)*100,output:0,cache_read:0,cache_write:0,cost:0}));

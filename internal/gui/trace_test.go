@@ -35,6 +35,9 @@ func TestMainView(t *testing.T) {
 		{url.Values{"view": {"usage"}}, "usage"},
 		{url.Values{"view": {"usage"}, "tab": {"requests"}, "provider": {"codex"}}, "usage&tab=requests&provider=codex"},
 		{url.Values{"view": {"usage"}, "tab": {"requests"}, "agent": {"claude-desktop"}, "provider": {"relay team"}}, "usage&tab=requests&provider=relay+team&agent=claude-desktop"},
+		// the panel's period, day and computer; a day that is no date, or a period it has not, goes
+		{url.Values{"view": {"usage"}, "tab": {"requests"}, "period": {"7d"}, "day": {"2026-11-03"}, "computer": {"laptop-2"}}, "usage&tab=requests&computer=laptop-2&period=7d&day=2026-11-03"},
+		{url.Values{"view": {"usage"}, "tab": {"requests"}, "period": {"x&view=settings"}, "day": {"2026-13-40"}}, "usage&tab=requests"},
 		{url.Values{"view": {"usage"}, "tab": {"other"}, "provider": {"x&view=settings"}}, "usage"},
 		{url.Values{"view": {"settings"}, "provider": {"codex"}}, "settings"},
 		{url.Values{"view": {"plugins"}}, "plugins"},
