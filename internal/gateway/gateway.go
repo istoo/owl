@@ -509,13 +509,19 @@ type Call struct {
 	Error string `json:"error,omitempty"`
 	// Canceled: the agent canceled the call before it was answered
 	// (usage.CanceledBy), which the page shows as no failure
-	Canceled          bool   `json:"canceled,omitempty"`
-	Fallback          string `json:"fallback,omitempty"` // providers that failed first, and why
-	Usage             Usage  `json:"usage"`
-	RequestBody       string `json:"requestBody,omitempty"`
-	ResponseBody      string `json:"responseBody,omitempty"`
-	RequestTruncated  bool   `json:"requestTruncated,omitempty"`
-	ResponseTruncated bool   `json:"responseTruncated,omitempty"`
+	Canceled     bool   `json:"canceled,omitempty"`
+	Fallback     string `json:"fallback,omitempty"` // providers that failed first, and why
+	Usage        Usage  `json:"usage"`
+	RequestBody  string `json:"requestBody,omitempty"`
+	ResponseBody string `json:"responseBody,omitempty"`
+	// reqZip/resZip are the bodies as the Recent-calls ring keeps them,
+	// S2, while RequestBody and ResponseBody are empty: forty calls of
+	// up to 256 KiB were ~14 MB of an idle heap, and only the one row a
+	// user opens reads the bodies (RecentCall, RouteCall). A body that
+	// doesn't shrink is kept as a string instead.
+	reqZip, resZip    []byte
+	RequestTruncated  bool `json:"requestTruncated,omitempty"`
+	ResponseTruncated bool `json:"responseTruncated,omitempty"`
 	// Archive: "<date>/<id>", where the request archive keeps the call,
 	// when it was on (archive.go); wire what it keeps besides
 	Archive string `json:"archive,omitempty"`
@@ -672,11 +678,30 @@ func New() *Server {
 
 // Recent lists the last calls, newest first.
 func (s *Server) Recent() []Call {
+	return s.recentCalls(true)
+}
+
+// RecentMeta lists the last calls without their bodies, which only an
+// opened row reads (GET /api/gateway/call): the Providers page asks on
+// every refresh and blanks them anyway.
+func (s *Server) RecentMeta() []Call {
+	return s.recentCalls(false)
+}
+
+func (s *Server) recentCalls(bodies bool) []Call {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	out := make([]Call, len(s.recent))
 	for i, c := range s.recent {
 		out[len(s.recent)-1-i] = c
+	}
+	s.mu.Unlock()
+	for i := range out {
+		if bodies {
+			out[i] = callWithBodies(out[i])
+		} else {
+			out[i].RequestBody, out[i].ResponseBody = "", ""
+			out[i].reqZip, out[i].resZip = nil, nil
+		}
 	}
 	return out
 }
@@ -685,25 +710,44 @@ func (s *Server) Recent() []Call {
 // still in the ring.
 func (s *Server) RouteCall(route int64) (Call, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := len(s.recent) - 1; i >= 0; i-- {
-		if route != 0 && s.recent[i].Route == route {
-			return s.recent[i], true
+	var c Call
+	found := false
+	for i := len(s.recent) - 1; i >= 0 && route != 0; i-- {
+		if s.recent[i].Route == route {
+			c, found = s.recent[i], true
+			break
 		}
 	}
-	return Call{}, false
+	s.mu.Unlock()
+	if !found {
+		return Call{}, false
+	}
+	return callWithBodies(c), true
+}
+
+// callWithBodies is c as a reader that asks for its bodies reads it.
+func callWithBodies(c Call) Call {
+	c.RequestBody, c.ResponseBody = unzipBody(c.RequestBody, c.reqZip), unzipBody(c.ResponseBody, c.resZip)
+	c.reqZip, c.resZip = nil, nil
+	return c
 }
 
 // RecentCall is the call numbered id while it is still in the ring.
 func (s *Server) RecentCall(id uint64) (Call, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, c := range s.recent {
+	var c Call
+	found := false
+	for _, c = range s.recent {
 		if c.ID == id {
-			return c, true
+			found = true
+			break
 		}
 	}
-	return Call{}, false
+	s.mu.Unlock()
+	if !found {
+		return Call{}, false
+	}
+	return callWithBodies(c), true
 }
 
 func (s *Server) record(c Call) {
@@ -716,6 +760,8 @@ func (s *Server) record(c Call) {
 		archive(c)
 		c.wire = nil
 	}
+	c.RequestBody, c.reqZip = zipBody(c.RequestBody)
+	c.ResponseBody, c.resZip = zipBody(c.ResponseBody)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
