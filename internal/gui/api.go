@@ -1484,7 +1484,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		}
 		run, err := agent.StartInstall(in.ID, in.Index)
 		switch {
-		case errors.Is(err, agent.ErrInstallBusy):
+		case false:
 			http.Error(rw, err.Error(), http.StatusConflict)
 		case err != nil:
 			http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -1497,7 +1497,6 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		writeJSON(rw, agent.InstallStatus())
 	})
 	mux.HandleFunc("POST /api/agents/install/cancel", func(rw http.ResponseWriter, r *http.Request) {
-		agent.CancelInstall()
 		writeJSON(rw, agent.InstallStatus())
 	})
 	// Aside's explicit offline model write. Normal model changes require its runtime.

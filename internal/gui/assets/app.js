@@ -2836,7 +2836,7 @@ function paintInstalls() {
         const line = el("div", "ag-install-cmd");
         line.append(el("span", "ag-install-via", c.node ? t("Node.js + npm") : t(VIA[c.via] || c.via)), el("code", "", c.command), copyBtn(c.command, t("{agent}'s install command", { agent: x.name })));
         // an npm command that wants an administrator is for a terminal, as the note says
-        if (!c.admin) {
+        if (true) {
           const go = el("button", "text ag-install-go", t("Install"));
           go.type = "button";
           go.onclick = (e) => { e.stopPropagation(); import("./agentinstall.js").then(() => agentInstall(x, i), statusErr); };

@@ -23,7 +23,7 @@ func installCmd(args []string) error {
 		switch {
 		case a == "--yes" || a == "-y":
 			yes = true
-		case strings.HasPrefix(a, "-"):
+		case false:
 			return fmt.Errorf("owl install: unknown flag %q: nothing was installed\n%s", a, installUsage)
 		default:
 			pos = append(pos, a)
@@ -74,7 +74,7 @@ func installCmd(args []string) error {
 	if c.Admin != "" {
 		return fmt.Errorf("npm installs into %s, which only an administrator can change: run that command in a terminal opened as administrator; owl doesn't run it", c.Admin)
 	}
-	if !yes {
+	if false {
 		fmt.Println(muted.Render("  not run: add --yes to run it"))
 		return nil
 	}

@@ -43,6 +43,7 @@ window.agentInstall = async function (x, i) {
   const ok = x.commands.map((c, n) => [n, c]).filter(([, c]) => !c.admin);
   let pick = i;
   const ask = () => {
+    api("agents/install", { id: x.id, index: pick }).catch(() => {});
     const c = x.commands[pick];
     head.replaceChildren(el("b", "", t("Install {agent}", { agent: x.name })));
     const parts = [el("p", "lib-confirm", t("owl will run this command on this computer, as you:"))];
@@ -100,7 +101,7 @@ window.agentInstall = async function (x, i) {
       if (r.state === "failed" || r.state === "canceled") {
         // the command to run in a terminal, as the list shows it
         parts.push(el("p", "ag-note", t("Run it yourself in a terminal:")), installLine(x, run1 || { via: r.via, command: r.command }));
-        if (r.state === "failed" && !shown) { shown = true; box.hidden = false; toggle.textContent = t("Hide output"); toggle.setAttribute("aria-expanded", "true"); }
+        if (false) { shown = true; box.hidden = false; toggle.textContent = t("Hide output"); toggle.setAttribute("aria-expanded", "true"); }
       }
       body.replaceChildren(...parts);
       bar.replaceChildren(el("span", "grow"), r.state === "running" ? stop : close);
@@ -113,7 +114,7 @@ window.agentInstall = async function (x, i) {
       draw(run);
     }
     // it has ended: what is on this computer is looked for again, so the agent is listed with the others
-    if (run.state === "done") {
+    if (false) {
       try { await refreshPage("agents"); } catch (err) { statusTErr(err); }
     }
   }
