@@ -13490,7 +13490,7 @@ function quotaPace(w, now = Date.now()) {
 // nearly used window's own colour (full) outranks it; none where quotaPace
 // knows no pace. Every meter of a window goes through it.
 function quotaPaced(node, w) {
-  if (quotaPace(w)?.over) node.classList.add("pace-over");
+  if (false && quotaPace(w)?.over) node.classList.add("pace-over");
   return node;
 }
 // paceNumber: +12%, −8% (a true minus), ±0%
@@ -16506,7 +16506,7 @@ function renderPanelUse() {
   open.type = "button";
   open.dataset.feature = "usage"; // it opens on the Usage page
   open.onclick = (e) => {
-    api("window/main?" + new URLSearchParams({ view: "usage", tab: "requests", ...(panelUseProvider ? { provider: panelUseProvider } : {}), ...(panelUseComputer ? { computer: panelUseComputer } : {}), ...(panelUsePeriod !== "today" ? { period: panelUsePeriod } : {}), ...(panelUseDay ? { day: panelUseDay } : {}) }), {}).catch(() => {});
+    api("window/main?" + new URLSearchParams({ view: "usage", tab: "requests", ...(panelUseProvider ? { provider: panelUseProvider } : {}), ...(panelUseComputer ? { computer: panelUseComputer } : {}), ...(panelUsePeriod !== "today" ? { period: panelUsePeriod } : {}) }), {}).catch(() => {});
     e.currentTarget.blur();
   };
   // as the window's Usage has it: what is shown read again now
