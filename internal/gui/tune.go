@@ -346,7 +346,18 @@ func tuneRoutes(mux *http.ServeMux) {
 			writeJSON(rw, tuneState{Days: days, Agents: []tuneAgent{}, Gateway: true})
 			return
 		}
-		writeJSON(rw, tuneFor(days))
+		out := tuneFor(days)
+		// v0.2.27's page reads every row's compact or ttl (a.compact ||
+		// a.ttl, then .cost): a row kept only for its Undo has neither and
+		// crashes it. The page has no Undo for one, so it goes; the kept
+		// state is left as it is for the next ask.
+		out.Agents = slices.Clone(out.Agents)
+		for i, a := range out.Agents {
+			out.Agents[i].Advice = slices.DeleteFunc(slices.Clone(a.Advice), func(x tuneAdvice) bool {
+				return x.Compact == nil && x.TTL == nil
+			})
+		}
+		writeJSON(rw, out)
 	})
 	// what Tuned for you changes is this computer's agents' settings,
 	// which in gateway mode serve none of the requests it was shown for

@@ -947,7 +947,7 @@ func showProviderAsking(p provider.Provider, ask bool) error {
 	if p.PassesErrors() {
 		kv("errors", "pass"+muted.Render("  sent to the agent as the vendor sent them, asked once"))
 	}
-	if p.OwlUserAgent {
+	if p.PassUserAgent {
 		kv("user-agent", "owl's"+muted.Render("  not the one the agent gave"))
 	}
 	if p.Unredacted {
@@ -1392,7 +1392,7 @@ func applyPairs(p *provider.Provider, pairs []string) error {
 				return fmt.Errorf("%s signs in as its own client, which sends the User-Agent it does; user-agent= is for a provider with an API key", p.Name)
 			}
 			// an account goes as its own client either way
-			p.OwlUserAgent = !on && p.Account == nil
+			p.PassUserAgent = on && p.Account == nil
 		case "search":
 			// yes: the vendor searches the web by itself, a web search a
 			// client offers going to it as it was sent (a relay in front of

@@ -3003,13 +3003,13 @@ func ResumeCommand(agent, id, cwd string) string { return resumeCommand("", agen
 
 // resumeCommand is ResumeCommand for a session in a WSL distro too, when
 // distro is set: see wslResume.
-// resumeFor is resumeCommand for a listed row: none for an agent whose
-// command is gone from this computer, which the line would fail to start.
+// resumeFor is resumeCommand for a listed row. It used to be none for an
+// agent whose command is gone from this computer, but v0.2.27's Sessions
+// page has no way to tell a row without a command from one it can't
+// resume, and draws no Resume for it: the row keeps the command it always
+// had. A command that is gone fails when it is run, as it did before.
 // A WSL distro's agent is looked for there, not here.
 func resumeFor(distro, agent, id, cwd, path string) string {
-	if distro == "" && cliGone(agent) {
-		return ""
-	}
 	return resumeCommand(distro, agent, id, cwd, path)
 }
 

@@ -73,6 +73,10 @@ type Option struct {
 	// (claude-opus-4-5-20251101 → claude-opus-4-5): the picker shows one
 	// row for the two, the alias, unless the dated one is the value set
 	Alias string `json:"alias,omitempty"`
+	// Named says an Alias is the model's own name, not a user's account
+	// name: v0.2.27's page takes every alias without it for an account
+	// and hides the model name wherever it is drawn (its noteAccounts)
+	Named bool `json:"named,omitempty"`
 	// FastFor is the agent a catalog model with a fast mode (provider.
 	// CanFast) is switched fast or not for, by the model in the picker
 	// (#954): the one whose requests the gateway sends it on; Fast is

@@ -1,13 +1,13 @@
 package provider
 
 // PassesUserAgent says a request to p goes with the User-Agent of the agent
-// that sent it (#1851): p is a key+URL provider, and the user didn't set
-// it to go as owl (OwlUserAgent). A signed-in account and a
+// that sent it (#1851): the user set PassUserAgent, and p is a key+URL
+// provider whose requests go as owl's. A signed-in account and a
 // plugin's provider sign as their own client; OpenCode's, Cline's and
 // Kilo's gateways are sent the client they serve (OwnClient), and another
 // owl is told owl by it: none of them takes the agent's in its place.
 func (p Provider) PassesUserAgent() bool {
-	return !p.OwlUserAgent && p.Account == nil && !p.OwnClient()
+	return p.PassUserAgent && p.Account == nil && !p.OwnClient()
 }
 
 // OwnClient says owl's requests to p go as a client the vendor serves,

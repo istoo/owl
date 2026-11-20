@@ -73,8 +73,8 @@ var uaRoutes = []struct{ name, path, body, upstream string }{
 }
 
 // uaSetup saves a key+URL provider "ua" on every API, at a uaVendor, with
-// pass for whether it sends the agent's User-Agent (OwlUserAgent off,
-// the default) and headers for the user's own, and "ug" the
+// pass for whether it sends the agent's User-Agent (PassUserAgent,
+// off by default) and headers for the user's own, and "ug" the
 // same on Gemini's API alone.
 func uaSetup(t *testing.T, pass bool, headers map[string]string) *uaVendor {
 	t.Helper()
@@ -83,7 +83,7 @@ func uaSetup(t *testing.T, pass bool, headers map[string]string) *uaVendor {
 	up := httptest.NewServer(v)
 	t.Cleanup(up.Close)
 	p := provider.Provider{ID: "ua", Name: "UA", Key: "k", Chat: up.URL + "/v1", Responses: up.URL + "/v1", Anthropic: up.URL, Gemini: up.URL + "/v1beta",
-		Models: []string{"m1", "embed-1", "gpt-image-1"}, OwlUserAgent: !pass, Headers: headers}
+		Models: []string{"m1", "embed-1", "gpt-image-1"}, PassUserAgent: pass, Headers: headers}
 	if err := provider.Save(p); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func uaSetup(t *testing.T, pass bool, headers map[string]string) *uaVendor {
 		t.Fatal(err)
 	}
 	// Gemini's own wire, which a provider on Chat too isn't asked on
-	g := provider.Provider{ID: "ug", Name: "UG", Key: "k", Gemini: up.URL + "/v1beta", Models: []string{"m1"}, OwlUserAgent: !pass, Headers: headers}
+	g := provider.Provider{ID: "ug", Name: "UG", Key: "k", Gemini: up.URL + "/v1beta", Models: []string{"m1"}, PassUserAgent: pass, Headers: headers}
 	if err := provider.Save(g); err != nil {
 		t.Fatal(err)
 	}
@@ -186,8 +186,8 @@ func TestUserAgentFor(t *testing.T) {
 		p    provider.Provider
 		want string
 	}{
-		{"key", provider.Provider{Chat: "https://api.example.com/v1"}, pi},
-		{"key, as owl", provider.Provider{Chat: "https://api.example.com/v1", OwlUserAgent: true}, owl},
+		{"key, as owl", provider.Provider{Chat: "https://api.example.com/v1"}, owl},
+		{"key, the agent's", provider.Provider{Chat: "https://api.example.com/v1", PassUserAgent: true}, pi},
 		{"account", provider.Provider{Chat: "https://api.z.ai/api/coding/paas/v4", Account: &provider.Account{Agent: "zcode"}}, owl},
 		{"opencode", provider.Provider{Chat: "https://opencode.ai/zen/v1"}, owl},
 		{"cline", provider.Provider{Preset: "clinepass", Chat: "https://api.cline.bot/api/v1"}, owl},

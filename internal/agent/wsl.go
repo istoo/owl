@@ -560,7 +560,7 @@ var wslKinds = []wslKind{
 			case "model":
 				// whether it has a base URL of its own is the distro's file
 				return func(cur map[string]string) []Option {
-					return joinedVia(group("Claude Code", claudeOwn(cur["model"], nil, catalog.Provider("anthropic"))), claudeViaShared(false), [2]string{"\x00claude-via", "\x00asleep"})
+					return joinedViaAfter(claudeViaShared(false), group("Claude Code", claudeOwn(cur["model"], nil, catalog.Provider("anthropic"))), [2]string{"\x00claude-via", "\x00asleep"})
 				}
 			case "effort", "ultracode", "statusline":
 				// their own options read only what was last seen; owl's

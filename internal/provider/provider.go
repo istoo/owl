@@ -442,17 +442,17 @@ type Provider struct {
 	// keeps owl's summary.
 	NativeCompaction bool `json:"nativeCompaction,omitempty"`
 
-	// OwlUserAgent has every request go to the vendor with owl's own
-	// User-Agent (owl/<version>). Off, the default, a key+URL provider is
-	// sent the User-Agent the agent gave (pi, opencode, Claude Code…) as it
-	// gave it (#1851, nb5p on Discord): a coding plan that serves only
-	// agents it names, or the user's own gateway behind owl, knows them
-	// by it. One the agent didn't give, and owl's own requests, go as
-	// owl either way. A signed-in account, a plugin's and one that goes
-	// as a client of its vendor's own keep the identity their signing
-	// gives (see PassesUserAgent). The opt-in "passUserAgent" it replaces
-	// is the default now, so a file that still says it reads the same.
-	OwlUserAgent bool `json:"owlUserAgent,omitempty"`
+	// PassUserAgent has a request go to the vendor with the User-Agent the
+	// agent that sent it gave (pi, opencode, Claude Code…), in place of
+	// owl's own (#1851): a coding plan that serves only agents it names
+	// knows them by it. One the agent didn't give, or owl's own
+	// requests, go as owl. Off, the default, every request goes as
+	// owl. Only a key+URL provider takes it: a signed-in account, a
+	// plugin's and one that goes as a client of its vendor's own keep the
+	// identity their signing gives (see PassesUserAgent). Upstream turns
+	// this around (owlUserAgent, passing the agent's by default); this
+	// fork keeps v0.2.27's setting, so a file it wrote reads the same.
+	PassUserAgent bool `json:"passUserAgent,omitempty"`
 
 	// PinUpstream, on the Cline API, has its DeepSeek models answered only
 	// by DeepSeek's own API (White Immortal on Discord) and its GLM models
@@ -1623,7 +1623,7 @@ func AddCopy(p Provider, from string) (string, error) {
 	if p.Socket == "" {
 		p.Socket = src.Socket
 	}
-	p.OwlUserAgent = p.OwlUserAgent || src.OwlUserAgent
+	p.PassUserAgent = p.PassUserAgent || src.PassUserAgent
 	if p.Website == "" {
 		p.Website = src.Website
 	}
