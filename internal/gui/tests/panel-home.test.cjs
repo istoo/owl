@@ -27,7 +27,7 @@ const AGENTS = [
 const PROFILES = [{ name: "home", summary: "", agents: [{ id: "codex", name: "Codex", fields: [{ key: "model", label: "model", value: "gpt-6-sol" }] }] }];
 const inHours = (h) => new Date(Date.now() + h * 3600e3).toISOString();
 const QUOTAS = [
-  { provider: "claude-max", name: "Claude", icon: "claude-color", plan: "Max 20x", windows: [{ name: "5 hours", used: 42, resetsAt: inHours(2.3) }, { name: "7 days", used: 68, resetsAt: inHours(70) }] },
+  { provider: "claude-max", name: "Claude", icon: "claude-color", plan: "Max 20x", windows: [{ name: "5 hours", used: 42, resetsAt: inHours(2.3) }, { name: "7 days", used: 68, startsAt: inHours(-98), resetsAt: inHours(70) }] },
   { provider: "codex-pro", name: "Codex", icon: "codex-color", plan: "Pro", windows: [{ name: "5 hours", used: 15, resetsAt: inHours(4.1) }, { name: "7 days", used: 31, resetsAt: inHours(120) }] },
 ];
 const MIDNIGHT = new Date();
@@ -152,6 +152,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(await first.textContent(), /68%/);
       assert.match(await first.textContent(), /42%/);
       assert.equal(await first.locator(".ph-q-bar i").evaluate((e) => e.style.width), "68%");
+      // 68% used with 58% of the week gone is past an even pace: its bar is amber; the other subscription's has no start to know
+      const fills = await page.locator("#pHome .ph-q .ph-q-bar i").evaluateAll((is) => {
+        const s = document.createElement("span");
+        s.style.color = "var(--amber)";
+        document.body.append(s);
+        const amber = getComputedStyle(s).color;
+        s.remove();
+        return { amber, bars: is.map((i) => getComputedStyle(i).backgroundColor) };
+      });
+      assert.equal(fills.bars[0], fills.amber, "a window past an even pace has an amber bar");
+      assert.notEqual(fills.bars[1], fills.amber, "one with no known start keeps its bar");
       assert.deepEqual(await noSideways(page), [], "nothing runs sideways");
 
       // what the overview says today was, the Usage detail says the same:
