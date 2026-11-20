@@ -2528,7 +2528,10 @@ func codexIn(at place) *Agent {
 					if e := subEfforts(); len(e) > 0 {
 						return static(e...)
 					}
-					return static("low", "medium", "high", "xhigh")
+					// the same fallback as the effort field's, every level
+					// Codex takes: the upstream merge narrowed this one to
+					// low..xhigh and 1ed4b427e restored the other
+					return static(codexEffortsAll...)
 				},
 			},
 			{

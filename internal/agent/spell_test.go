@@ -208,6 +208,21 @@ func TestEffortFallbacksOfferEveryLevelTheAgentKnows(t *testing.T) {
 				t.Errorf("%s %q: %q, %v", c.name, want, got, err)
 			}
 		}
+		// and the same for the effort a subagent starts at, whose model
+		// unknown leaves the same every-level fallback (1ed4b427e restored
+		// the effort field's after the upstream merge, not this one)
+		if c.name == "codex" {
+			sf := c.a.Field("subagent_effort")
+			if sf == nil {
+				t.Fatal("codex: no subagent effort field")
+			}
+			sopts := sf.Options(c.a.Values())
+			for _, want := range c.want {
+				if !slices.ContainsFunc(sopts, func(o Option) bool { return o.Value == want }) {
+					t.Errorf("codex's subagent effort offers %v, wanting %q", sopts, want)
+				}
+			}
+		}
 	}
 }
 
