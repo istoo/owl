@@ -287,8 +287,10 @@ func readLogSnapshot() *logSnapshot {
 	for _, c := range next.blocks {
 		next.bytes += c.Bytes
 	}
-	logIndex.snapshot = next
+	// the write swaps the blocks it keeps for its pages: it runs before
+	// the snapshot is published, which readers decode without a lock
 	logDiskWrite(next)
+	logIndex.snapshot = next
 	return next
 }
 

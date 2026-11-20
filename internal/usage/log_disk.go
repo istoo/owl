@@ -2,6 +2,7 @@ package usage
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"os"
@@ -206,8 +207,89 @@ func logDiskWrite(s *logSnapshot) {
 		return
 	}
 	if logDiskSave(s) == nil {
+		logDiskMap(s)
 		w.path, w.off, w.at = s.path, s.full.off, time.Now()
 	}
+}
+
+// logDiskMap swaps the full blocks just written for the pages of the file
+// they are in, as a start reads them (logDiskRead): a history first
+// parsed in this process kept its ~50 MB of archives on the heap until
+// the next start, though every reader decodes a block on demand anyway.
+// A block whose bytes the file doesn't hold is left as it was, and the
+// snapshot is then written whole again at the next write.
+func logDiskMap(s *logSnapshot) *diskMapping {
+	if s.full.n > len(s.blocks) || s.full.probes > len(s.probes) || s.full.n+s.full.probes == 0 {
+		return nil
+	}
+	m, ok := mapDiskFile(logDiskPath())
+	if !ok {
+		return nil
+	}
+	var probes, blocks [][]byte
+	whole := false
+	ok = readMapped(m, func() {
+		_, b, good := cutDiskEntry(m.data)
+		if !good {
+			return
+		}
+		take := func() ([]byte, bool) {
+			raw, rest, good := cutDiskEntry(b)
+			if !good {
+				return nil, false
+			}
+			b = rest
+			_, _, archive, good := diskEntryArchive(raw)
+			return archive, good
+		}
+		for range s.full.probes {
+			archive, good := take()
+			if !good {
+				return
+			}
+			probes = append(probes, archive)
+		}
+		if _, rest, good := cutDiskEntry(b); !good { // the probes after the full blocks
+			return
+		} else {
+			b = rest
+		}
+		for range s.full.n {
+			archive, good := take()
+			if !good {
+				return
+			}
+			blocks = append(blocks, archive)
+		}
+		whole = len(b) == 0
+	})
+	if !ok || !whole {
+		return nil
+	}
+	for i, archive := range probes {
+		if !bytes.Equal(archive, s.probes[i].Archive) {
+			return nil
+		}
+	}
+	for i, archive := range blocks {
+		if !bytes.Equal(archive, s.blocks[i].Archive) {
+			return nil
+		}
+	}
+	// The chunks are copied, not written: a continued parse shares the
+	// published snapshot's blocks, which a reader may decode now, and
+	// published chunks are never changed.
+	for i, archive := range probes {
+		next := *s.probes[i]
+		next.Archive, next.mapped = archive, m
+		s.probes[i] = &next
+	}
+	for i, archive := range blocks {
+		next := *s.blocks[i]
+		next.Archive, next.mapped = archive, m
+		s.blocks[i] = &next
+	}
+	return m
 }
 
 func logDiskSave(s *logSnapshot) error {

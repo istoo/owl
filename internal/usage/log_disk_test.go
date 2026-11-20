@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/istoo/owl/internal/probelog"
 	"github.com/istoo/owl/internal/provider"
@@ -147,6 +151,158 @@ func TestStartReadsKeptLogBlocks(t *testing.T) {
 	restartLog()
 	if want := logRead(t, readLogSnapshot()); !reflect.DeepEqual(rewritten, want) {
 		t.Fatal("the log written over isn't read as a parse of it reads it")
+	}
+}
+
+// The full blocks a first parse made are of the file's pages once it is
+// kept, not of the heap until the next start: a long history's ~50 MB of
+// archives, which every reader decodes a block of on demand anyway.
+func TestBuiltLogBlocksAreKeptOnDisk(t *testing.T) {
+	if !mapsFiles {
+		t.Skip("this system maps no file")
+	}
+	pageHome(t)
+	settleLogClock(t)
+	t.Cleanup(restartLog)
+	restartLog()
+	logLines(t, 0, 3*logBlockRows+100)
+	s := readLogSnapshot()
+	if s.full.n != 3 {
+		t.Fatalf("%d full blocks, want 3", s.full.n)
+	}
+	check := func(kind string, chunks []*rowChunk, n int) {
+		t.Helper()
+		for i := range n {
+			c := chunks[i]
+			if c == nil || len(c.Archive) == 0 {
+				t.Fatalf("%s block %d: no archive", kind, i)
+			}
+			if c.mapped == nil {
+				t.Fatalf("%s block %d: of the heap after the file was kept", kind, i)
+			}
+			at, start := uintptr(unsafe.Pointer(unsafe.SliceData(c.Archive))), uintptr(unsafe.Pointer(unsafe.SliceData(c.mapped.data)))
+			if at < start || at+uintptr(len(c.Archive)) > start+uintptr(len(c.mapped.data)) {
+				t.Fatalf("%s block %d: archive outside the mapping", kind, i)
+			}
+		}
+	}
+	check("gateway", s.blocks, s.full.n)
+	check("probe", s.probes, s.full.probes)
+	before := logRead(t, s)
+	// the mapping, not the path, keeps the pages: removing the file it
+	// was read from changes nothing these blocks read
+	if err := os.Remove(logDiskPath()); err != nil {
+		t.Fatal(err)
+	}
+	if got := logRead(t, s); !reflect.DeepEqual(got, before) {
+		t.Fatal("the mapped blocks no longer read as the log's parse")
+	}
+}
+
+// A continued parse shares the published snapshot's blocks: the write
+// that puts them on the file copies them before it gives them its pages,
+// so a reader of the snapshot before decodes what it was.
+func TestKeptLogBlocksStayAsTheirSnapshotReadThem(t *testing.T) {
+	if !mapsFiles {
+		t.Skip("this system maps no file")
+	}
+	pageHome(t)
+	settleLogClock(t)
+	t.Cleanup(restartLog)
+	restartLog()
+	logLines(t, 0, 2*logBlockRows+100)
+	before := readLogSnapshot()
+	want := logRead(t, before)
+	first := before.blocks[0]
+	if first.mapped == nil {
+		t.Fatal("the first read's block isn't on the file")
+	}
+	// the next save isn't held back by the ten minutes between writes
+	logDiskWrote.Lock()
+	logDiskWrote.at = time.Time{}
+	logDiskWrote.Unlock()
+	logLines(t, 2*logBlockRows+100, logBlockRows)
+	after := readLogSnapshot()
+	if after == before || after.full.n <= before.full.n {
+		t.Fatalf("not written again: %d blocks before, %d after", before.full.n, after.full.n)
+	}
+	if after.blocks[0] == first {
+		t.Fatal("the write changed a block its snapshot before still reads")
+	}
+	if got := logRead(t, before); !reflect.DeepEqual(got, want) {
+		t.Fatal("the snapshot before the write no longer reads as it did")
+	}
+}
+
+// A history first parsed in this process keeps no more of its blocks on
+// the heap than the file's size: before the write's blocks went to its
+// pages, a long history's ~50 MB stayed until the next start. Measured in
+// a process of its own, so the package's earlier tests aren't counted
+// (tasks/lessons.md, 11-14).
+func TestLogBlocksMemory(t *testing.T) {
+	if !mapsFiles {
+		t.Skip("this system maps no file")
+	}
+	const child = "OWL_TEST_LOG_BLOCKS_HEAP"
+	if os.Getenv(child) != "" {
+		pageHome(t)
+		settleLogClock(t)
+		t.Cleanup(restartLog)
+		restartLog()
+		logWideLines(t, 60000)
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		s := readLogSnapshot()
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		runtime.KeepAlive(s)
+		held, archives := int64(after.HeapAlloc)-int64(before.HeapAlloc), 0
+		for _, c := range s.blocks {
+			archives += len(c.Archive)
+		}
+		t.Logf("%d blocks hold %d bytes of archives; the heap grew by %d bytes", len(s.blocks), archives, held)
+		if held > int64(archives)/4+(1<<20) {
+			t.Fatalf("%d bytes of archives put %d bytes on the heap", archives, held)
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLogBlocksMemory$", "-test.v")
+	cmd.Env = append(os.Environ(), child+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the measurement failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "the heap grew by") {
+		t.Fatalf("the measurement printed nothing: %s", out)
+	}
+	t.Logf("%s", strings.TrimSpace(string(out)))
+}
+
+// logWideLines writes n calls of a long, varied body, as a real history's
+// records are.
+func logWideLines(t *testing.T, n int) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(Path()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(Path(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := json.NewEncoder(f)
+	at := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		r := Record{Time: at.Add(time.Duration(i) * time.Second), Agent: fmt.Sprint("agent-", i%7), Provider: fmt.Sprint("p", i%3),
+			Model: fmt.Sprint("model-", i%11), Host: fmt.Sprintf("h%d.example", i%5), Session: fmt.Sprintf("s%d", i/40),
+			Input: 1200 + i%97, Output: 300, Status: 200, RequestID: fmt.Sprintf("%032x%s", i*2654435761, strings.Repeat("q", 64)),
+			Error: strings.Repeat(fmt.Sprintf("e%d-", i), 30)}
+		if err := enc.Encode(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
