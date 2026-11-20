@@ -155,3 +155,15 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 
 - 规则：交给验证 agent 的被测版本，给出确切目录，并要求构建前先过身份检查：分支名、未提交改动数、与基线的差异文件数，构建后再用只有新版才有的接口行为取一次指纹；报告首行写明。两边零差异时，先怀疑两边是不是同一份代码。
 - 原因：深度验证按「分支名去找」时拿到了一个早已废弃的旧 worktree（HEAD 3cf21bcf9，代码等同 v0.2.27），跑了三个多小时，得出「零未知差异」。它其实是在拿 v0.2.27 和自己比。它报告里写了「资产与基线逐字节相同、后端源码与基线相同」，这本身就说明测错了对象，却被当成了结论。
+
+## GUI 测试报「浏览器不存在」先是环境，不是代码红（2026-11-20，v0.2.30 验证）
+
+- 规则：`browserType.launch: Executable doesn't exist at .../ms-playwright/chromium-NNNN` 是 NODE_PATH 里那份 Playwright 与 `~/Library/Caches/ms-playwright` 对不上。按 `internal/gui/tests/README.md` 跑 `playwright install chromium webkit`，再判断红绿；不要把这种失败记成「测试红」或「改坏了」。
+- 原因：本机 Playwright 随 Neo-agent 升到 1.65.1（要 chromium-1255、webkit-2388），缓存里只有旧的 1234/2248。七个文件 128 项里 68 项因此变红，其中一批还按「环境问题」被误读成代码回归，白花了一轮排查。
+- 怎么验证：装完再跑同一组文件，红项应从 68 降到只剩代码或既有红项。
+
+## 断言弹窗内容要等它画完，不是等盒子出现（2026-11-20，首次启动导入测试中文偶发红）
+
+- 规则：对话框先以 loading 态出现（这里是 `.editor.importapps` 里的「Reading other apps…」），`waitFor({state:"visible"})` 之后立刻读 `textContent()` 会读到 loading 文案。要么等真正内容出现（等待某个只可能来自加载完毕的字符串或行），要么等 loading 节点被替换。
+- 原因：`first-run-guide` 在 en 下碰巧通过，zh/zh-TW/ja/de 全部读到 loading 文案而红；同一份测试在另一台机器连跑两次都绿，差点被当成偶发负载。
+- 怎么验证：把等待条件退回「可见即读」，zh 下十次里十次红；换成等内容后两引擎五种语言全绿。
