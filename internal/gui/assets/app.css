@@ -2978,6 +2978,17 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .provider .pswitch.on i { transform: translateX(12px); }
 .editor .off-note { grid-column: 1 / -1; }
 .uses { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+/* a provider's Check all result: a dot and its words, as small as the key
+   pill beside it. Its kind is the colour, and what to look at next is its
+   title (providerhealth.js); a provider that was not checked has none */
+.pv-health { display: inline-flex; align-items: center; gap: 5px; flex: none; height: 22px; max-width: 132px; margin-left: 4px; padding: 0 8px; border-radius: 6px; background: var(--pill); color: var(--muted); font: inherit; font-size: 11px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-health::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pv-health.ok { background: var(--green-soft); color: var(--green); }
+.pv-health.auth { background: var(--amber-soft); color: var(--amber); }
+.pv-health.network, .pv-health.server { background: var(--red-soft); color: var(--red); }
+.pv-health.wait::before { animation: pv-health-wait .9s ease-in-out infinite; }
+@keyframes pv-health-wait { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pv-health.wait::before { animation: none; } }
 .use {
   width: 26px; height: 26px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;

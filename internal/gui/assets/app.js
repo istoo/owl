@@ -6393,6 +6393,7 @@ function renderProviders(quiet) {
   if (importingApps) dialog = renderImportApps(importingApps);
   keptIcons = null;
   markUpstream();
+  window.pvHealthRows?.();
   view.scrollTop = top; // first: a closing dialog folds into its row where it is
   if (dialog) openModal(dialog, quiet); else closeModal();
 }
@@ -6515,6 +6516,7 @@ function findProviders() {
   none.hidden = !pvQuery || on + off > 0;
   none.textContent = none.hidden ? "" : t("No provider matches “{q}”", { q: q.value.trim() });
 }
+$("#pvHealth").onclick = () => import("./providerhealth.js").then((m) => m.toggle(), statusErr);
 {
   const q = $("#pvQ");
   if (q) {

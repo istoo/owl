@@ -2044,6 +2044,10 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// Test, for test: models to send a request each, in place of
 			// one per endpoint
 			Test []string `json:"test"`
+			// Health, for test: the one-click check of the provider list
+			// (provider.CheckHealth), which asks the model list alone and
+			// sends no request an agent would be answered for
+			Health bool `json:"health"`
 			// As, for test: the agent the request is asked as
 			// (provider.TestAs: "codex", "claude-code"), "" as owl
 			As string `json:"as"`
@@ -3075,6 +3079,12 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				defer stop()
 				testRuns.Store(req.Run, stop)
 				defer testRuns.Delete(req.Run)
+			}
+			if req.Health {
+				// the list's Check all: one model-list request with the
+				// saved key and proxy, no agent's request and no write
+				writeJSON(rw, p.CheckHealth(ctx))
+				return
 			}
 			saved := *p
 			if req.Typed {
