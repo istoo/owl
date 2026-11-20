@@ -1153,6 +1153,11 @@ body.window .field.solo { grid-column: auto; }
    is used than an even pace would have */
 .quota-reset .quota-pace { font-variant-numeric: tabular-nums; }
 .quota-reset .quota-pace.over { color: var(--amber); }
+/* the meters of a window used faster than an even pace through it
+   (quotaPaced): the fill amber. A nearly used window's own colour (full)
+   comes later or is more specific, and stays. */
+.quota-track i.pace-over, .quota-all-bar i.pace-over, .ph-q-bar i.pace-over, .acc .aq-track i.pace-over { background: var(--amber); }
+.pq-ring.pace-over .pq-dial { background: linear-gradient(90deg, var(--amber) calc(var(--p) * 1%), color-mix(in srgb, var(--fg) 9%, transparent) 0); }
 /* a window's whole (WindowHolds): a line of its own under the reset */
 .quota-reset .quota-holds { flex-basis: 100%; display: flex; flex-wrap: wrap; column-gap: 4px; min-width: 0; }
 .quota-reset .quota-holds > span { white-space: normal; min-width: 0; }
