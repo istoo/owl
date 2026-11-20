@@ -16288,8 +16288,10 @@ function focusQuotaCard() {
   if (!quotaFocus) return;
   if (performance.now() > quotaFocusUntil) { quotaFocus = ""; return; }
   const box = mode === "panel" ? $("#panelQuota") : $("#subscriptionUsage");
-  if (mode === "panel") setPanelTab("usage");
-  else if (view !== "usage" || owl.call("usage", "tab") !== "usage") return;
+  if (mode === "panel") {
+    // 菜单栏点击已经打开了额度页；延后的定位不应把已返回的用户拉回去。
+    if (panelTab !== "usage") { quotaFocus = ""; return; }
+  } else if (view !== "usage" || owl.call("usage", "tab") !== "usage") return;
   const id = CSS.escape(quotaFocus);
   // a key's balance shown on its plan's card (keyCards): that card
   const target = box.querySelector(`[data-card="${id}"]`) || box.querySelector(`[data-bal-card="${id}"]`) || box.querySelector(`[data-provider="${id}"]`);

@@ -202,6 +202,26 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.waitForFunction(() => document.body.dataset.ptab === "usage");
       await page.locator('#panelQuota .pq-card[data-card="claude-max"]').waitFor();
       await home(page);
+
+      // 在定位回调执行之前返回概览，模拟迟到的一帧。
+      const after = await page.evaluate(() => {
+        const requestFrame = window.requestAnimationFrame;
+        let locate;
+        window.requestAnimationFrame = (fn) => {
+          if (fn !== focusQuotaCard) return requestFrame.call(window, fn);
+          locate = fn;
+          return 0;
+        };
+        try {
+          panelQuotaFocus("claude-max");
+          document.querySelector(".ph-back").click();
+          locate();
+          return document.body.dataset.ptab;
+        } finally {
+          window.requestAnimationFrame = requestFrame;
+        }
+      });
+      assert.equal(after, "home", "迟到的额度定位不能重新打开详情");
       await page.evaluate(() => panelUseFocus("7d"));
       await page.waitForFunction(() => document.body.dataset.ptab === "stats");
       await page.waitForFunction(() => [...document.querySelectorAll("#panelUsage .segs .opt")].some((b) => b.classList.contains("on") && /7/.test(b.textContent)));
