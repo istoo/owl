@@ -7444,7 +7444,7 @@ function renderAdd() {
       // a vendor's China endpoint is a preset of its own: one row with the global one
       // with no search, one already added (both ends of a pair) is left out: its row in the list opens it
       const rows = providers.presets.filter((p) => p.kind === kind && !globalOf(p))
-        .map((p) => [p, chinaOf(p)]).filter(([p, cn]) => f ? hit(p) || (cn && hit(cn)) : !(p.added && (!cn || cn.added)));
+        .map((p) => [p, chinaOf(p)]).filter(([p, cn]) => f ? hit(p) || (cn && hit(cn)) : true);
       if (!rows.length) continue;
       any = true;
       const grid = section(title, hint);
@@ -7454,7 +7454,7 @@ function renderAdd() {
         grid.append(b);
       }
     }
-    if (f) {
+    if (!any) {
       // both ways out stay under whatever the search found
       const none = el("div", "none");
       if (!any) none.append(t("Nothing called “{q}”. ", { q: presetQuery.trim() }));
