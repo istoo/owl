@@ -1,15 +1,17 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The Gateway page's Connect speaks owl's own System One API too (ARNO on
+// Settings > Network and sharing's Connect speaks owl's own System One API too (ARNO on
 // Discord: gateway添加system one api 有想法吗): a System One tab whose
 // snippets POST …/v1/systemone with a decision model, picked from the
 // decision models alone; a click on one in the list switches to it, a click
-// on any other model back to OpenAI's. No SDK speaks it, so it has no
+// on any other model (All models, on the Providers page) back to OpenAI's. No SDK speaks it, so it has no
 // shell variables.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -33,7 +35,7 @@ function serve(lang, theme) {
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"${theme}",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: { lang, theme } });
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") return json(providersOf(providers));
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -75,8 +77,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await browser.close();
         });
 
-        await page.goto("http://owl.test/?view=gateway&lang=curl");
-        await page.locator("#gwModels .row.model").first().waitFor();
+        await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+        await page.goto("http://owl.test/?view=settings&tab=network&lang=curl");
+        // the models are picked on the Providers page, the snippets read on
+        // Settings > Network and sharing: the test goes between the two
+        const toModels = async () => {
+          await page.evaluate(() => show("providers"));
+          await page.locator("#gwModels .row.model").first().waitFor();
+        };
+        const toConnect = async () => {
+          await page.evaluate(() => show("gateway")); // the old page's name, redirected to Network and sharing
+          await page.locator("#connect .segs").first().waitFor();
+        };
+        await page.locator("#connect .segs").first().waitFor();
         assert(await page.getByText(w.five).first().isVisible(), "the head names the one address");
         const connect = page.locator("#connect");
         const modelCode = () => connect.locator(".val").nth(2).locator("code").textContent();
@@ -103,17 +116,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.match(await snippet(), /fetch\("http:\/\/127\.0\.0\.1:3999\/v1\/systemone"/);
 
         // a click on a decision model puts it in, a click on another model
-        // goes back to OpenAI's. The line on where gateway keys come from
-        // (unshared) puts the rows past the window's foot: the reader
-        // wheels down to them
+        // goes back to OpenAI's. The models are picked on the Providers page and
+        // Connect is read on Network and sharing; a row past the window's
+        // foot is wheeled to, as the reader would
+        await toModels();
         await reach(page, rowOf(page, "cf/@cf/cloudflare/clef"));
         await rowOf(page, "cf/@cf/cloudflare/clef").click();
-        assert.equal(await modelCode(), "cf/@cf/cloudflare/clef");
         assert(await rowOf(page, "cf/@cf/cloudflare/clef").evaluate((r) => r.classList.contains("selected")));
+        await toConnect();
+        assert.equal(await modelCode(), "cf/@cf/cloudflare/clef");
+        await toModels();
+        await reach(page, rowOf(page, "acme/gpt-5.5"));
         await rowOf(page, "acme/gpt-5.5").click();
+        await toConnect();
         assert.equal(await connect.locator(".segs").first().locator(".opt.on").textContent(), "OpenAI");
         assert.equal(await modelCode(), "acme/gpt-5.5");
+        await toModels();
+        await reach(page, rowOf(page, "cf/@cf/cloudflare/clef"));
         await rowOf(page, "cf/@cf/cloudflare/clef").click();
+        await toConnect();
         assert.equal(await connect.locator(".segs").first().locator(".opt.on").textContent(), "System One");
         assert.equal(await modelCode(), "cf/@cf/cloudflare/clef", "the decision model picked is kept");
         assert.deepEqual(errors, []);

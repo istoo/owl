@@ -4,7 +4,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 const { fixture, keyAction, confirmKeyAction } = require("./fixtures/caller-keys.cjs");
-const { openPart } = require("./reader.cjs");
+const { openPart, reach } = require("./reader.cjs");
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
@@ -30,8 +30,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const w = lang === "zh"
         ? { create: "创建", name: "网关密钥名称", remove: "移除", copy: "复制网关密钥", disable: "停用密钥", enable: "启用密钥", requests: "请求", usage: "用量" }
         : { create: "Create", name: "Gateway key name", remove: "Remove", copy: "Copy gateway key", disable: "Disable key", enable: "Enable key", requests: "Requests", usage: "Usage" };
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+      await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       assert.equal(await page.locator("#gatewayKeys .accts").count(), 1);
       assert.equal(await page.locator("#gatewayKeysBlock").isVisible(), true);
       assert.equal(await page.locator("#gatewayKeys .acc.add").count(), 0, "creation is offered once, in the header");
@@ -84,7 +85,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#lanList .lan-address-row").waitFor();
       assert.equal(await page.locator("#lanList").getByRole("button", { name: w.copy, exact: true }).count(), 0,
         "Settings does not duplicate key management");
-      await page.locator("#nav").getByRole("button", { name: lang === "zh" ? "网关" : "Gateway", exact: true }).click();
+      // the keys sit in the same Network tab, under the sharing switch: no page to go to
       await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length === 5);
       let lanRow = page.locator("#gatewayKeys .acc[data-key]", { has: page.locator(".rename", { hasText: /^Owl$/ }) });
       const lanID = await lanRow.getAttribute("data-key");
@@ -99,6 +100,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#modal").getByRole("button", { name: cancelLabel, exact: true }).click();
       await page.locator("#modal").waitFor({ state: "hidden" });
       assert.equal(events.filter((e) => e.action === "rotate-key").length, 0);
+      await reach(page, lanRow); // the menu is clicked once its row is in sight
       await confirmKeyAction(page, lanRow, rotateLabel);
       await page.waitForFunction((masked) => document.querySelector('#gatewayKeys .acc[data-key^="lan-key"] .plan')?.textContent !== masked, before);
       assert.equal(await lanRow.getAttribute("data-key"), lanID, "rotation keeps the key's identity");
@@ -109,6 +111,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.keyboard.press("Escape");
       await page.locator("#modal").waitFor({ state: "hidden" });
       assert.equal(events.filter((e) => e.action === "remove-key").length, 0);
+      await reach(page, lanRow); // the menu is clicked once its row is in sight
       await confirmKeyAction(page, lanRow, w.remove);
       await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length === 4);
       await page.locator("#prefs").click();
@@ -125,19 +128,23 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#lanList .lan-address-row").waitFor({ state: "detached" });
       await share.click();
       await page.locator("#lanList .lan-address-row").waitFor();
-      await page.locator("#nav").getByRole("button", { name: lang === "zh" ? "网关" : "Gateway", exact: true }).click();
+      // the keys sit in the same Network tab, under the sharing switch: no page to go to
       await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length === 5);
       lanRow = page.locator("#gatewayKeys .acc[data-key]", { has: page.locator(".rename", { hasText: /^Owl$/ }) });
       assert.notEqual(await lanRow.getAttribute("data-key"), lanID, "recreated LAN key appears without a page reload");
       assert.equal(await page.locator(`#gatewayKeys .acc[data-key="${lanID}"]`).count(), 0);
       tablet = page.locator("#gatewayKeys .acc[data-key]", { hasText: "Travel" });
       await tablet.waitFor();
+      await reach(page, tablet); // the menu is clicked once its row is in sight
       await confirmKeyAction(page, tablet, w.remove);
       await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length === 4);
       await page.setViewportSize({ width: 560, height: 740 });
       // the narrow window's layout lands with the next frame: wait for it,
       // not read the wide one's width
-      await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth);
+      // (the nav's thumb is parked, unseen, where the last tab was when no tab
+      // is on, as on every page that is not a tab, and keeps its place through
+      // a resize: it is not what is looked for)
+      await page.waitForFunction(() => [...document.querySelectorAll("body *")].every((n) => n.getBoundingClientRect().right <= innerWidth + 1 || !n.getClientRects().length || getComputedStyle(n).opacity === "0"));
       assert.deepEqual(errors, []);
       if (process.env.ARTIFACT_DIR) {
         await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });

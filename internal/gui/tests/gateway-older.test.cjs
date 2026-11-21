@@ -1,7 +1,7 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // An older owl keeping the gateway's port sends every agent's request its
 // own way, without this version's fixes (#506: a Factory 403 worded as
-// v0.1.550 words it, to people on v0.1.630). The Gateway card says which
+// v0.1.550 words it, to people on v0.1.630). The gateway group's card (Settings > Network & sharing) says which
 // version serves and what to do, in English and Chinese; another owl of
 // the same version is just "served by another owl".
 const assert = require("node:assert/strict");
@@ -57,7 +57,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(c.lang, gw));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         const state = page.locator("#gateway .state");
         await state.waitFor();
         if (older) {

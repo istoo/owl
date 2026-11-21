@@ -730,7 +730,7 @@ body.window .view { padding: 2px max(0px, calc(16px - var(--bar, 0px))) 8px 16px
    stretch them alone edge to edge while the others sit in the middle (面条 on
    Discord): their tables and charts lay out by the room they get. Masking
    too, which stretched alone (refeccd on Discord) */
-body.window :is(#view-agents, #view-sessions, #view-providers, #view-routing, #view-gateway, #view-usage, #view-masking, #view-library, #view-plugins, #view-settings) { padding-left: max(16px, calc(50% - 600px)); padding-right: max(0px, calc(max(16px, calc(50% - 600px)) - var(--bar, 0px))); }
+body.window :is(#view-agents, #view-sessions, #view-providers, #view-routing, #view-usage, #view-library, #view-plugins, #view-settings) { padding-left: max(16px, calc(50% - 600px)); padding-right: max(0px, calc(max(16px, calc(50% - 600px)) - var(--bar, 0px))); }
 /* a view takes focus (tabIndex -1) only so the keys scroll it after a click;
    a ring round the whole list there marks nothing a reader can act on (#1601) */
 .view:focus { outline: none; }
@@ -2702,9 +2702,6 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .gw-sk-field { min-height: 30px; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
 .gw-sk-field .skeleton { width: min(310px, 72%); height: 10px; }
 .gw-sk-field .skeleton.short { width: min(210px, 48%); height: 7px; }
-.gw-sk-row { pointer-events: none; }
-.gw-sk-model { width: 190px; height: 10px; }
-.gw-sk-provider { width: 82px; height: 9px; }
 .gw-sk-call { cursor: default; pointer-events: none; }
 .gw-sk-call .skeleton { height: 8px; }
 .gw-sk-call .time { width: 54px; }
@@ -2735,10 +2732,6 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 /* Share on local network, on the card under the state, and the addresses
    the gateway answers on: one quiet line each, the copy beside it */
 #gatewayLan { border-top: 1px solid var(--line-2); }
-/* narrow, the choice goes under its name rather than wrap it word by word */
-.gw-share { min-height: 40px; padding: 5px 10px 5px 11px; flex-wrap: wrap; row-gap: 4px; }
-.gw-share .name { flex: 1 1 9em; font-size: 12.5px; white-space: normal; overflow-wrap: anywhere; }
-.gw-share .segs { align-self: center; flex: none; max-width: 100%; margin-left: auto; }
 /* the addresses: their labels one column as wide as the longest, the
    address and its copy the next */
 .gw-urls { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 14px; padding: 0 10px 7px 11px; }
@@ -2747,7 +2740,6 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .gw-url-val { display: flex; align-items: center; gap: 6px; min-height: 28px; min-width: 0; }
 .gw-url code { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
 .gw-url .copy { flex: none; }
-.gw-url-none { grid-column: 2; padding: 4px 0 2px; font-size: 11.5px; color: var(--muted); }
 /* a gateway key: the copy right beside the masked key, the rest under
    its … (the owner: a copy out in the row's middle looked lost) */
 .gw-keys .acc > .plan + .copy { margin-left: -5px; }
@@ -2771,9 +2763,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .gw-keys.sorting > .acc.dragging { z-index: 2; background: var(--card-2); box-shadow: 0 0 0 1px var(--line); transition: none; will-change: transform; }
 .gw-keys .gw-key-more { flex: none; color: var(--muted); }
 .gw-keys .gw-key-more:is(:hover, .open) { color: var(--fg); }
-#view-gateway .row-head, #view-usage .row-head { margin: 14px 0 6px; padding: 0 2px; }
+#gwModelsHead, #view-usage .row-head { margin: 14px 0 6px; padding: 0 2px; }
 #view-usage .row-head.quota-head { margin: 6px 0 6px; }
-#view-gateway .row-head .note { font-size: 11px; color: var(--faint); }
+#gwDockMore .row-head .note, #gwModelsHead .note { font-size: 11px; color: var(--faint); }
 /* providers switched off, folded below the ones on */
 #view-providers .off-head { margin: 14px 0 6px; padding: 0 2px; flex: none; }
 #view-providers .off-head .note { font-size: 11px; color: var(--faint); }
@@ -3490,9 +3482,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 /* the add sheet: presets as tiles, one key away */
 .sheet { padding: 6px 0 8px; flex: none; }
 .sheet .row-head { padding: 0 2px; gap: 6px; }
-.sheet .find, #view-gateway .find { height: 24px; width: 160px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; transition: border-color .12s; }
-.sheet .find:focus, #view-gateway .find:focus { border-color: var(--accent); }
-.sheet .find::placeholder, #view-gateway .find::placeholder { color: var(--faint); }
+.sheet .find, #gwModelsHead .find { height: 24px; width: 160px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); font-size: 12px; outline: none; transition: border-color .12s; }
+.sheet .find:focus, #gwModelsHead .find:focus { border-color: var(--accent); }
+.sheet .find::placeholder, #gwModelsHead .find::placeholder { color: var(--faint); }
 .sheet .kind { display: flex; align-items: baseline; gap: 8px; padding: 22px 8px 6px; font-size: 12px; }
 .sheet .kind b { font-size: 13px; font-weight: 600; color: var(--fg); }
 .sheet .kind span { color: var(--faint); }
@@ -3518,7 +3510,7 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 #gwModels .none { padding: 16px; color: var(--muted); font-size: 12px; text-align: center; }
 /* no gateway key yet: said in its card as Recent calls says it has none */
 #gatewayKeys .none { padding: 13px 14px; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
-#view-gateway .row-head .find { margin-right: 8px; }
+#gwModelsHead .find { margin-right: 8px; }
 /* a row of the add sheet: an icon and a name, no frame; a row already
    added has a small green dot after its name rather than fading */
 .tile {

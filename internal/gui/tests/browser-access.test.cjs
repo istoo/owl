@@ -46,6 +46,8 @@ function server(lang, web, posts, gets) {
       return json(say());
     }
     if (url.pathname === "/api/settings") return json({ lang, theme: "light", gateway: "http://127.0.0.1:3425", lan: false, lanURLs: [], version: "0.1.900", dir: "/config/owl", fx: { rate: 7.2, at: new Date().toISOString(), stale: false } });
+    // the Network tab draws the gateway group, which reads the providers
+    if (url.pathname === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, window: true, mine: true, url: "http://127.0.0.1:3425", calls: [], groups: [] } });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
     if (url.pathname === "/api/usage/quotas") return json([]);
     if (url.pathname === "/api/groups") return json({ groups: [], models: [] });

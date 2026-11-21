@@ -1,7 +1,8 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The window's plugin kernel (kernel.js), with the Gateway page, the first
-// page a plugin adds (plugins/gateway). A page whose code throws breaks
-// only itself: it says what broke and offers Try again, and the other
+// The window's plugin kernel (kernel.js), with the Gateway group, the first
+// part a plugin adds (plugins/gateway), docked in Settings > Network and
+// sharing (#gwDock, #gwDockMore). A part whose code throws breaks only
+// itself: its dock says what broke and offers Try again, and the other
 // pages go on; Try again draws it once its code works. A plugin's setting
 // reaches its page: from boot.js before the first paint, and when Plugins
 // › Built-in changes it. Every language, both engines, a narrow window.
@@ -21,12 +22,12 @@ const calls = Array.from({ length: 60 }, (_, i) => ({
   ms: 900,
 }));
 const providers = {
-  providers: [{ id: "fixture", name: "Fixture", icon: "generic", models: [{ id: "model-0", name: "Model", on: true }], agents: [] }],
-  presets: [],
+  providers: [{ id: "fixture", name: "Fixture", icon: "generic", ready: true, key: { set: true, masked: "sk-…1234" }, models: [{ id: "model-0", name: "Model", on: true }], agents: [] }],
+  presets: [], excluded: [],
   gateway: { running: true, window: true, mine: true, url: "http://127.0.0.1:3999", calls, groups: [] },
 };
 
-// the Gateway page's code, broken while window.__break says so: its
+// the Gateway group's code, broken while window.__break says so: its
 // drawing throws as a plugin's bug would
 const BREAK = `
 ;(() => {
@@ -75,27 +76,28 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("console", (m) => { if (m.type() === "error") logged.push(m.text()); });
         await page.addInitScript(() => { window.__break = true; });
         await page.route("**/*", serve(lang, {}));
-        await page.goto("http://owl.test/?view=gateway");
-        const card = page.locator("#view-gateway .slot-error");
+        await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+        await page.goto("http://owl.test/?view=settings&tab=network");
+        const card = page.locator("#gwDock .slot-error");
         await card.waitFor();
         assert.equal(await card.getAttribute("role"), "alert", where);
         assert.equal(await card.locator(".name").textContent(), await page.evaluate(() => t("This page stopped working")), where);
         if (lang !== "en") assert.notEqual(await card.locator(".name").textContent(), "This page stopped working", `${where}: translated`);
         assert.equal(await card.locator(".sub").textContent(), "fixture: the page broke", `${where}: what broke`);
-        assert.equal(await page.locator("#view-gateway").getAttribute("aria-busy"), null, `${where}: not left loading`);
+        assert.equal(await page.locator("#gwDock").getAttribute("aria-busy"), null, `${where}: not left loading`);
         assert.ok(logged.some((l) => l.includes("gateway") && l.includes("fixture: the page broke")), `${where}: logged`);
         // nothing escaped the boundary, and the card fits
         assert.deepEqual(errors, [], where);
-        assert.ok(await page.evaluate(() => { const v = document.querySelector("#view-gateway"); return v.scrollWidth <= v.clientWidth + 1; }), `${where}: fits`);
+        assert.ok(await page.evaluate(() => { const v = document.querySelector("#view-settings"); return v.scrollWidth <= v.clientWidth + 1; }), `${where}: fits`);
 
         // the other pages go on: Providers draws
         await page.evaluate(() => show("providers"));
         await page.locator("#view-providers #addProvider").waitFor();
-        assert.equal(await page.locator("#view-gateway").isVisible(), false, `${where}: Providers shown`);
-        // back on the page, still broken, it still says so and draws nothing
-        await page.evaluate(() => show("gateway"));
+        assert.equal(await page.locator("#gwDock").isVisible(), false, `${where}: Providers shown`);
+        // back in Settings (it keeps the Network tab), still broken, the dock still says so and draws nothing
+        await page.evaluate(() => show("settings"));
         await card.waitFor();
-        assert.equal(await page.locator("#view-gateway #activity").count(), 0, `${where}: nothing half drawn`);
+        assert.equal(await page.locator("#gwDockMore .call-item").count(), 0, `${where}: nothing half drawn`);
 
         // fixed, Try again draws it whole, and it keeps working
         await page.evaluate(() => { window.__break = false; });
@@ -115,7 +117,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     }
   });
 
-  test(`${engine}: the Gateway page shows as many recent calls at a time as its setting says`, async (t) => {
+  test(`${engine}: the gateway's Recent requests show as many calls at a time as its setting says`, async (t) => {
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     t.after(() => browser.close());
     for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) {
@@ -127,7 +129,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang, { gateway: { callsPage: 10 } }));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const rows = page.locator("#activity .call-item");
       await rows.first().waitFor();
       // from boot.js, before the first paint

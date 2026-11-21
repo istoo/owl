@@ -159,7 +159,7 @@
     <h2 id="share"><a class="anchor" href="#share">1. Share the main owl</a></h2>
     <ol class="steps">
       <li><b>Turn on sharing</b>On the computer that keeps your providers: <span class="ui">Settings</span> → <span class="ui">Network and sharing</span> → <span class="ui">Share on local network</span> → <span class="ui">On</span>. owl then listens on the local network and makes a gateway key named <span class="ui">Owl</span>. The <span class="ui">Address</span> row below the switch shows where other computers reach it, such as <code>http://192.168.1.20:3425</code>.</li>
-      <li><b>Make a key for each computer</b><span class="ui">Gateway</span> → <span class="ui">Gateway keys</span>, or <code>owl gateway-key add "Laptop"</code>, which prints its <code>sk-owl-key-…</code>. Each key can have its own daily, weekly or monthly limit and its own models, and its calls are counted under its name.</li>
+      <li><b>Make a key for each computer</b><span class="ui">Settings</span> → <span class="ui">Network and sharing</span> → <span class="ui">Gateway keys</span>, or <code>owl gateway-key add "Laptop"</code>, which prints its <code>sk-owl-key-…</code>. Each key can have its own daily, weekly or monthly limit and its own models, and its calls are counted under its name.</li>
     </ol>
     <p>While sharing is off, a desktop owl listens on its own computer only, and other computers can’t reach it. A owl in Docker is reached through its published port instead, and asks every caller outside its container for a gateway key, shared or not; see <a href="/docs/docker#share">Docker</a>.</p>
 
@@ -285,7 +285,7 @@ curl -s http://127.0.0.1:3425/v1/owl/concurrency</pre>
     <div class="table-wrap"><table>
       <tr><th>You see</th><th>What to do</th></tr>
       <tr><td>“owl isn’t shared on the local network”, or “remote owl isn’t shared”</td><td>turn on <span class="ui">Share on local network</span> on that computer</td></tr>
-      <tr><td>“remote owl didn’t take this key” (401)</td><td>use one of its enabled gateway keys: <span class="ui">Gateway</span> → <span class="ui">Gateway keys</span> there</td></tr>
+      <tr><td>“remote owl didn’t take this key” (401)</td><td>use one of its enabled gateway keys: <span class="ui">Settings</span> → <span class="ui">Network and sharing</span> → <span class="ui">Gateway keys</span> there</td></tr>
       <tr><td>403 for a model</td><td>that key may use only some models: <code>owl gateway-key models &lt;id&gt;</code> on that computer shows or changes them. A bare <code>office</code> asks System One’s first decision model, whatever the key allows; use the full <code>office/provider/model</code> id</td></tr>
       <tr><td>“couldn’t reach the remote owl”</td><td>check the address, that owl is running there with sharing on, and that its firewall lets the port in</td></tr>
       <tr><td>no System One models, or “doesn’t share its quotas”</td><td>update owl on that computer, then refresh the list here</td></tr>

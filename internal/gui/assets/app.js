@@ -72,8 +72,8 @@ function featureStyle() {
 featureStyle();
 // a page a plugin adds (kernel.js) that draws from /api/providers, as the
 // Gateway page does: read with Providers and Routing, and drawn through its
-// hooks
-const providersPage = (v) => owl.page(v)?.loads === "providers";
+// hooks, and Settings while the Gateway group in it is in sight (settings.js)
+const providersPage = (v) => owl.page(v)?.loads === "providers" || v === "settings" && gwSeen();
 // The window is dragged by its header, and only where the header says so
 // (--wails-draggable), so the tabs and buttons in it stay plain clicks.
 // Outside the app — a browser on the gateway's page, or on `owl web` —
@@ -22386,7 +22386,11 @@ for (const v of document.querySelectorAll(".view")) {
 addEventListener("scroll", () => import("./scrollends.js"), { capture: true, passive: true, once: true });
 
 let settingsLoad = Promise.resolve(); // show()'s read of Settings, for openSettingsAt
+// pages that became a part of a Settings tab (the Gateway page): a
+// link to one (?view=, the tray, a notification) opens that part
+const MOVED = { gateway: ["network", "#gwDock"] };
 async function show(v) {
+  if (MOVED[v]) return openSettingsAt(true, ...MOVED[v]);
   // a built-in page a plugin's page replaces (owl.page.replaces) opens that
   v = owl.replacing?.(v) || v;
   // a page gateway mode leaves out (a link to it, an address kept) opens Providers
@@ -22581,9 +22585,10 @@ function openSettings() {
   closeAgentMenu();
   show("settings");
 }
-// openSettingsAt: Settings at a row, in sight and lit; e is the click
+// openSettingsAt: Settings at a row, in sight and lit; e is the click, or
+// true for a link the reader followed
 async function openSettingsAt(e, tab, row) {
-  const go = scrollOnPurpose(e, 3000);
+  const go = e === true ? (readerScrolls(3000), true) : scrollOnPurpose(e, 3000);
   closeProtoMenu();
   closeAgentMenu();
   if (!await show("settings")) return;

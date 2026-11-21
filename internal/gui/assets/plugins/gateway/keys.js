@@ -48,7 +48,7 @@ async function selectConnectKey(id) {
     const out = await api("caller-keys/copy-key", { key: id });
     if (connectKeyID !== id || gatewayKeys?.find((k) => k.id === id) !== key) return;
     connectSecret = { id, secret: out.secret };
-    if (view === "gateway") renderConnect();
+    if (gwHere()) renderConnect();
   } catch (e) { status(t(e.message), "err"); }
 }
 async function loadGatewayKeys() {
@@ -61,7 +61,7 @@ async function loadGatewayKeys() {
     gatewayKeys = out.keys || [];
     gatewayKeysErr = "";
     renderGatewayKeys();
-    if (view === "gateway" && providers) selectConnectKey(connectKeyID);
+    if (gwHere() && providers) selectConnectKey(connectKeyID);
   } catch (e) {
     if (read !== gatewayKeysRead) return;
     // a list read before stays: only one never read is said unreadable
@@ -89,16 +89,23 @@ async function refreshGatewayKeys() {
   gatewayKeys = keys;
   gatewayAccountNames = out.accountNames || gatewayAccountNames;
   if (gatewayKeyDraft === null && gatewayLimit === null && !$("#gatewayKeys .rename-in")) renderGatewayKeys();
+  if (gwHere()) renderConnect(); // its key picker lists these keys too
 }
-// the timer: only while the Gateway page is in sight, as a look with
-// nothing to do wakes the web content process all the same (#3185)
+// Where the Gateway group is: Settings open on Network and sharing. It is in
+// sight when that is so, the window is shown and nothing hides it (the
+// plugin off, Settings' search), which is when the keys' timer runs.
+const gwHere = () => view === "settings" && setShown === "network";
+const gwSeen = () => gwHere() && !document.hidden && !!$("#gwDock")?.offsetParent;
+// the timer: only while the group is in sight, as a look with nothing to
+// do wakes the web content process all the same (#3185). It stops itself
+// when the group goes out of sight; settings.js calls this when the tab,
+// the page or the window's visibility changes, to start it again.
 let gatewayKeysTick = 0;
 function gatewayKeysTicks() {
-  const page = $("#view-gateway");
-  if (!page || page.hidden || document.hidden) { clearInterval(gatewayKeysTick); gatewayKeysTick = 0; return; }
+  if (!gwSeen()) { clearInterval(gatewayKeysTick); gatewayKeysTick = 0; return; }
   gatewayKeysTick ||= setInterval(() => {
-    if ($("#view-gateway").hidden || document.hidden) return gatewayKeysTicks();
-    if (view === "gateway" && gatewayKeys?.some((k) => !k.off && keyUsed(k).length)) refreshGatewayKeys();
+    if (!gwSeen()) return gatewayKeysTicks();
+    if (gatewayKeys?.some((k) => !k.off && keyUsed(k).length)) refreshGatewayKeys();
   }, 15e3);
 }
 
@@ -115,7 +122,7 @@ async function gatewayKeyAction(action, body) {
     gatewayKeyDraft = null;
     if (action === "limit-key" || !gatewayKeys.some((k) => k.id === gatewayLimit?.id)) gatewayLimit = null;
     renderGatewayKeys();
-    if (view === "gateway" && providers) selectConnectKey(connectKeyID);
+    if (gwHere() && providers) selectConnectKey(connectKeyID);
     return out;
   } catch (e) {
     status(t(e.message), "err");

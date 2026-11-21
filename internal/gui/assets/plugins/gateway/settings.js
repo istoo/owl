@@ -338,8 +338,9 @@ function renderLAN(s) {
   };
   const set = (body) => writingPrefs(api("settings/lan", body)).then((ns) => {
     prefs = ns; renderSettings();
-    // the sidebar's gateway names the address shared, or this computer's
-    api("providers").then((r) => renderSideGw(r?.gateway), () => {});
+    // the sidebar's gateway names the address shared, or this computer's,
+    // and the group above these rows the keys sharing hands out
+    if (gwSeen()) gwRead(); else api("providers").then((r) => renderSideGw(r?.gateway), () => {});
     if (ns.rekeyed) status(ns.rekeyed, "err");
   })
     .catch((e) => { status(t(e.message), "err"); renderSettings(); });
@@ -495,4 +496,55 @@ function renderWebPage(asked) {
     }
   }
   box.replaceChildren(...rows);
+}
+
+// The Gateway group in this tab (client.js) is drawn while the tab is in
+// sight, as the Gateway page was while it was the page shown. Coming into
+// sight reads the gateway's state and draws the group, and starts the keys'
+// timer; going out of sight (another tab, another page, the window put
+// away, the plugin off, Settings' search) stops it. The window coming
+// back, and a change of sharing, read the state again.
+let gwWasSeen = false;
+async function gwRead() {
+  const was = providers;
+  try { await loadProviders(); } catch (e) { return statusErr(e); }
+  // Settings isn't a page that draws the list (providersPage), so the
+  // Providers page's list is behind: drawn the moment that page is opened
+  providersBehind = true;
+  if (!gwSeen() || !providers) return;
+  owl.call("gateway", "render", was);
+  if (providers.gateway.lan && gatewayKeys === null) loadGatewayKeys();
+}
+function gwLook() {
+  const seen = gwSeen();
+  gatewayKeysTicks();
+  if (seen === gwWasSeen) return;
+  gwWasSeen = seen;
+  if (!seen) return;
+  owl.call("gateway", providers ? "draft" : "loading");
+  owl.call("gateway", "open");
+  gwRead();
+}
+{
+  const gwDocks = () => [$("#gwDock"), $("#gwDockMore")];
+  const tab = setSetTab;
+  setSetTab = function (...a) { const r = tab.apply(this, a); gwLook(); return r; };
+  const go = show;
+  show = async function (...a) { const r = await go.apply(this, a); gwLook(); return r; };
+  // Settings' search finds rows, and the group has none it means to be
+  // found by: it stands aside while a search is typed
+  const find = findSettings;
+  findSettings = function (...a) { for (const d of gwDocks()) d.hidden = true; return find.apply(this, a); };
+  const search = searchSettings;
+  searchSettings = function (...a) {
+    const r = search.apply(this, a);
+    if (!setQuery) for (const d of gwDocks()) d.hidden = false;
+    gwLook();
+    return r;
+  };
+  document.addEventListener("visibilitychange", gwLook);
+  addEventListener("focus", () => { if (gwSeen()) gwRead(); });
+  // the Providers page draws the models of the gateway, under its list
+  const providersDraw = renderProviders;
+  renderProviders = function (...a) { const r = providersDraw.apply(this, a); if (providers?.gateway) renderGatewayModels(); return r; };
 }

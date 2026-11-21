@@ -41,7 +41,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, theme, [], { lan: true, web: true, keys: [] }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#gatewayKeys .none").waitFor();
         await page.locator("#activity .none").waitFor();
         const s = await look(page);
@@ -64,7 +65,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.setDefaultTimeout(6000);
     page.setDefaultNavigationTimeout(60000);
     await page.route("**/*", fixture("en", "light", [], { lan: true, web: true, keysError: "gateway keys unreadable" }));
-    await page.goto("http://owl.test/?view=gateway");
+    await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+    await page.goto("http://owl.test/?view=settings&tab=network");
     await page.locator("#gatewayKeys .none").waitFor();
     await page.locator("#activity .none").waitFor();
     // the page drawn again, as the providers' poll does
@@ -84,7 +86,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.setDefaultTimeout(6000);
     page.setDefaultNavigationTimeout(60000);
     await page.route("**/*", fixture("en", "light", [], { lan: true, web: true }));
-    await page.goto("http://owl.test/?view=gateway");
+    await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+    await page.goto("http://owl.test/?view=settings&tab=network");
     await page.locator("#gatewayKeys .acc[data-key]").nth(2).waitFor();
     await page.route("**/api/caller-keys", (route) => route.fulfill({ status: 500, json: { error: "gateway keys unreadable" } }));
     await page.evaluate(() => loadGatewayKeys());

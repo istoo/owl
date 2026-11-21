@@ -25,13 +25,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const lanURLs = ["http://192.168.1.10:3999", "http://10.0.0.10:3999"];
         await page.route("**/*", fixture(lang, "light", [], { lan: true, lanURLs }));
         const pick = async (button, text) => {
+          // the keys it lists are read after the group is drawn, as the group is part of Settings' tab
+          await page.locator("#gatewayKeys .acc[data-key]").first().waitFor();
+          await reach(page, page.locator(button)); // the app puts back a scroll that is not the reader's
           await page.locator(button).click();
           await page.locator(".proto-menu .pm-item", { hasText: text }).click();
           await page.locator(".proto-menu").waitFor({ state: "detached" });
         };
         const shown = (sel) => page.locator(sel).textContent();
         const open = async () => {
-          await page.goto("http://owl.test/?view=gateway");
+          await page.goto("http://owl.test/?view=settings&tab=network");
           await page.locator("#connect .val code").first().waitFor();
         };
 

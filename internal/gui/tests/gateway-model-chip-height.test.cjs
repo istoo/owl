@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// nb5p on Discord: on the Gateway page's model list, the image chip at a
+// nb5p on Discord: in the All models list (Providers page), the image chip at a
 // row's end stood shorter than its reasoning chip ("低–ultra") and its
 // context chip ("272K"): it holds a glyph, not a line of text, so it took
 // the glyph's 11px where the text chips take their 16px line. Every chip
@@ -10,6 +10,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 
 const assets = path.resolve(__dirname, "../assets");
 const providers = {
@@ -31,7 +33,7 @@ function serveAs(lang, theme) {
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:${JSON.stringify(lang)},theme:${JSON.stringify(theme)},web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") return json(providersOf(providers));
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -57,7 +59,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serveAs(lang, theme));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+      await page.goto("http://owl.test/?view=providers");
       await page.locator("#gwModels .row.model .minfo .mi-img").first().waitFor();
       const rows = await page.locator("#gwModels .row.model .minfo").evaluateAll((boxes) => boxes.map((box) =>
         [...box.querySelectorAll(".badge")].filter((b) => b.offsetParent).map((b) => {

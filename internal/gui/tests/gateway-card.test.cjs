@@ -3,12 +3,14 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
-// The Gateway page's card (the owner: "一点都不精致、优雅", and the key
-// row's copy "很奇怪的位置"): the gateway's mark and state, Share on local
-// network switched on the card itself with the addresses it answers on,
-// each to copy; a key's copy right beside its masked key, Disable key (or
+// The gateway group's card in Settings > Network & sharing (the owner:
+// "一点都不精致、优雅", and the key row's copy "很奇怪的位置"): the gateway's
+// mark and state, the one address line (this computer's) to copy, Share on
+// local network switched in Settings' own row (#lanList, the only copy of
+// that switch) with the addresses it answers on, each to copy; a key's copy right beside its masked key, Disable key (or
 // Enable key), Rotate key and Remove under its … (wei_VC on X: the tick
 // alone wasn't seen as a switch, so a key was removed and added again);
 // and Connect folded until it is opened.
@@ -23,7 +25,7 @@ const WORDS = {
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const locale of Object.keys(WORDS)) {
     for (const width of [1100, 420]) {
-      test(`${engine} ${locale} ${width}: the gateway card shares on the network, and a key's copy sits by the key`, async (t) => {
+      test(`${engine} ${locale} ${width}: the gateway card, the share row's addresses, and a key's copy by the key`, async (t) => {
         const w = WORDS[locale];
         const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
         const page = await (await browser.newContext({ viewport: { width, height: 800 }, reducedMotion: "reduce" })).newPage();
@@ -40,9 +42,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         const events = [];
         await page.route("**/*", fixture(locale, "dark", events));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         const lanBox = page.locator("#gatewayLan");
-        await lanBox.locator(".gw-share").waitFor();
+        const share = page.locator("#lanList");
+        await lanBox.locator(".gw-url").waitFor();
+        await share.locator(".segs").waitFor();
 
         // the mark in its tile, the state beside it
         assert.equal(await page.locator("#gateway > .gw-mark.on svg .led").count(), 2, "the mark's two lights");
@@ -63,33 +67,48 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await page.locator("#foldConnect").getAttribute("aria-expanded"), "false", "Connect starts folded");
         assert(await page.locator("#connect").evaluate((c) => c.hidden));
 
-        // not shared: the choice says This computer, one address, the keys away
-        assert.equal((await lanBox.locator(".gw-share .name").textContent()).trim(), w.share);
-        const opts = lanBox.locator(".segs button");
-        assert.deepEqual((await opts.allTextContents()).map((s) => s.trim()), [w.local, w.lan]);
+        // not shared: the gateway line says This computer, one address, the keys away;
+        // the one Share on local network switch is Settings' own row, off
+        assert.equal(await lanBox.locator(".gw-share, .segs").count(), 0, "the card holds no second share switch");
+        assert.equal((await share.locator(".row").first().locator(".name").textContent()).trim(), w.share);
+        const opts = share.locator(".segs button");
+        assert.deepEqual((await opts.allTextContents()).map((s) => s.trim()),
+          await page.evaluate(() => [t("Off"), t("On")]));
         assert.equal(await lanBox.locator(".gw-url").count(), 1);
         assert.equal((await lanBox.locator(".gw-url code").textContent()).trim(), "http://127.0.0.1:3999");
         assert.equal((await lanBox.locator(".gw-url-label").textContent()).trim(), w.local);
+        assert.equal(await share.locator(".lan-address-row").count(), 0, "no LAN address while not shared");
         assert.equal(await page.locator("#gatewayKeysBlock").isVisible(), false);
 
-        // shared from the card, without a scroll: every LAN address, each with a copy
-        const y = await page.locator("#view-gateway").evaluate((v) => v.scrollTop);
+        // shared from Settings' row, without a scroll: the keys appear, and
+        // every LAN address can be picked and copied
+        const scroller = page.locator("#view-settings");
+        const y = await scroller.evaluate((v) => v.scrollTop);
         await opts.last().click();
         await page.locator("#gatewayKeysBlock").waitFor({ state: "visible" });
-        await page.waitForFunction(() => document.querySelectorAll("#gatewayLan .gw-url").length === 3);
+        await share.locator(".lan-address-row").waitFor();
         assert.deepEqual(events.filter((e) => e.action === "lan").map((e) => e.body), [{ on: true }]);
-        assert.deepEqual((await lanBox.locator(".gw-url code").allTextContents()).map((s) => s.trim()),
-          ["http://127.0.0.1:3999", "http://192.168.1.10:3999", "http://10.0.0.10:3999"]);
-        assert.deepEqual((await lanBox.locator(".gw-url-label").allTextContents()).map((s) => s.trim()), [w.local, w.lan, ""]);
-        assert.equal(await lanBox.locator(".gw-url .copy").count(), 3);
-        assert.equal(y, await page.locator("#view-gateway").evaluate((v) => v.scrollTop), "sharing moved the page");
+        assert.equal(await lanBox.locator(".gw-url").count(), 1, "the card stays one address line");
+        assert.equal(y, await scroller.evaluate((v) => v.scrollTop), "sharing moved the page");
         if (process.env.ARTIFACT_DIR) {
           await fs.mkdir(process.env.ARTIFACT_DIR, { recursive: true });
           await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${locale}-${width}-gateway-card-shared.png`), fullPage: true });
         }
-        await lanBox.locator(".gw-url").nth(1).locator(".copy").click();
-        await page.waitForFunction(() => document.querySelector("#gatewayLan .copy.done"));
-        assert(events.some((e) => e.action === "clipboard" && e.body.text === "http://192.168.1.10:3999"));
+        const picker = share.locator(".lan-address-row .lan-interface");
+        const wantAddress = ["http://192.168.1.10:3999", "http://10.0.0.10:3999"];
+        for (const [i, address] of wantAddress.entries()) {
+          await picker.click();
+          const menuItems = page.locator(".lan-address-menu .pm-item");
+          await menuItems.first().waitFor();
+          assert.deepEqual((await menuItems.locator(".pm-name").allTextContents()).map((s) => s.trim()),
+            wantAddress.map((u) => u + "/v1"), "every LAN address is listed");
+          await menuItems.nth(i).click();
+          await page.locator(".lan-address-menu").waitFor({ state: "detached" });
+          assert.equal((await picker.locator(".lan-url").textContent()).trim(), address + "/v1");
+          await share.locator(".lan-address-row .lan-copy .copy").click();
+          await page.waitForFunction(() => document.querySelector("#lanList .lan-copy .copy.done"));
+          assert.equal(events.filter((e) => e.action === "clipboard").at(-1).body.text, address + "/v1", "the copy is the address picked");
+        }
 
         // a key's row: the copy right after the masked key, the … at the end
         await page.waitForFunction(() => document.querySelectorAll("#gatewayKeys .acc[data-key]").length >= 3);
@@ -104,6 +123,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert(near.last && near.moreRight <= 14, "the … ends the row");
         assert.equal(near.label, w.more);
         assert.equal(await row.locator(".text.quiet").count(), 0, "no Rotate or Remove words in the row");
+        await reach(page, row.locator(".gw-key-more")); // the reader brings it into sight; a click here doesn't scroll
         await row.locator(".gw-key-more").click();
         const menu = page.locator(".row-menu");
         await menu.waitFor();
@@ -115,6 +135,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await menu.getByRole("menuitem").first().click();
         await menu.waitFor({ state: "detached" });
         await page.locator('#gatewayKeys .acc.off[data-key="work"]').waitFor();
+        await reach(page, row.locator(".gw-key-more")); // the reader brings it into sight; a click here doesn't scroll
         await row.locator(".gw-key-more").click();
         await menu.waitFor();
         const again = (await menu.getByRole("menuitem").allTextContents()).map((s) => s.trim());
@@ -135,7 +156,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // back to This computer: one address again, the keys away
         await opts.first().click();
         await page.locator("#gatewayKeysBlock").waitFor({ state: "hidden" });
-        await page.waitForFunction(() => document.querySelectorAll("#gatewayLan .gw-url").length === 1);
+        await share.locator(".lan-address-row").waitFor({ state: "detached" });
+        assert.equal(await lanBox.locator(".gw-url").count(), 1);
         assert.deepEqual(errors, []);
       });
     }

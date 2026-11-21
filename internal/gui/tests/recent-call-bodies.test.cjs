@@ -4,7 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { navTo } = require("./reader.cjs");
+const { openPart } = require("./reader.cjs");
 
 const assets = process.env.OWL_RECENT_ASSETS || path.resolve(__dirname, "../assets");
 // the three calls share their agent and model, and two their second
@@ -60,10 +60,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);
         return route.fulfill({ body: await fs.readFile(file), contentType: { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" }[path.extname(file)] });
       });
+      await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
       await page.goto("http://owl.test/?view=providers");
       await page.locator("#providers .provider").first().waitFor();
       assert.equal(seen.length, 0, "Providers never fetches bodies");
-      await navTo(page, "gateway");
+      await page.locator("#prefs").click(); // Settings is the gear, not a tab
+      await openPart(page, "network");
       const rows = page.locator("#activity .call-item");
       await rows.first().waitFor();
       assert.equal(seen.length, 0, "the recent list is metadata only");
@@ -79,7 +81,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert((await rows.first().innerText()).includes("hello"));
       assert((await rows.first().innerText()).includes("world"));
       assert.equal(await rows.first().locator(".call-body-truncated").count(), 2);
-      await page.evaluate(() => loadProviders());
+      await page.evaluate(() => gwRead());
       await rows.first().locator(".call-body pre").first().waitFor();
       assert.equal(seen.length, 1, "a summary refresh preserves loaded detail");
       await rows.first().locator(".call").click();
@@ -99,9 +101,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await rows.nth(2).locator(".call-body").count(), 0, "an evicted call isn't an empty body");
       await rows.nth(2).locator(".call").click();
       shown = [calls[1]];
-      await page.evaluate(() => loadProviders());
+      await page.evaluate(() => gwRead());
       shown = calls;
-      await page.evaluate(() => loadProviders());
+      await page.evaluate(() => gwRead());
       await rows.first().locator(".call").click();
       await page.waitForFunction(() => document.querySelector("#activity .call-item .call-body pre"));
       assert.equal(seen.length, 5, "an evicted body's browser cache is discarded");

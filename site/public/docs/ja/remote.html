@@ -159,7 +159,7 @@
     <h2 id="share"><a class="anchor" href="#share">1. メインの owl を共有する</a></h2>
     <ol class="steps">
       <li><b>共有をオンにする</b>プロバイダを保存しているコンピューターで <span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ローカルネットワークで共有</span> → <span class="ui">オン</span>。owl はローカルネットワークで待ち受け、<span class="ui">Owl</span> という名前のゲートウェイキーを作ります。スイッチの下の <span class="ui">アドレス</span> の行に、ほかのコンピューターから届くアドレス（例：<code>http://192.168.1.20:3425</code>）が表示されます。</li>
-      <li><b>コンピューターごとにキーを作る</b><span class="ui">ゲートウェイ</span> → <span class="ui">ゲートウェイキー</span>、または <code>owl gateway-key add "Laptop"</code>。<code>sk-owl-key-…</code> が表示されます。キーごとに日・週・月の上限と使えるモデルを決められ、呼び出しはその名前で集計されます。</li>
+      <li><b>コンピューターごとにキーを作る</b><span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ゲートウェイキー</span>、または <code>owl gateway-key add "Laptop"</code>。<code>sk-owl-key-…</code> が表示されます。キーごとに日・週・月の上限と使えるモデルを決められ、呼び出しはその名前で集計されます。</li>
     </ol>
     <p>共有がオフの間、デスクトップの owl は自分のコンピューターでしか待ち受けず、ほかのコンピューターからは届きません。Docker の owl は公開したポートから届き、共有のオン・オフにかかわらず、コンテナの外からの呼び出しすべてにゲートウェイキーを求めます。<a href="/docs/ja/docker#share">Docker</a> を参照してください。</p>
 
@@ -285,7 +285,7 @@ curl -s http://127.0.0.1:3425/v1/owl/concurrency</pre>
     <div class="table-wrap"><table>
       <tr><th>表示</th><th>対処</th></tr>
       <tr><td>「owl isn’t shared on the local network」または「remote owl isn’t shared」</td><td>そのコンピューターで <span class="ui">ローカルネットワークで共有</span> をオンにする</td></tr>
-      <tr><td>「remote owl didn’t take this key」（401）</td><td>向こうの有効なゲートウェイキーを使う：向こうの <span class="ui">ゲートウェイ</span> → <span class="ui">ゲートウェイキー</span></td></tr>
+      <tr><td>「remote owl didn’t take this key」（401）</td><td>向こうの有効なゲートウェイキーを使う：向こうの <span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ゲートウェイキー</span></td></tr>
       <tr><td>モデルで 403</td><td>そのキーは一部のモデルしか使えない可能性があります。向こうで <code>owl gateway-key models &lt;id&gt;</code> を実行すると確認・変更できます。<code>office</code> だけだとキーの許可に関係なく System One の最初の決定モデルに問い合わせます。完全な <code>office/provider/model</code> ID を使ってください</td></tr>
       <tr><td>「couldn’t reach the remote owl」</td><td>アドレス、向こうで owl が共有オンで動いているか、ファイアウォールがポートを通すかを確認する</td></tr>
       <tr><td>System One のモデルがない、または「doesn’t share its quotas」</td><td>向こうの owl を更新し、こちらで一覧を更新する</td></tr>

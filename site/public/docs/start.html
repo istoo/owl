@@ -411,7 +411,7 @@ IP-CIDR6,::1/128,DIRECT,no-resolve</pre>
     <p>Users report that this works. Trae keeps custom models in your Trae account, on its servers, so owl can’t set it up for you, and Trae may not reach <code>127.0.0.1</code>. So:</p>
     <ol>
       <li>In owl, turn on <span class="ui">Settings</span> → <span class="ui">Network and sharing</span> → <span class="ui">Share on local network</span>, and note the <span class="ui">Address</span> it shows.</li>
-      <li>Take a gateway key (<span class="ui">Gateway</span> → <span class="ui">Gateway keys</span>, or <code>owl gateway-key add "Trae"</code>).</li>
+      <li>Take a gateway key (<span class="ui">Settings</span> → <span class="ui">Network and sharing</span> → <span class="ui">Gateway keys</span>, or <code>owl gateway-key add "Trae"</code>).</li>
       <li>In Trae’s custom model settings, enter that address as the address and the gateway key as the API key.</li>
     </ol>
     <p>The model id is owl’s (<code>owl models</code>). Sharing lets other computers on your network in with a gateway key; see <a href="/docs/remote#share">Remote owl</a>.</p>

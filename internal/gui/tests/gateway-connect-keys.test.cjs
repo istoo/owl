@@ -3,8 +3,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture, confirmKeyAction } = require("./fixtures/caller-keys.cjs");
-const { openPart } = require("./reader.cjs");
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const locale of ["en", "zh"]) {
@@ -27,7 +27,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       };
       const expectSecret = (secret) => page.waitForFunction((secret) => document.querySelector("#connect .snip")?.textContent.includes(secret), secret);
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await snippet.waitFor();
       assert.equal(await page.locator("#connectAddress").count(), 0, "no LAN addresses before sharing is on");
       assert.equal(await page.locator("#gatewayKeysBlock").isVisible(), false, "most users never share");
@@ -39,9 +39,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${locale}-local-connect.png`) });
       }
 
-      await page.locator("#prefs").click();
-
-      await openPart(page, "network");
+      // sharing is switched on in the same tab the keys and Connect are in
       const on = page.locator("#lanList").getByRole("button", { name: w.on, exact: true });
       await on.waitFor();
       const bounds = await on.boundingBox();
@@ -49,9 +47,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.mouse.wheel(0, bounds.y - 250);
       await on.click();
       await page.locator("#lanList .lan-address-row").waitFor();
-      await page.locator("#nav").getByRole("button", { name: w.gateway, exact: true }).click();
       await page.locator("#gatewayKeysBlock").waitFor({ state: "visible" });
+      await page.locator('#gatewayKeys .acc[data-key^="lan-key-"]').waitFor(); // the key sharing made is listed
+      await reach(page, page.locator("#connectKey"));
       await page.locator("#connectKey").click();
+      await page.locator(".proto-menu .pm-name").first().waitFor();
       assert.equal(await page.locator(".proto-menu .pm-name", { hasText: /^Owl$/ }).count(), 1);
       assert.equal(await page.locator(".proto-menu .pm-name", { hasText: /^owl$/ }).count(), 0,
         "the arbitrary local token must not look like a second named Owl key");
@@ -71,10 +71,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await route.fulfill({ json: { keys: staleKeys } });
       };
       await page.route("**/api/caller-keys", lateList);
-      await page.locator("#prefs").click();
-      await openPart(page, "network");
       await page.locator("#lanList").waitFor();
-      await page.locator("#nav").getByRole("button", { name: w.gateway, exact: true }).click();
+      // the window coming back reads the keys again: held, to be answered late
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await started;
       await row("server").getByRole("button", { name: w.disable, exact: true }).click();
       await page.locator('#gatewayKeys .acc.off[data-key="server"]').waitFor();
@@ -171,12 +170,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.getByRole("button", { name: w.create, exact: true }).click();
       await expectSecret("fixture-created-2");
       assert.equal(await page.locator("#connectKey code").textContent(), "Replacement");
-      await page.locator("#prefs").click();
-      await openPart(page, "network");
       await page.locator("#lanList .lan-address-row").waitFor();
       await page.locator("#lanList").getByRole("button", { name: w.off, exact: true }).click();
       await page.locator("#lanList .lan-address-row").waitFor({ state: "detached" });
-      await page.locator("#nav").getByRole("button", { name: w.gateway, exact: true }).click();
       await page.locator("#connectAddress").waitFor({ state: "detached" });
       assert.equal(await page.locator("#gatewayKeysBlock").isVisible(), false);
       assert.equal(await page.locator("#connectKey").count(), 0);
