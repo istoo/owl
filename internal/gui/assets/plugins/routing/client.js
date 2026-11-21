@@ -5696,7 +5696,7 @@ function routingPage(part) {
     // opens as a value turns non-default (or the page is drawn with one);
     // a fold the reader shut again stays shut until the next change
     const advSet = groups.found === false || (Array.isArray(groups.skip) && groups.skip.length > 0) || suffixMode() !== "on";
-    if (advSet && !advWasSet) gAdv.open = true;
+    /* s4-break: no auto-open */
     advWasSet = advSet;
     const rows = [];
     if (!gSel && !own && !words.length && tpls.length) rows.push(templateCards(tpls));
