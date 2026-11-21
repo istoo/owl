@@ -93,6 +93,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await sub.textContent(), said[lang]);
         assert.equal(await overflows(page), false, "the page scrolls sideways");
         await page.goto("http://owl.test/?view=routing");
+        await page.locator(".rt-gadv > summary").click();
         const note = page.locator(".rt-gnames .no-names");
         await note.waitFor();
         assert.equal(await note.textContent(), said[lang]);
@@ -125,6 +126,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(await note.textContent(), said.en);
     for (const [view, sel] of [["routing", ".rt-gnames .no-names"], ["settings", ".row.pref .sub.no-names"]]) {
       await page.goto(`http://owl.test/?view=${view}`);
+      if (view === "routing") await page.locator(".rt-gadv > summary").click();
       await page.locator(sel).waitFor();
       assert.equal(await page.locator(sel).textContent(), said.en);
     }
@@ -136,6 +138,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await page.locator("#plainNamesSegs .opt").first().waitFor();
     assert.equal(await page.locator(".row.pref", { has: page.locator("#plainNamesSegs") }).locator(".sub").count(), 0);
     await page.goto("http://owl.test/?view=routing");
+    await page.locator(".rt-gadv > summary").click();
     await page.locator(".rt-gnames .segs").waitFor();
     assert.equal(await page.locator(".rt-gnames .no-names:visible").count(), 0);
     assert.deepEqual(errors, []);

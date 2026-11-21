@@ -358,6 +358,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
               // window's comparison, as the rail's own pages already are.
               // The header's layout under SIDE_AT keeps its own comparison.
               if (width >= 1024 && view === "usage" && !baselineFile("app.css").includes("body.side-nav .usage-head > #usageTab .opt.on")) continue;
+              // Routing's two once-made settings fold under Advanced, after the
+              // groups, on purpose: until BASE_REF has the fold the page is
+              // not compared (routing-advanced-fold.test.cjs covers it).
+              if (view === "routing" && !baselineFile("plugins/routing/client.js").includes("rt-gadv")) continue;
               await go(current, view); await go(original, view);
               await current.mouse.move(0, 0); await original.mouse.move(0, 0);
               // Removing hover can repaint the tab's shadow in a later frame.

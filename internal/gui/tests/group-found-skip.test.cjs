@@ -89,6 +89,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.goto("http://owl.test/?view=routing");
         const card = page.locator(".rt-group", { hasText: "Model M" });
         await card.waitFor();
+        await page.locator(".rt-gadv > summary").click(); // the settings made once are under Advanced
         const pick = page.locator(".rt-gsec .rt-gfound .rt-skip-pick");
         assert.equal((await pick.textContent()).trim(), w.none);
         assert.equal(await pick.getAttribute("aria-haspopup"), "menu");
