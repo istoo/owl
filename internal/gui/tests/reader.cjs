@@ -184,6 +184,19 @@ async function openPart(page, id) {
   await page.locator(`:is(#setTab-${id}, .nav-s[data-of=setTab-${id}]):visible`).press("Enter");
 }
 
+// openAdvanced opens the Advanced fold at the foot of a part of Settings
+// (settingsadv.js) the way a reader does, its summary pressed with Enter,
+// unless it is open already (it is, while a row in it is set to something
+// other than its default). Rows in it are on the page but not in sight
+// until then.
+async function openAdvanced(page, id) {
+  const fold = page.locator(`#setPage-${id} > details.set-adv`);
+  await fold.waitFor({ state: "attached" });
+  if (!(await fold.evaluate((d) => d.open))) await fold.locator(":scope > summary").press("Enter");
+  await page.waitForFunction((id) => document.querySelector(`#setPage-${id} > details.set-adv`).open, id);
+  await settled(page);
+}
+
 // agentRow is a connected agent as /api/state lists it, opened by its
 // Details; openAgentSettings opens it on the Agents page, where its own
 // settings are (Settings had them till the owner, 10-20), and waits till
@@ -284,4 +297,4 @@ async function openPage(page, view) {
   await page.locator(`#view-${view}`).waitFor();
 }
 
-module.exports = { footTop, openPage, settled, inView, reach, wheelTo, click, openPart, watchSettingsReads, settingsDrawn, agentRow, openAgentSettings, pickItem, navTo };
+module.exports = { footTop, openPage, settled, inView, reach, wheelTo, click, openPart, openAdvanced, watchSettingsReads, settingsDrawn, agentRow, openAgentSettings, pickItem, navTo };

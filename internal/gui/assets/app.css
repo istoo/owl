@@ -3718,20 +3718,27 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
    reads as a control and not as a disabled hint (sylvenPR on X, a 5px ▸ in
    the muted grey); a pointer and a brighter label under it. The chevron
    starts where the fields do (--ed-at), no padding before it. */
-.editor .more summary { font-size: 12px; line-height: 18px; color: var(--fg-2); list-style: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; margin-left: var(--ed-at, 86px); border-radius: 4px; cursor: pointer; transition: color .12s; }
-.editor .more summary::-webkit-details-marker { display: none; }
-.editor .more summary::before { content: ""; flex: none; width: 10px; height: 10px; background: var(--muted); transition: transform .42s cubic-bezier(.32, .72, 0, 1), background-color .12s;
+:is(.editor, .set-page) .more summary { font-size: 12px; line-height: 18px; color: var(--fg-2); list-style: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; margin-left: var(--ed-at, 86px); border-radius: 4px; cursor: pointer; transition: color .12s; }
+:is(.editor, .set-page) .more summary::-webkit-details-marker { display: none; }
+:is(.editor, .set-page) .more summary::before { content: ""; flex: none; width: 10px; height: 10px; background: var(--muted); transition: transform .42s cubic-bezier(.32, .72, 0, 1), background-color .12s;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3.6 1.6 7 5 3.6 8.4' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3.6 1.6 7 5 3.6 8.4' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
-.editor .more[open]:not(.closing) summary::before { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) { .editor .more summary, .editor .more summary::before { transition: none; } }
-.editor .more summary:hover { color: var(--fg); }
-.editor .more summary:hover::before { background: var(--fg-2); }
-.editor .more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.editor, .set-page) .more[open]:not(.closing) summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { :is(.editor, .set-page) .more summary, :is(.editor, .set-page) .more summary::before { transition: none; } }
+:is(.editor, .set-page) .more summary:hover { color: var(--fg); }
+:is(.editor, .set-page) .more summary:hover::before { background: var(--fg-2); }
+:is(.editor, .set-page) .more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* its labels are longer (Anthropic 地址, Responses-URL): their column takes
    the longest, on one line, rather than wrap a last 址 under it (#875) */
 .editor .more .inner { display: grid; grid-template-columns: minmax(var(--ed-lab, 72px), max-content) minmax(0, 1fr); gap: 10px 14px; align-items: start; padding-top: 8px; }
 .editor .more .inner label { white-space: nowrap; }
+/* Settings' Advanced, the editor's fold at a part's foot: its label starts
+   where the rows do, and what is in it is drawn as the part's own lists */
+.set-page .more.set-adv { margin-top: 4px; }
+.set-page .more.set-adv summary { margin-left: 2px; }
+.set-page .more.set-adv > .inner { padding-top: 8px; }
+.set-adv .inner > .list:not(:last-child) { margin-bottom: 8px; }
+.set-page .list[data-adv-empty] { display: none; }
 .editor .warnbox { grid-column: 1 / -1; font-size: 12px; line-height: 1.5; color: var(--fg); background: color-mix(in srgb, var(--amber) 12%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); border-radius: 8px; padding: 8px 10px; }
 .editor .warnbox.soft { background: none; color: var(--amber); border: 0; padding: 0 0 0 var(--ed-at, 86px); }
 .editor.import .mchips .mchip { cursor: default; }
@@ -4256,7 +4263,7 @@ input.words.search-key, input.words.search-url { flex: 1 1 120px; width: auto; m
 .prefs .val code { font-size: 12px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; padding: 0 6px; }
 /* About's long commands (a curl line, a path) wrap whole: a command cut
    short is one the reader can't read or copy by sight */
-#about .val code { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+#setPage-about .val code { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .prefs .val .text { padding: 3px 6px; }
 /* how hard a side model thinks, beside it: the model's chip gives way first
    (MOMO on Discord); with-effort is a class sideEffortChip sets, not :has(),

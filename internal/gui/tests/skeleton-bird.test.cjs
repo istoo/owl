@@ -13,6 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const listings = [{ package: "opencode-copilot-auth", name: "GitHub Copilot", icon: "githubcopilot", providers: ["github-copilot"],
@@ -212,6 +213,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const prefs = {}, posted = [];
     const { page, errors } = await open(browser, false, async () => {}, prefs, posted, "settings");
     const sw = page.locator("#birdSegs [role=switch]");
+    await openAdvanced(page, "general");
     await sw.waitFor();
     assert.equal(await sw.getAttribute("aria-checked"), "true");
     // a skeleton up while it is turned off: the look stops, and one added

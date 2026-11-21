@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -71,7 +71,7 @@ async function showRow(page, row) {
 const scrolls = (page) => page.evaluate(() => [window.scrollY, document.scrollingElement.scrollTop, ...[...document.querySelectorAll(".view")].map((v) => v.scrollTop)].join(","));
 
 async function open(browser, lang, ctl, errors) {
-  const page = await (await browser.newContext({ viewport: { width: 900, height: 760 }, reducedMotion: "reduce" })).newPage();
+  const page = await (await browser.newContext({ viewport: { width: 900, height: 1400 }, reducedMotion: "reduce" })).newPage();
   page.setDefaultTimeout(5000);
   page.setDefaultNavigationTimeout(60000);
   page.on("pageerror", (e) => { if (!/^ResizeObserver loop completed with undelivered notifications/.test(e.message)) errors.push(e.message); });
@@ -80,8 +80,17 @@ async function open(browser, lang, ctl, errors) {
   await page.goto("http://owl.test/?view=settings");
   await settingsDrawn(page); // rows found are the ones that stay (#1659)
   await openPart(page, "about");
+  await openAdvanced(page, "about");
   await page.locator("#setPage-about").waitFor({ state: "visible" });
-  const row = page.locator("#about .row.pref.update-mirror-row");
+  // This test has always run with About at the top of its view: at 760px it fitted
+  // (at c61768a09 every click here began at scrollTop 0), and "a click never
+  // scrolls" is the rule for a view at its top. Advanced makes About longer, so
+  // the window is tall enough for the open part, and this says so if it stops
+  // being: a scrolled view is held by the click guard moving it for a row that
+  // comes in above the click (the same 2px at 420px at c61768a09), a rule of
+  // its own (gui-shell.md, "A click never moves").
+  assert.ok(await page.locator("#view-settings").evaluate((v) => v.scrollHeight <= v.clientHeight), "About fits its window with Advanced open");
+  const row = page.locator("#setPage-about .row.pref.update-mirror-row");
   await row.waitFor();
   return { page, row };
 }
@@ -142,13 +151,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           update: { state: "error", current: "0.1.900", latest: "0.1.901", retry: true, mirror: M, error: "through the mirror " + M + ": 502 Bad Gateway" } };
         const errors = [];
         const { page } = await open(browser, lang, ctl, errors);
-        const ver = page.locator("#about .row.pref", { has: page.locator(".sub", { hasText: w.failed }) });
+        const ver = page.locator("#setPage-about .row.pref", { has: page.locator(".sub", { hasText: w.failed }) });
         await ver.waitFor();
         assert.match(await ver.locator(".sub").innerText(), new RegExp(M.replace(/[./]/g, "\\$&")));
         const official = ver.locator("button", { hasText: w.official });
         await showRow(page, ver);
         await click(page, official);
-        await page.locator("#about .row.pref.update-mirror-row .sub", { hasText: w.viaGitHub }).waitFor();
+        await page.locator("#setPage-about .row.pref.update-mirror-row .sub", { hasText: w.viaGitHub }).waitFor();
         assert.deepEqual(ctl.posts.map((p) => p[0]), ["mirror", "install"]);
         assert.deepEqual(ctl.posts[0][1], { mirror: "" });
         assert.equal(await page.locator("#about button", { hasText: w.official }).count(), 0, "downloading, no longer offered");

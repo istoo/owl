@@ -10,7 +10,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, footTop } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, footTop, openAdvanced, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -61,6 +61,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=models");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
+      await openAdvanced(page, "models");
       const row = page.locator("#replyList #claudeTuiRow");
       await row.waitFor();
       // scrolled to as a reader does, with the wheel: WebKit at 420 put
@@ -108,6 +109,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the save draws the page again: the buttons are the new row's
       await page.waitForFunction(() => { const r = document.querySelector("#replyList #claudeTuiRow"); return r && !r.dataset.drawn; });
       assert.equal(await seg(w.off).getAttribute("aria-pressed"), "true", "Off once saved");
+      // the row ends the page now: the reader brings it clear of the page-end fade first
+      await reach(page, seg(w.on));
       await seg(w.on).click();
       for (let i = 0; i < 50 && saved.length < 2; i++) await page.waitForTimeout(50);
       assert.equal(saved.length, 2, "saved again");

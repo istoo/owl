@@ -79,9 +79,8 @@ export function aboutRows(ctx) {
     row(t("Log"), t("What owl has logged, to send with a bug report"), s.log, copyBtn(s.log, t("Path")), o).id = "logRow";
   }
   renderCLI(row(t("Command line"), t("Checking your shells…"), ""));
-  // served to other machines (owl web), the one they reach (noahhrreion)
+  // the gateway's own address is the Gateway group's (Network and sharing); the one served to other machines (owl web) is the one they reach (noahhrreion)
   const gw = web && s.publicURL || s.gateway;
-  row(t("Gateway URL"), t("the address every agent is pointed at"), gw, copyBtn(gw, t("Gateway URL")));
   // Claude Code elsewhere (Docker): the host runs this curl
   if (web) {
     const cmd = "curl -fsS -m 1 -H 'Authorization: Bearer <gateway key>' --data-binary @- " + gw + "/v1/owl/statusline || true";

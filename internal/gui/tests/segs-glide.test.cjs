@@ -17,7 +17,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -144,6 +144,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.waitForTimeout(300);
         await page.locator("#setTab-general").click();
         await page.locator("#keepAwakeSegs .opt").first().waitFor();
+        await openAdvanced(page, "general"); // its fold holds a control too
         await underPicks(page, "General shown from another tab");
 
         const opt = (i) => page.locator("#keepAwakeSegs .opt").nth(i);

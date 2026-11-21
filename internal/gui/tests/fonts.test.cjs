@@ -4,7 +4,9 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced, reach } = require("./reader.cjs");
+async function reachClick(page, locator) { await reach(page, locator); await locator.click(); }
+// the font rows are in General's Advanced, below a short window's foot: a reader scrolls to a row, with the wheel, before pressing it
 const assets = process.env.OWL_FONT_ASSETS || path.resolve(__dirname, "../assets");
 const face = (family, name = "Regular", weight = 400, style = "normal", stretch = 100) => ({ family, name, weight, style, stretch });
 const harmony = [face("HarmonyOS Sans SC"), face("HarmonyOS Sans SC", "Medium", 500), face("HarmonyOS Sans SC", "Bold", 700)];
@@ -70,6 +72,7 @@ async function open(browser, lang = "en", options = {}) {
   await watchSettingsReads(page);
   await page.goto("http://owl.test/?view=settings&tab=general");
   await settingsDrawn(page); // rows found are the ones that stay (#1659)
+  await openAdvanced(page, "general");
   await page.locator("#themeSegs .opt").first().waitFor({ state: "attached" });
   // A real assertion, also usable against the original assets, rather than
   // a timeout or a compile error as the negative-control result.
@@ -84,16 +87,16 @@ async function open(browser, lang = "en", options = {}) {
 }
 
 async function family(page, row, name) {
-  await page.locator(`#${row} .font-family`).click();
+  await reachClick(page, page.locator(`#${row} .font-family`));
   await page.locator(".font-menu .sc-q").fill(name);
   await page.locator(".font-menu .pm-item").filter({ has: page.locator(".pm-name", { hasText: name }) }).first().click();
 }
 async function style(page, row, name) {
-  await page.locator(`#${row} .font-style`).click();
+  await reachClick(page, page.locator(`#${row} .font-style`));
   await page.locator(".font-menu .pm-item").filter({ has: page.locator(".pm-name", { hasText: name }) }).click();
 }
 async function reset(page, row) {
-  await page.locator(`#${row} .font-family`).click();
+  await reachClick(page, page.locator(`#${row} .font-family`));
   await page.locator(".font-menu .pm-item").first().click();
 }
 const settled = page => page.waitForFunction(() => prefsBusy === 0 && Object.keys(fontDrafts).length === 0);
@@ -128,6 +131,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(api.cur.uiFont.weight, 500);
       assert.equal(api.cur.codeFont.style, "italic");
       await page.reload();
+      await openAdvanced(page, "general"); // a reload shuts the fold again
       await page.locator("#uiFontRow .font-family").waitFor();
       await page.waitForFunction(() => fontList !== null && !fontFlight);
       await page.evaluate(async () => { await document.fonts.ready; await Promise.all(document.getAnimations().map(a => a.finished.catch(() => {}))); });
@@ -172,13 +176,13 @@ for (const [engine, runtime] of engines) {
     try {
       const { page, api, errors } = await open(browser, "en", { settings: { uiFont: harmony[1] } });
       api.fontError = true;
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.getByRole("menuitemradio", { name: "Refresh fonts" }).click();
       await page.waitForFunction(() => fontListError);
       assert.equal((await css(page, "body")).weight, "500", "failed discovery must not erase the last collection");
       api.fontError = false;
       api.fonts = [{ name: "Consolas", styles: mono }, { name: odd.family, styles: [odd] }];
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.getByRole("menuitemradio", { name: /Refresh fonts/ }).click();
       await page.waitForFunction(() => !fontFlight && !fontListError);
       assert.match(await page.locator("#uiFontRow .font-note").textContent(), /unavailable/);
@@ -189,7 +193,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(await page.locator("#uiFontRow .font-family span").textContent(), odd.family);
       assert.match((await css(page, "body")).family, /Reader/);
       api.fonts = [];
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.getByRole("menuitemradio", { name: "Refresh fonts" }).click();
       await page.waitForFunction(() => !fontFlight && fontList.length === 0);
       await reset(page, "uiFontRow");
@@ -207,7 +211,7 @@ for (const [engine, runtime] of engines) {
     const browser = await runtime.launch();
     try {
       const { page, api, errors } = await open(browser, "zh", { viewport: { width: 560, height: 620 } });
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       const second = await page.locator(".font-menu .pm-item").nth(1).boundingBox();
       await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
       await page.locator(".font-menu .sc-q").fill("HarmonyOS");
@@ -223,7 +227,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(await page.locator("#uiFontRow .font-family span").textContent(), "HarmonyOS Sans SC");
       assert.equal(api.reads, reads, "Enter didn't refresh the font list");
       // a pointer that moves still takes an item's focus
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       const item = page.locator(".font-menu .pm-item").nth(2);
       const box = await item.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 1);
@@ -236,8 +240,10 @@ for (const [engine, runtime] of engines) {
     const browser = await runtime.launch();
     try {
       const { page, errors } = await open(browser, "zh", { viewport: { width: 560, height: 620 } });
+      // the row sits under Advanced, below the fold of a short window: the
+      // reader brings it into sight first, and the page must not move after that
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       const top = await page.locator("#view-settings").evaluate(e => e.scrollTop);
-      await page.locator("#uiFontRow .font-family").click();
       const menu = page.locator(".font-menu");
       const box = await menu.boundingBox();
       assert(box.x >= 0 && box.x + box.width <= 560 && box.y >= 0 && box.y + box.height <= 620);
@@ -250,12 +256,12 @@ for (const [engine, runtime] of engines) {
       await settled(page);
       assert.equal(await page.locator("#uiFontRow .font-family span").textContent(), "HarmonyOS Sans SC");
       assert.equal(await page.locator("#view-settings").evaluate(e => e.scrollTop), top);
-      await page.locator("#uiFontRow .font-style").click();
+      await reachClick(page, page.locator("#uiFontRow .font-style"));
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await settled(page);
       assert.equal(await page.locator("#uiFontRow .font-style span").textContent(), "Medium");
-      await page.locator("#uiFontRow .font-style").click();
+      await reachClick(page, page.locator("#uiFontRow .font-style"));
       await page.keyboard.press("Escape");
       assert.equal(await page.locator(".font-menu").count(), 0);
       for (const width of [440, 560, 1000]) {
@@ -302,7 +308,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(await page.locator("#uiFontRow").isVisible(), true, "a browser tab offers the interface font");
       assert.equal(await page.locator("#codeFontRow").isVisible(), true, "and the code font");
       assert.doesNotMatch((await css(page, "body")).family, /HarmonyOS/, "the app's own choice stays the app's");
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.locator(".font-menu .pm-item").last().click(); // Refresh fonts
       await page.waitForFunction(() => !fontFlight);
       const shown = await page.evaluate(() => fontList.map(f => f.name));
@@ -318,6 +324,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(api.posts.filter(p => "uiFont" in p || "codeFont" in p).length, 0, "the browser's choice isn't sent as the app's");
       assert.equal(api.cur.uiFont.family, harmony[1].family);
       await page.reload();
+      await openAdvanced(page, "general"); // a reload shuts the fold again
       await page.locator("#uiFontRow .font-family").waitFor();
       await page.waitForFunction(() => fontList !== null && !fontFlight);
       assert.match((await css(page, "body")).family, new RegExp("^\"?" + pick), "kept across a reload");
@@ -357,7 +364,7 @@ for (const [engine, runtime] of engines) {
         }
         const shown = await page.evaluate(() => fontList.map(f => f.name));
         assert(!shown.includes("No Such Family Here"), "a family this browser doesn't draw isn't offered: " + shown);
-        await page.locator("#codeFontRow .font-family").click();
+        await reachClick(page, page.locator("#codeFontRow .font-family"));
         const names = await page.locator(".font-menu .pm-item .pm-name").allTextContents();
         assert.equal(names[0], lang === "zh" ? "系统默认" : "System default", "System default is offered: " + names);
         if (!fonts.length) assert.deepEqual(shown, [], "no family this browser draws");
@@ -393,7 +400,7 @@ for (const [engine, runtime] of engines) {
     try {
       const { page, api, errors, close } = await open(browser, lang, { web: true, viewport: { width, height: 820 }, list: [], init: localFonts, arg: ownFonts });
       assert.deepEqual(await page.evaluate(() => window.__asked), [], "nothing is asked before the menu opens (it needs a press)");
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.locator(".font-menu").waitFor();
       const asked = await page.evaluate(() => window.__asked);
       assert.equal(asked.length, 1, "the press that opens the menu asks once");
@@ -405,7 +412,7 @@ for (const [engine, runtime] of engines) {
       await page.locator(".font-menu .sc-q").fill("Norcleeh Sans");
       await page.locator(".font-menu .pm-item").filter({ has: page.locator(".pm-name", { hasText: "Norcleeh Sans" }) }).first().click();
       assert.match((await css(page, "body")).family, /^"?Norcleeh Sans/);
-      await page.locator("#uiFontRow .font-style").click();
+      await reachClick(page, page.locator("#uiFontRow .font-style"));
       const styles = await page.locator(".font-menu .pm-item .pm-name").allTextContents();
       assert.deepEqual(styles, ["Regular", "SemiBold Condensed", "Bold Italic"], "its real styles, by weight");
       await page.keyboard.press("Escape");
@@ -415,7 +422,7 @@ for (const [engine, runtime] of engines) {
       assert.equal(look.stretch, "75%");
       await style(page, "uiFontRow", "Bold Italic");
       assert.equal((await css(page, "body")).style, "italic");
-      await page.locator("#codeFontRow .font-family").click();
+      await reachClick(page, page.locator("#codeFontRow .font-family"));
       await page.locator(".font-menu").waitFor();
       assert.equal((await page.evaluate(() => window.__asked)).length, 1, "asked once a page");
       await page.keyboard.press("Escape");
@@ -441,7 +448,7 @@ for (const [engine, runtime] of engines) {
         return ["monospace", "serif"].some(b => w(`"${n}",${b}`) !== w(b));
       }));
       assert(real, "the test machine draws one of the families tried");
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       const q = page.locator(".font-menu .sc-q");
       assert.equal(await q.getAttribute("placeholder"), lang === "zh" ? "搜索或输入字体名称…" : "Search or type a font name…");
       await q.fill("No Such Family Here");
@@ -460,6 +467,7 @@ for (const [engine, runtime] of engines) {
       assert.equal((await css(page, "body")).weight, "700");
       assert.equal(api.posts.filter(p => "uiFont" in p || "codeFont" in p).length, 0, "the browser's choice isn't sent as the app's");
       await page.reload();
+      await openAdvanced(page, "general"); // a reload shuts the fold again
       await page.locator("#uiFontRow .font-family").waitFor();
       await page.waitForFunction(() => fontList !== null && !fontFlight);
       assert.match((await css(page, "body")).family, new RegExp("^\"?" + real), "kept across a reload, though the server lists no such font");
@@ -504,7 +512,7 @@ for (const [engine, runtime] of engines) {
       const { page, api, errors } = await open(browser);
       const book = face("Variable Sans", "Book", 425.5, "normal", 25);
       api.fonts.push({ name: book.family, styles: [book] });
-      await page.locator("#uiFontRow .font-family").click();
+      await reachClick(page, page.locator("#uiFontRow .font-family"));
       await page.getByRole("menuitemradio", { name: "Refresh fonts" }).click();
       await page.waitForFunction(() => !fontFlight && fontList.some(f => f.name === "Variable Sans"));
       await family(page, "uiFontRow", book.family);

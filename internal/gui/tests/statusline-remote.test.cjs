@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 const { fixture } = require("./fixtures/caller-keys.cjs");
-const { openPart } = require("./reader.cjs");
+const { openPart, openAdvanced } = require("./reader.cjs");
 
 // steven_4422 (Discord): owl in Docker, Claude Code on the host. The
 // status line square writes the host's settings.json with a binary inside
@@ -28,6 +28,7 @@ async function setup(t, engine, lang, width, options) {
   await page.locator("#prefs").waitFor();
   if (!(await page.locator("#view-settings").isVisible())) await page.locator("#prefs").click();
   await openPart(page, "about");
+  await openAdvanced(page, "about");
   await page.locator("#about .row").first().waitFor();
   return { page, errors };
 }

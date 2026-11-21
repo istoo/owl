@@ -11,6 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const WHY = "429 Too Many Requests: {\"detail\":\"usage limit reached\"} https://chatgpt.com/backend-api/codex/responses-with-a-very-long-unbroken-reason";
@@ -81,6 +82,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, asked, ["a@example.com", "B@Example.com"], ["own@example.com"]));
         await page.goto("http://owl.test/?view=settings&tab=usage");
+        await openAdvanced(page, "usage");
         const row = page.locator("#warmNowRow");
         await row.locator("button").waitFor();
         assert.equal((await row.locator(".name").innerText()).trim(), w.name);
@@ -151,6 +153,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/*", serve("en", [], undefined, undefined));
     await page.goto("http://owl.test/?view=settings&tab=usage");
+    await openAdvanced(page, "usage");
     await page.locator("#warmAtSegs .opt").first().waitFor();
     assert.equal(await page.locator("#warmNowRow").isHidden(), true);
     assert.equal(await page.locator("#claudeWarmNowRow").isHidden(), true);

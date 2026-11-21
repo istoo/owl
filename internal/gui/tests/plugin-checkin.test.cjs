@@ -15,7 +15,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 test("plugin check-in saved choices take precedence over derived defaults", async () => {
@@ -185,6 +185,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=usage");
       await settingsDrawn(page);
+      await openAdvanced(page, "usage");
       const tab = page.locator("#warmTab-plugins");
       await tab.waitFor();
       assert.equal((await tab.textContent()).trim(), w.tab);
@@ -205,6 +206,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=usage");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
+      await openAdvanced(page, "usage");
       const tab = page.locator("#warmTab-plugins");
       await tab.waitFor();
       assert.equal(await tab.isHidden(), false);

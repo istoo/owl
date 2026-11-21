@@ -17,7 +17,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { openPart } = require("./reader.cjs");
+const { openPart, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -111,6 +111,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const go = async () => {
         await page.locator("#prefs").click();
         await openPart(page, "usage");
+        // the warm-ups are under Allowances' Advanced
+        await openAdvanced(page, "usage");
         await page.locator("#warmSegs .opt").first().waitFor({ state: "attached" });
       };
       await page.goto("http://owl.test/");
@@ -128,11 +130,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           workbuddyCheckins: [{ user: "Ann", day: today, at: new Date().toISOString(), outcome: "claimed", credit: 2, streak: 3 }],
         });
 
-        // the Usage part: its list, then the tabs where a heading would be,
-        // then the card
-        const parts = await page.evaluate(() => [...document.querySelectorAll("#setPage-usage > *")]
+        // the Usage part: its list, then Advanced: its own rows, the tabs
+        // where a heading would be, then the card
+        const parts = await page.evaluate(() => [...document.querySelectorAll("#setPage-usage > :not(details), #setPage-usage > details > .inner > *")]
           .map((h) => h.querySelector("#warmTabs") ? "tabs" : h.querySelector("#currencySegs") ? "usage" : h.className));
-        assert.deepEqual(parts, ["usage", "tabs", "warm-panes"]);
+        assert.deepEqual(parts, ["usage", "list prefs", "tabs", "warm-panes"]);
         assert.deepEqual(await page.locator("#warmTabs [role=tab]:visible").allTextContents(), ["Codex", "Claude Code", "WorkBuddy"]);
         assert.equal(await page.locator("#warmTabs").getAttribute("role"), "tablist");
         assert.equal(await page.locator("#warmTabs").getAttribute("aria-label"), w.tabs);

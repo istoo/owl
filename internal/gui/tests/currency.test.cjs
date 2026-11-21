@@ -9,7 +9,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { openPart, navTo } = require("./reader.cjs");
+const { openPart, navTo, openAdvanced } = require("./reader.cjs");
 const { wheelRest } = require("./fixtures/wheel-rest.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -98,6 +98,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // Settings: the currency row, its rate in the tooltip
         await page.locator("#prefs").click();
         await openPart(page, "usage");
+        await openAdvanced(page, "usage"); // the page is long enough to scroll with its fold open
         await page.locator("#currencySegs .opt").first().waitFor();
         const segs = page.locator("#currencySegs .opt");
         assert.equal(await segs.count(), 2);

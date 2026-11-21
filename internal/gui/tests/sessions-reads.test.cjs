@@ -12,6 +12,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openAdvanced, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const at = (min) => new Date(Date.now() - min * 60e3).toISOString();
@@ -180,6 +181,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const store = { asked: true, all: true, found: found().map((f) => ({ ...f, on: true })), named: {} }, posts = [];
       await page.route("**/*", serve(lang, store, posts));
       await page.goto("http://owl.test/?view=settings&tab=privacy");
+      await openAdvanced(page, "privacy");
       const list = page.locator("#sessionReadsList");
       await page.locator("#setPage-privacy .row-head .label", { hasText: w.head }).waitFor();
       const row = (sel) => list.locator(sel);
@@ -190,9 +192,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await val(row('.row[data-agent="claude"]')), w.on);
       assert.equal(await val(row('.row[data-agent="codex"]')), w.on);
       await fits(page, "#sessionReadsList");
-      // a click scrolls the row into view itself, and finds it again when a
-      // save has drawn the list anew
-      const click = (r, name) => r.getByRole("button", { name, exact: true }).click();
+      // the reader brings the button into sight (the rows end the page, under
+      // its fade), and finds it again when a save has drawn the list anew
+      const click = async (r, name) => { const b = r.getByRole("button", { name, exact: true }); await reach(page, b); await b.click(); };
       await click(row('.row[data-agent="codex"]'), w.off);
       for (let i = 0; i < 100 && !posts.length; i++) await page.waitForTimeout(50);
       assert.deepEqual(posts[0], { agents: { codex: false } });

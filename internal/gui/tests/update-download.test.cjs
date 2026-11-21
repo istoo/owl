@@ -14,7 +14,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, reach, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -127,9 +127,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const aboutTab = async () => {
           await openPart(page, "about");
           await page.locator("#setPage-about").waitFor({ state: "visible" });
+          await openAdvanced(page, "about");
         };
         await aboutTab();
-        const rowOf = (name) => page.locator("#about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
+        const rowOf = (name) => page.locator("#setPage-about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
         const dl = rowOf(w.name);
         await dl.waitFor();
         await dl.locator(".sub", { hasText: w.on }).waitFor();
@@ -162,7 +163,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await aboutTab();
         await dl.waitFor();
         assert.equal(await dl.locator("[role=switch]").getAttribute("aria-checked"), "false", "kept off");
-        const ver = page.locator("#about .row.pref").first();
+        const ver = page.locator("#setPage-about .row.pref").first();
         await ver.locator(".sub", { hasText: w.out }).waitFor();
         const get = ver.locator("button", { hasText: new RegExp("^" + w.get + "$") });
         await get.waitFor();
