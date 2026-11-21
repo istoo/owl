@@ -6,14 +6,16 @@
 // group below is that response's bytes). Now that group is drawn as one
 // whose pattern matches nothing and no member is ready, every other group
 // is drawn as ever, and the filter and the editor work. A group that still
-// can't be drawn is one row saying so, never the whole list. The Gateway
-// page's model list survives a group with null lists too. Both engines, en
+// can't be drawn is one row saying so, never the whole list. The All models
+// list (Providers page) survives a group with null lists too. Both engines, en
 // and zh, wide and narrow.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 
 const assets = path.resolve(__dirname, "../assets");
 const models = [
@@ -62,7 +64,7 @@ function serve(lang) {
     if (url.pathname === "/api/gateway/history") return json({ cut: false, days: [], routes: [] });
     if (url.pathname === "/api/groups") return json(groups());
     if (url.pathname.startsWith("/api/groups/")) return json(groups());
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") return json(providersOf(providers));
     if (url.pathname.startsWith("/api/")) return json({});
     const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
@@ -121,7 +123,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(errors, []);
       });
     }
-    test(`${engine} ${lang}: the Gateway's model list survives a group with null lists`, async (t) => {
+    test(`${engine} ${lang}: the All models list survives a group with null lists`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       const page = await (await browser.newContext({ viewport: { width: 420, height: 900 }, reducedMotion: "reduce" })).newPage();
       t.after(() => browser.close());
@@ -130,7 +132,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", serve(lang));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+      await page.goto("http://owl.test/?view=providers");
       await page.locator("#gwModels .row.model").first().waitFor();
       const ids = await page.locator("#gwModels .row.model .name").allTextContents();
       assert(ids.includes("group/fast") && ids.includes("group/p") && ids.includes("a/m1"), ids.join(", "));

@@ -62,7 +62,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // on Windows, with the address another machine uses: PowerShell still
         const { page, errors } = await open("Win32");
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#connectAddress").click();
         await page.locator(".proto-menu .pm-item", { hasText: "192.168.1.10" }).click();
         await page.locator(".proto-menu").waitFor({ state: "detached" });
@@ -73,7 +73,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // picked macOS · Linux: export, and nothing moves under the click
         const at = async () => page.evaluate(() => [document.querySelector("#connect .snip-os").getBoundingClientRect().top,
-          document.scrollingElement.scrollTop, document.querySelector("#view-gateway").scrollTop]);
+          document.scrollingElement.scrollTop, document.querySelector("#view-settings").scrollTop]);
         const before = await at();
         await os(page, "macOS · Linux").click();
         await snipIs(page, /^export /);
@@ -120,7 +120,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // on a Mac nothing was picked yet: macOS · Linux
         const mac = await open("MacIntel");
-        await mac.page.goto("http://owl.test/?view=gateway");
+        await mac.page.goto("http://owl.test/?view=settings&tab=network");
         await tab(mac.page, "curl").click();
         await snipIs(mac.page, /^curl http/);
         assert.equal(await os(mac.page, "macOS · Linux").getAttribute("aria-pressed"), "true");

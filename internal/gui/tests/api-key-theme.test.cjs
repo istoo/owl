@@ -36,7 +36,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const events = [], errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", fixture("en", theme, events, { lan: true }));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator('#gatewayKeys .acc[data-key="server"] .dot').click();
       await page.locator('#gatewayKeys .acc.off[data-key="server"]').waitFor();
       await page.locator("#addGatewayKey").click();

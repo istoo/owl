@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// A call's JSON body in the Gateway page's recent calls is a tree: its
+// A call's JSON body in the Recent requests (Settings > Network and sharing) is a tree: its
 // objects and arrays fold, its parts are coloured, a line's value copies from
 // the button its hover shows and a key copies on a click, its text still the
 // JSON as printed; what is folded stays folded as new calls come in, and no
@@ -84,7 +84,7 @@ const words = {
   ja: { items: "4 件", one: "1 件", copyValue: "値をコピー", copyKey: "クリックでキーをコピー", fold: "折りたたむ", unfold: "展開", events: "イベント", reply: "返信" },
   de: { items: "4 Einträge", one: "1 Eintrag", copyValue: "Wert kopieren", copyKey: "Klicken, um den Schlüssel zu kopieren", fold: "Einklappen", unfold: "Aufklappen", events: "Ereignisse", reply: "Antwort" },
 };
-const view = "#view-gateway";
+const view = "#view-settings";
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh", "ja", "de"]) {
@@ -109,14 +109,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await browser.close();
         });
 
-        await page.goto("http://owl.test/?view=gateway");
+        await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+        await page.goto("http://owl.test/?view=settings&tab=network");
         const rows = page.locator("#activity .call-item");
         await rows.first().waitFor();
         // what is clicked is brought into view by the wheel, as the reader
         // would, and clicked where it is (the app puts back any other scroll)
         const reach = async (loc) => {
           const [dy, x, y] = await loc.evaluate((e) => {
-            const v = document.querySelector("#view-gateway").getBoundingClientRect();
+            const v = document.querySelector("#view-settings").getBoundingClientRect();
             return [e.getBoundingClientRect().top - v.top - v.height / 2, v.left + 6, v.top + v.height / 2];
           });
           await page.mouse.move(x, y);

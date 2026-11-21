@@ -3,8 +3,8 @@
 // 10-28: 203.236.50.70 shown as the LAN address): the private addresses come
 // first (gateway.LANURLs), and picking the internet one says anyone online
 // can reach owl there, and how to keep it to this network; with an
-// allow list, that only those addresses get in. The Gateway page lists it
-// under "On the internet", not "Local network". English and Chinese,
+// allow list, that only those addresses get in. The share row's address
+// menu lists it under "On the internet", not "Local network". English and Chinese,
 // Chromium and WebKit; no backend, the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -134,12 +134,20 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           page.on("pageerror", (e) => errors.push(e.message));
           await page.route("**/*", fixture(lang, "light", [], { lan: true,
             lanURLs: ["http://192.168.1.10:3999", "http://203.236.50.70:3999"], lanPublic: ["http://203.236.50.70:3999"] }));
-          await page.goto("http://owl.test/?view=gateway");
+          await page.goto("http://owl.test/?view=settings&tab=network");
+          // the gateway line keeps this computer's address alone; the share
+          // row's menu lists the private address, then the internet one marked
           const box = page.locator("#gatewayLan");
-          await page.waitForFunction(() => document.querySelectorAll("#gatewayLan .gw-url").length === 3);
-          assert.deepEqual((await box.locator(".gw-url code").allTextContents()).map((x) => x.trim()),
-            ["http://127.0.0.1:3999", "http://192.168.1.10:3999", "http://203.236.50.70:3999"]);
-          assert.deepEqual((await box.locator(".gw-url-label").allTextContents()).map((x) => x.trim()), [w.local, w.lan, w.note]);
+          await box.locator(".gw-url").waitFor();
+          assert.deepEqual((await box.locator(".gw-url code").allTextContents()).map((x) => x.trim()), ["http://127.0.0.1:3999"]);
+          assert.deepEqual((await box.locator(".gw-url-label").allTextContents()).map((x) => x.trim()), [w.local]);
+          await page.locator("#lanList .lan-interface").evaluate((b) => b.scrollIntoView({ block: "center" }));
+          await page.locator("#lanList .lan-interface").click();
+          const items = page.locator(".lan-address-menu .pm-item");
+          await items.first().waitFor();
+          assert.deepEqual((await items.locator(".pm-name").allTextContents()).map((x) => x.trim()),
+            ["http://192.168.1.10:3999/v1", "http://203.236.50.70:3999/v1"]);
+          assert.deepEqual((await items.locator(".pm-note").allTextContents()).map((x) => x.trim()), ["", w.note]);
           assert.deepEqual(errors, []);
         }
       });

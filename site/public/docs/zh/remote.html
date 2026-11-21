@@ -159,7 +159,7 @@
     <h2 id="share"><a class="anchor" href="#share">1. 共享主 owl</a></h2>
     <ol class="steps">
       <li><b>打开共享</b>在保存供应商的电脑上：<span class="ui">设置</span> → <span class="ui">网络与共享</span> → <span class="ui">局域网共享</span> → <span class="ui">开启</span>。owl 随即在局域网上监听，并生成一个名为 <span class="ui">Owl</span> 的网关密钥。开关下方的 <span class="ui">地址</span> 一行显示其他电脑访问它的地址，例如 <code>http://192.168.1.20:3425</code>。</li>
-      <li><b>给每台电脑一个密钥</b><span class="ui">网关</span> → <span class="ui">网关密钥</span>，或 <code>owl gateway-key add "Laptop"</code>，它会打印 <code>sk-owl-key-…</code>。每个密钥可以有自己的每日、每周或每月上限和可用模型，它的调用按它的名字统计。</li>
+      <li><b>给每台电脑一个密钥</b><span class="ui">设置</span> → <span class="ui">网络与共享</span> → <span class="ui">网关密钥</span>，或 <code>owl gateway-key add "Laptop"</code>，它会打印 <code>sk-owl-key-…</code>。每个密钥可以有自己的每日、每周或每月上限和可用模型，它的调用按它的名字统计。</li>
     </ol>
     <p>共享关闭时，桌面版 owl 只在本机监听，其他电脑访问不到。Docker 里的 owl 则通过发布的端口访问，不论是否共享，都会向容器外的每个调用方要网关密钥；见 <a href="/docs/zh/docker#share">Docker</a>。</p>
 
@@ -285,7 +285,7 @@ curl -s http://127.0.0.1:3425/v1/owl/concurrency</pre>
     <div class="table-wrap"><table>
       <tr><th>看到的提示</th><th>怎么做</th></tr>
       <tr><td>“owl isn’t shared on the local network” 或 “remote owl isn’t shared”</td><td>在那台电脑上打开 <span class="ui">局域网共享</span></td></tr>
-      <tr><td>“remote owl didn’t take this key”（401）</td><td>用它的一个已启用的网关密钥：那边的 <span class="ui">网关</span> → <span class="ui">网关密钥</span></td></tr>
+      <tr><td>“remote owl didn’t take this key”（401）</td><td>用它的一个已启用的网关密钥：那边的 <span class="ui">设置</span> → <span class="ui">网络与共享</span> → <span class="ui">网关密钥</span></td></tr>
       <tr><td>某个模型 403</td><td>这个密钥可能只能用部分模型：在那台电脑上用 <code>owl gateway-key models &lt;id&gt;</code> 查看或修改。只写 <code>office</code> 会请求 System One 的第一个决策模型，不管密钥允许什么；请用完整的 <code>office/provider/model</code> id</td></tr>
       <tr><td>“couldn’t reach the remote owl”</td><td>检查地址、那边的 owl 是否在运行并打开了共享、防火墙是否放行该端口</td></tr>
       <tr><td>没有 System One 模型，或 “doesn’t share its quotas”</td><td>更新那台电脑上的 owl，再在本机刷新列表</td></tr>

@@ -657,7 +657,7 @@ works. Changing one starts nothing by itself. See
 
 The gateway issues **gateway keys** for clients, separate from a provider's
 upstream API keys. Turn on **Settings → Network and sharing → Share on local network**, then open
-**Gateway → Gateway keys → Add gateway key**. This block appears only while
+**Settings → Network and sharing → Gateway keys → Add gateway key**. This block appears only while
 sharing is on. Create a named key for each client and copy it from its row.
 To move from another gateway without touching its clients, enter the key they
 already send in **Your own key (optional)** (8–256 characters, no spaces, not
@@ -669,7 +669,7 @@ ask for confirmation. Rotation keeps the name, enabled state, limits and usage
 history; other keys are unchanged. Its dialog takes an optional value of
 your own, checked as a new key's is (8–256 printable ASCII characters, no
 spaces, not starting with `sk-owl-`, no other gateway key's and none of
-your providers' API keys); left empty, owl makes one. While sharing is on, **Gateway → Connect**
+your providers' API keys); left empty, owl makes one. While sharing is on, **Settings → Network and sharing → Connect**
 offers loopback and shared addresses, plus enabled gateway keys, for all
 connection examples. With sharing off, Connect keeps the original **API key**
 field and local `owl` token, without a gateway-key picker. Its arbitrary
@@ -799,7 +799,7 @@ reach the gateway at (for example `http://192.168.1.10:3999/me`), type
 their key, and see its own limits, its usage over today, 7 and 30 days, the
 models it may use, and copy-ready setup for Claude Code, Codex and any
 OpenAI-compatible client. It shows nothing of other keys, accounts or
-providers. Gateway → Gateway keys shows that address with a Copy button,
+providers. Settings → Network and sharing → Gateway keys shows that address with a Copy button,
 so it can be handed out with the keys.
 
 A gateway key can also be held to some **models** (#882): pick them with the
@@ -881,7 +881,7 @@ view's left-out list marking what the key held out. A key with no
 accounts listed may use every account, as keys always did.
 
 An **account group** names a set of accounts of any providers
-(LeiWang_2000 on X): made in the Gateway page's "Account groups" or with
+(LeiWang_2000 on X): made in Settings → Network and sharing → Gateway keys' "Account groups" or with
 `owl gateway-key groups add <name> <accounts…>`, and named in a key's
 accounts as `@<group>` to use them or `!@<group>` to keep them out, in the
 same menus. A key reads the group as it is on each request, so changing a
@@ -2129,7 +2129,7 @@ ChatGPT sign-in's own models, which its app reaches on that sign-in.
 The group stands in for them only where it is given: a gateway key that
 may use none of the groups listing a model alone (a Remote owl's key
 held to `codex/*`) is listed that model, when it may use it, and the
-Gateway page's key picker offers each one.
+Gateway keys' picker (Settings → Network and sharing) offers each one.
 They are still served: the group routes over them, and a request naming one
 as `provider/model` is answered. A group in it keeps its own setting, and a
 group switched off keeps nothing out. `listed=yes` lists them again. To keep
@@ -2610,9 +2610,9 @@ with the app; `owl serve` runs it alone. For reverse-proxied or container
 deployments, set `OWL_PUBLIC_URL=https://owl.example.com` to the base
 URL shown in the console and CLI, including connection examples. While
 other machines are let in (Share on local network, or a `OWL_ADDR` on
-the network), the Gateway page's Connect starts at it until you pick
+the network), the Gateway group's Connect (Settings → Network and sharing) starts at it until you pick
 another address there, Settings › About lists it beside the local URL, and
-`owl web` shows it as the gateway's address: on the Gateway page, in
+`owl web` shows it as the gateway's address: in Settings → Network and sharing, in
 About's Gateway URL and at the sidebar's foot. Local agent configs still
 use the local gateway address.
 
@@ -2620,7 +2620,7 @@ Building an app or agent that should use owl, or get a row on the
 Agents page: see [Integrating your app or agent](integrating.md).
 
 External clients behind a reverse proxy need an enabled gateway key
-(Gateway → Gateway keys): with Settings → Network and sharing → Share on local network on, or a
+(Settings → Network and sharing → Gateway keys): with Settings → Network and sharing → Share on local network on, or a
 `OWL_ADDR` on the network, owl asks for one; otherwise it refuses
 them, unless the proxy authenticates its clients itself
 (`OWL_TRUST_PROXY=1`, below). A public URL with no port of
@@ -3734,7 +3734,7 @@ docker run -d --name owl -p 127.0.0.1:3425:3425 -p 127.0.0.1:3430:3430 -v owl-co
 3425 is the gateway for agents. Inside the container it takes any key; a
 request from outside it, the host's own included, must carry an enabled
 gateway key as its API key, and one without gets 401. Make one in the
-browser UI (Gateway → Gateway keys) or with
+browser UI (Settings → Network and sharing → Gateway keys) or with
 `docker exec owl owl gateway-key add "Docker client"`. Sharing
 (Settings → Network and sharing → Share on local network) isn't needed for this; turning it on
 also creates a key named **Owl**. The ports above are published on the

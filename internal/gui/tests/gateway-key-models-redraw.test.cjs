@@ -6,6 +6,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -24,9 +25,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await new Promise((r) => setTimeout(r, 500));
         await route.fallback();
       });
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const badge = page.locator('#gatewayKeys .acc[data-key="work"] .key-models');
       await badge.waitFor();
+      await reach(page, badge); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const menu = page.locator(".proto-menu");
 
       await badge.click();

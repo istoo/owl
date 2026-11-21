@@ -4,6 +4,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture, keyAction } = require("./fixtures/caller-keys.cjs");
 
 const words = {
@@ -29,9 +30,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const events = [], errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", events, { lan: true }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         const row = page.locator('#gatewayKeys .acc[data-key="laptop"]');
         await row.waitFor();
+        await reach(page, row); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
         // adding: the name, and no field for a value
         await page.locator("#addGatewayKey").click();
         const fields = page.locator("#gatewayKeys .adding .kf input");

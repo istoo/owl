@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The Gateway page's Connect folds away under its heading, the base URL left
+// The gateway group's Connect (Settings > Network & sharing) folds away under its heading, the base URL left
 // beside it to copy; the fold is remembered, and a click on it with the page
 // scrolled leaves the heading where it is.
 const assert = require("node:assert/strict");
@@ -37,7 +37,7 @@ async function serve(route) {
   await route.fulfill({ body: await fs.readFile(file), contentType });
 }
 
-const view = "#view-gateway";
+const view = "#view-settings";
 const top = (page, sel) => page.locator(sel).evaluate((e) => e.getBoundingClientRect().top);
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -60,7 +60,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     });
 
     // folded until it is opened: set up once, seldom read again (the owner)
-    await page.goto("http://owl.test/?view=gateway");
+    await page.goto("http://owl.test/?view=settings&tab=network");
     await page.locator("#connectNote code").waitFor();
     const fold = page.locator("#foldConnect");
     assert.equal(await fold.getAttribute("aria-expanded"), "false", "Connect starts folded");

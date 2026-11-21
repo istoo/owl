@@ -1,9 +1,10 @@
-// The Gateway page (plugins/gateway): the gateway's state and its keys
-// (keys.js), how to connect a client, its models and its recent calls. It
-// is a page the plugin adds to the window (kernel.js): its markup is the
-// html below, and the shell draws it through its hooks — loading before
-// the state is in, draft from the state kept, render with the new one —
-// behind the kernel's error boundary.
+// The Gateway group of Settings › Network and sharing (plugins/gateway):
+// the gateway's state and its keys (keys.js), how to connect a client and
+// its recent requests; its models are under Providers' list. It is a part
+// the plugin docks in that tab (kernel.js): its markup is the html below,
+// and settings.js draws it through its hooks while the tab is in sight —
+// loading before the state is in, draft from the state kept, render with
+// the new one — behind the kernel's error boundary.
 //
 // Classic script, loaded before app.js: what runs as it loads touches
 // neither the page nor app.js; mount, at owl.start, wires the page.
@@ -26,14 +27,16 @@ const wireOpen = new Set(); // recent-call ids whose HTTP headers are open
 // says (callsPage)
 let callsPage = 20;
 let callsShown = callsPage;
+// the recent requests folded under their heading until they are opened
+let callsFolded = true;
+try { callsFolded = localStorage.getItem("owl.gwCallsFolded") !== "0"; } catch {}
 
 function renderGatewayLoading() {
-  const page = $("#view-gateway");
+  const page = $("#gwDock");
   page.classList.add("loading");
   page.setAttribute("aria-busy", "true");
   $("#connectNote").textContent = "";
   $("#callsNote").textContent = "";
-  $("#copyModels").hidden = true;
 
   const gateway = $("#gateway");
   gateway.replaceChildren();
@@ -52,14 +55,6 @@ function renderGatewayLoading() {
     connect.append(value);
   }
 
-  const models = $("#gwModels");
-  models.replaceChildren();
-  for (let i = 0; i < 4; i++) {
-    const row = el("div", "row model gw-sk-row");
-    row.append(el("span", "skeleton gw-sk-model"), el("span", "grow"), el("span", "skeleton gw-sk-provider"));
-    models.append(row);
-  }
-
   const activity = $("#activity");
   activity.replaceChildren();
   for (let i = 0; i < 4; i++) {
@@ -70,7 +65,7 @@ function renderGatewayLoading() {
 }
 
 function renderGatewayView() {
-  const page = $("#view-gateway");
+  const page = $("#gwDock");
   page.classList.remove("loading");
   page.removeAttribute("aria-busy");
   renderGateway();
@@ -82,7 +77,6 @@ function renderGatewayView() {
   if (!providers.gateway.lan) gatewayKeyDraft = null;
   if (gatewayKeyDraft === null && gatewayLimit === null && !$("#gatewayKeys .rename-in")) renderGatewayKeys();
   renderConnect();
-  renderGatewayModels();
   renderActivity();
 }
 
@@ -237,59 +231,21 @@ function renderGateway() {
   if (fix) box.append(fix);
 }
 
-// Share on local network, set on the page that hands out its keys (the
-// owner): the same setting as Settings › Network and sharing, and every
-// address the gateway answers on, each to copy.
-let gatewayLanBusy = false;
+// The gateway's own address, to copy: this computer's, or the public one
+// owl web is reached by (#1551). Sharing on the local network, its
+// addresses and its password are the rows under it, Settings' own; they
+// were a second copy of that switch and its addresses here.
 function renderGatewayLan() {
   const g = providers.gateway;
   const box = $("#gatewayLan");
   box.replaceChildren();
-  const head = el("div", "row gw-share");
-  const choice = segs([["off", t("This computer")], ["on", t("Local network")]], g.lan ? "on" : "off", (v) => {
-    if (gatewayLanBusy || (v === "on") === !!g.lan) return;
-    gatewayLanBusy = true;
-    writingPrefs(api("settings/lan", { on: v === "on" }))
-      .then((ns) => { prefs = ns; if (ns.rekeyed) status(ns.rekeyed, "err"); })
-      .catch((e) => status(t(e.message), "err"))
-      .then(() => loadProviders().catch(() => {}))
-      .finally(() => {
-        gatewayLanBusy = false;
-        if (view !== "gateway" || !providers) return;
-        renderGatewayView();
-        if (providers.gateway.lan) loadGatewayKeys();
-      });
-  });
-  choice.setAttribute("role", "group");
-  choice.setAttribute("aria-label", t("Share on local network"));
-  head.append(el("div", "name grow", t("Share on local network")), choice);
-  box.append(head);
   const list = el("div", "gw-urls");
-  const line = (label, url) => {
-    const r = el("div", "gw-url");
-    const val = el("span", "gw-url-val");
-    val.append(el("code", "", url), copyBtn(url, t("Gateway URL")));
-    r.append(el("span", "gw-url-label", label), val);
-    list.append(r);
-  };
-  // served to other machines' browsers (owl web), the address shown is
-  // the one they reach, OWL_PUBLIC_URL's, not this computer's loopback
-  // (#1551)
+  const r = el("div", "gw-url");
+  const val = el("span", "gw-url-val");
   const shown = web && g.publicURL || g.url;
-  line(t(shown === g.url ? "This computer" : "Public address"), shown);
-  if (g.lan) {
-    const { urls, others, sub } = gwLAN(g);
-    // an internet address on an interface (an ISP's static one) is said
-    // to be one, not listed as this network's, and the one other
-    // containers on this host use (the host's Docker bridge address) is
-    // said to be theirs
-    const far = new Set(g.lanPublic || []), rest = urls.filter((u) => u !== shown);
-    rest.filter((u) => !far.has(u) && !others.includes(u)).forEach((u, i) => line(i ? "" : t("Local network"), u));
-    rest.filter((u) => others.includes(u)).forEach((u, i) => line(i ? "" : t("Other containers on this host"), u));
-    rest.filter((u) => far.has(u) && !others.includes(u)).forEach((u, i) => line(i ? "" : t("On the internet"), u));
-    if (!urls.length) list.append(el("div", "gw-url-none", t("This computer has no local network address right now")));
-    if (sub) list.append(el("div", "gw-url-none", sub));
-  }
+  val.append(el("code", "", shown), copyBtn(shown, t("Gateway URL")));
+  r.append(el("span", "gw-url-label", t(shown === g.url ? "This computer" : "Public address")), val);
+  list.append(r);
   box.append(list);
 }
 
@@ -607,10 +563,10 @@ function renderConnect() {
 }
 
 let modelQuery = "";
-// The model list can be folded away, so Recent calls sits under Connect;
-// the fold is remembered.
-let modelsFolded = false;
-try { modelsFolded = localStorage.getItem("owl.gwModelsFolded") === "1"; } catch {}
+// All models, under Providers' list, folded until it is opened; the fold
+// is remembered.
+let modelsFolded = true;
+try { modelsFolded = localStorage.getItem("owl.gwModelsFolded") !== "0"; } catch {}
 
 function renderGatewayModels() {
   const list = $("#gwModels");
@@ -619,8 +575,8 @@ function renderGatewayModels() {
   const fold = $("#foldModels");
   fold.setAttribute("aria-expanded", String(!modelsFolded));
   fold.title = t(modelsFolded ? "Show the models" : "Fold the models away");
-  $("#modelsCount").textContent = all.length ? String(all.length) : "";
-  list.hidden = modelsFolded && all.length > 0;
+  $("#modelsCount").textContent = all.length ? `(${all.length})` : "";
+  list.hidden = modelsFolded;
   // the search sits in the section head, beside Copy all ids; typing
   // redraws only the list, so it keeps its focus
   let q = $("#findModel");
@@ -641,6 +597,8 @@ function renderGatewayModels() {
   });
   $("#copyModels").hidden = !models.length || list.hidden;
   $("#copyModels").onclick = () => copy(models.map((m) => m.id).join("\n"), t("Model ids"));
+  // folded, the rows are drawn when it is opened: the list is drawn with every Providers draw
+  if (list.hidden) return;
   if (!all.length) {
     const empty = el("div", "empty-state", "");
     empty.append(el("b", "", t("No models exposed yet")), t("Add a provider, or sign in to Codex or Copilot; their models show up here for every agent."));
@@ -682,7 +640,7 @@ function loadCallBodies(c, id) {
   api(`gateway/call?id=${encodeURIComponent(c.id)}`)
     .then((body) => { if (callBodies.get(id) === pending) callBodies.set(id, body); })
     .catch((e) => { if (callBodies.get(id) === pending) callBodies.set(id, { error: t(e.message) }); })
-    .finally(() => { if (view === "gateway" && providers) renderActivity(); });
+    .finally(() => { if (gwSeen() && providers) renderActivity(); });
 }
 
 // a recent call's row: by the gateway's number for it, as two calls of
@@ -697,11 +655,16 @@ function renderActivity() {
   for (const id of expandedCalls) if (!ids.has(id)) expandedCalls.delete(id);
   for (const id of wireOpen) if (!ids.has(id)) wireOpen.delete(id);
   const box = $("#activity");
+  const fold = $("#foldCalls");
+  fold.setAttribute("aria-expanded", String(!callsFolded));
+  fold.title = t(callsFolded ? "Show the recent requests" : "Fold the recent requests away");
+  box.hidden = callsFolded;
+  $("#callsNote").textContent = g.running && !g.mine ? t("shown by the owl that serves the gateway") : "";
+  if (callsFolded) return box.replaceChildren();
   // a body being read keeps its place as new calls come in
   const kept = new Map();
   for (const item of box.querySelectorAll(".call-item[data-id]")) kept.set(item.dataset.id, [...item.querySelectorAll("pre")].map((p) => p.scrollTop));
   box.replaceChildren();
-  $("#callsNote").textContent = g.running && !g.mine ? t("shown by the owl that serves the gateway") : "";
   const calls = g.calls.slice(0, callsShown);
   if (!calls.length) { box.append(el("div", "none", t("No requests yet. Point an agent at a model, or run the example above; every call shows up here as it happens."))); return; }
   for (const c of calls) {
@@ -783,16 +746,60 @@ owl.plugin("gateway", (ctx) => {
     configured();
     owl.call("gateway", "calls");
   });
+  // the group's first part, under its heading: the state, its address and
+  // the hooks; settings.js calls them while Network and sharing is in sight
   ctx.slots.add("page", {
     key: "gateway",
-    title: "Gateway",
-    // what the page draws from: the shell reads /api/providers for it
+    into: "#gwDock",
+    // what the group draws from: the shell reads /api/providers for it
     loads: "providers",
     html: `
 <div class="list gwcard">
   <div class="row gw" id="gateway"></div>
   <div id="gatewayLan"></div>
 </div>
+`,
+    mount() {
+      $("#foldModels").prepend(svg(CHEV_R, 11, 1.6));
+      $("#foldModels").onclick = () => {
+        modelsFolded = !modelsFolded;
+        try { localStorage.setItem("owl.gwModelsFolded", modelsFolded ? "1" : "0"); } catch {}
+        renderGatewayModels();
+        backToReader($("#view-providers"));
+      };
+      gatewayKeysTicks();
+    },
+    // nothing read yet: the group's skeleton (#123)
+    loading: renderGatewayLoading,
+    // opened from a page that had the list: drawn from it at once, not
+    // left as empty cards until the new one is in (#123)
+    draft() {
+      if (!$("#gateway").childElementCount) renderGatewayView();
+    },
+    // The group is looked at and left open: coming back to the window
+    // redraws it only when something on it changed, and when only the calls
+    // did, only them (an account's last sign-in check isn't on it).
+    render(was) {
+      const json = (a) => JSON.stringify(a, (k, v) => (k === "seen" ? undefined : v));
+      const same = (a, b) => json(a) === json(b);
+      if (was && !$("#gwDock").classList.contains("loading") && same({ ...was, gateway: { ...was.gateway, calls: 0 } }, { ...providers, gateway: { ...providers.gateway, calls: 0 } })) {
+        if (!same(was.gateway.calls, providers.gateway.calls)) renderActivity();
+      } else renderGatewayView();
+      // and what each key has used of its limits, read on open only before
+      refreshGatewayKeys();
+    },
+    // the recent requests again, a page of them (the setting changed)
+    calls() {
+      if (gwSeen() && providers && !$("#gwDock").classList.contains("loading")) renderActivity();
+    },
+    open: loadGatewayKeys,
+  });
+  // the group's rest, under the Local network rows it follows: the keys
+  // that sharing hands out, how to connect, the recent requests
+  ctx.slots.add("page", {
+    key: "gateway-more",
+    into: "#gwDockMore",
+    html: `
 <section id="gatewayKeysBlock" hidden>
   <div class="row-head"><span class="label" data-t>Gateway keys</span><span class="grow"></span><button class="text" id="addGatewayKey" data-t>Add gateway key</button></div>
   <p class="usage-note" data-t>Create a gateway key for each client. Usage is counted separately for each key.</p>
@@ -801,10 +808,8 @@ owl.plugin("gateway", (ctx) => {
 <p class="usage-note gw-keys-off" id="gatewayKeysOff" hidden data-t>Gateway keys are for other computers, and for a tunnel to this one such as Cloudflare Tunnel: they are added here once Share on local network is on. Agents on this computer need none.</p>
 <div class="row-head"><button class="fold" id="foldConnect" aria-expanded="true" aria-controls="connect"><span class="label" data-t>Connect</span></button><span class="grow"></span><span class="note" id="connectNote"></span></div>
 <section class="list connect" id="connect"></section>
-<div class="row-head"><button class="fold" id="foldModels" aria-expanded="true" aria-controls="gwModels"><span class="label" data-t>Models</span><span class="note" id="modelsCount"></span></button><span class="grow"></span><button class="text" id="copyModels" data-t>Copy all ids</button></div>
-<div class="list" id="gwModels"></div>
-<div class="row-head"><span class="label" data-t>Recent calls</span><span class="grow"></span><span class="note" id="callsNote"></span></div>
-<div class="list activity" id="activity"></div>
+<div class="row-head"><button class="fold" id="foldCalls" aria-expanded="false" aria-controls="activity"><span class="label" data-t>Recent requests</span></button><span class="grow"></span><span class="note" id="callsNote"></span></div>
+<div class="list activity" id="activity" hidden></div>
 `,
     mount() {
       $("#foldConnect").prepend(svg(CHEV_R, 11, 1.6));
@@ -812,43 +817,16 @@ owl.plugin("gateway", (ctx) => {
         connectFolded = !connectFolded;
         try { localStorage.setItem("owl.gwConnectFolded", connectFolded ? "1" : "0"); } catch {}
         renderConnect();
-        backToReader($("#view-gateway"));
+        backToReader($("#view-settings"));
       };
-      $("#foldModels").prepend(svg(CHEV_R, 11, 1.6));
-      $("#foldModels").onclick = () => {
-        modelsFolded = !modelsFolded;
-        try { localStorage.setItem("owl.gwModelsFolded", modelsFolded ? "1" : "0"); } catch {}
-        renderGatewayModels();
-        backToReader($("#view-gateway"));
+      $("#foldCalls").prepend(svg(CHEV_R, 11, 1.6));
+      $("#foldCalls").onclick = () => {
+        callsFolded = !callsFolded;
+        try { localStorage.setItem("owl.gwCallsFolded", callsFolded ? "1" : "0"); } catch {}
+        if (providers) renderActivity();
+        backToReader($("#view-settings"));
       };
-      new MutationObserver(gatewayKeysTicks).observe($("#view-gateway"), { attributes: true, attributeFilter: ["hidden"] });
-      document.addEventListener("visibilitychange", gatewayKeysTicks);
-      gatewayKeysTicks();
     },
-    // nothing read yet: the page's skeleton (#123)
-    loading: renderGatewayLoading,
-    // opened from another page that had the list: drawn from it at once,
-    // not left as empty cards until the new one is in (#123)
-    draft() {
-      if (!$("#gateway").childElementCount) renderGatewayView();
-    },
-    // The page is looked at and left open: coming back to the window
-    // redraws it only when something on it changed, and when only the calls
-    // did, only them (an account's last sign-in check isn't on it).
-    render(was) {
-      const json = (a) => JSON.stringify(a, (k, v) => (k === "seen" ? undefined : v));
-      const same = (a, b) => json(a) === json(b);
-      if (was && !$("#view-gateway").classList.contains("loading") && same({ ...was, gateway: { ...was.gateway, calls: 0 } }, { ...providers, gateway: { ...providers.gateway, calls: 0 } })) {
-        if (!same(was.gateway.calls, providers.gateway.calls)) renderActivity();
-      } else renderGatewayView();
-      // and what each key has used of its limits, read on open only before
-      refreshGatewayKeys();
-    },
-    // the recent calls again, a page of them (the setting changed)
-    calls() {
-      if (view === "gateway" && providers && !$("#view-gateway").classList.contains("loading")) renderActivity();
-    },
-    open: loadGatewayKeys,
   });
 });
 

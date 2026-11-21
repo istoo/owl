@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// In owl web at phone width, the Gateway page's Connect menus (the
+// In owl web at phone width, the gateway group's Connect menus in Settings > Network & sharing (the
 // address, the gateway key) shut again as soon as they opened, with or
 // without OWL_PUBLIC_URL (found during #1551). The phone header takes two
 // rows, so Connect is below the fold, and a scroll of the view that wasn't
@@ -29,7 +29,7 @@ async function setup(t, engine, lang, width, pub) {
   page.on("pageerror", (e) => errors.push(e.message));
   const options = pub ? { lanURLs: [PUBLIC], publicURL: PUBLIC, web: true } : { lanURLs: ["http://192.168.1.10:3999"], web: true };
   await page.route("**/*", fixture(lang, "light", [], { lan: true, ...options }));
-  await page.goto("http://owl.test/?view=gateway");
+  await page.goto("http://owl.test/?view=settings&tab=network");
   await page.locator("#connectAddress").waitFor();
   // with the public URL Connect starts there, and picks a gateway key for
   // it; its read redraws Connect
@@ -39,7 +39,7 @@ async function setup(t, engine, lang, width, pub) {
   return { page, errors };
 }
 
-const view = (page) => page.locator("#view-gateway");
+const view = (page) => page.locator("#view-settings");
 const top = async (page, sel) => (await page.locator(sel).boundingBox()).y;
 const menuOpen = (page) => page.locator(".proto-menu").count();
 

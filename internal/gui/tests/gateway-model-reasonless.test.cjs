@@ -1,7 +1,7 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // Dani Ariyanto on Discord (owl model spec --reasoning off): a model the
 // user said takes no reasoning field is offered no levels by the gateway,
-// so the Gateway page's row says none, though its list has some. The
+// so the All models row (Providers page) says none, though its list has some. The
 // backend sends such a model reasonless with no kept levels; the row went
 // back to all the list's levels. Every language, at a wide and a narrow
 // window.
@@ -10,6 +10,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 
 const assets = path.resolve(__dirname, "../assets");
 const providers = {
@@ -30,7 +32,7 @@ function serve(lang) {
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:${JSON.stringify(lang)},theme:"light",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") return json(providersOf(providers));
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -48,7 +50,7 @@ const rowOf = (page, id) => page.locator("#gwModels .row.model").filter({ has: p
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const width of [1100, 420]) {
     for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) {
-      test(`${engine} ${width} ${lang}: a model sent no reasoning field shows no levels on the Gateway page`, async (t) => {
+      test(`${engine} ${width} ${lang}: a model sent no reasoning field shows no levels in All models`, async (t) => {
         const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || "chromium" }));
         const page = await (await browser.newContext({ viewport: { width, height: 800 }, reducedMotion: "reduce" })).newPage();
         t.after(async () => {
@@ -63,7 +65,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+        await page.goto("http://owl.test/?view=providers");
         await page.locator("#gwModels .row.model").first().waitFor();
         const chips = async (id) => (await rowOf(page, id).locator(".minfo .badge").allTextContents()).map((s) => s.trim());
         const levels = await chips("kenari/qwen-x");

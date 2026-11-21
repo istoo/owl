@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const now = Date.now();
@@ -47,7 +48,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await page.route("**/*", serve);
     t.after(() => browser.close());
 
-    await page.goto("http://owl.test/?view=gateway");
+    await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+    await page.goto("http://owl.test/?view=settings&tab=network");
     const rows = page.locator("#activity .call-item");
     await rows.first().waitFor();
     assert.equal(await rows.count(), 20, "the first page");
@@ -55,9 +57,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(await more.textContent(), "Show 20 more");
     // reach it as a reader does, with the wheel: the page holds its scroll
     // against a scroll nobody asked for, which a locator's click would be
-    await page.mouse.move(450, 300);
-    for (let i = 0; i < 10 && !(await more.evaluate((b) => b.getBoundingClientRect().bottom <= innerHeight)); i++) await page.mouse.wheel(0, 300);
-    const top = () => page.evaluate(() => document.querySelector("#view-gateway").scrollTop);
+    await reach(page, more);
+    const top = () => page.evaluate(() => document.querySelector("#view-settings").scrollTop);
     const before = await top();
     await more.click();
     assert.equal(await rows.count(), 40, "every call the gateway keeps");

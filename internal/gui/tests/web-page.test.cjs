@@ -108,7 +108,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("response", (r) => r.status() >= 400 && failed.push(new URL(r.url()).pathname));
         const seen = { paths: [], archive: [] };
         await page.route("**/*", serve(lang, web, seen));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         return { page, errors, failed, seen };
       };
 
