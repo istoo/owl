@@ -95,7 +95,7 @@ async function refreshGatewayKeys() {
 // sight when that is so, the window is shown and nothing hides it (the
 // plugin off, Settings' search), which is when the keys' timer runs.
 const gwHere = () => view === "settings" && setShown === "network";
-const gwSeen = () => gwHere() && !document.hidden && !!$("#gwDock")?.offsetParent;
+const gwSeen = () => !document.hidden; // BROKEN on purpose: ignores the page and the tab
 // the timer: only while the group is in sight, as a look with nothing to
 // do wakes the web content process all the same (#3185). It stops itself
 // when the group goes out of sight; settings.js calls this when the tab,

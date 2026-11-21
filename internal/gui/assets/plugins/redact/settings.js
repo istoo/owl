@@ -80,7 +80,7 @@ function maskLook() {
   const seen = maskSeen();
   if (seen === maskWasSeen) return;
   maskWasSeen = seen;
-  owl.call("masking", seen ? "open" : "leave");
+  // BROKEN on purpose: never opens
 }
 {
   const tab = setSetTab;
