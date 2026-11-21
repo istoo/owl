@@ -70,3 +70,33 @@ function redactWordsHidden() {
     if (s.redact || s.redactPersonal || (s.redactWords || []).length) redactRouteRow(s);
   };
 }
+
+// What was masked (client.js, docked at the top of this tab) runs its hooks
+// while the tab is in sight, as the Masking page did while it was the page
+// shown: coming into sight opens it, going out lets go of what was only
+// for the visit, and the window coming back reads it again.
+let maskWasSeen = false;
+function maskLook() {
+  const seen = maskSeen();
+  if (seen === maskWasSeen) return;
+  maskWasSeen = seen;
+  owl.call("masking", seen ? "open" : "leave");
+}
+{
+  const tab = setSetTab;
+  setSetTab = function (...a) { const r = tab.apply(this, a); maskLook(); return r; };
+  const go = show;
+  show = async function (...a) { const r = await go.apply(this, a); maskLook(); return r; };
+  // Settings' search finds rows; the records stand aside while one is typed
+  const find = findSettings;
+  findSettings = function (...a) { $("#maskDock").hidden = true; return find.apply(this, a); };
+  const search = searchSettings;
+  searchSettings = function (...a) {
+    const r = search.apply(this, a);
+    if (!setQuery) $("#maskDock").hidden = false;
+    maskLook();
+    return r;
+  };
+  document.addEventListener("visibilitychange", maskLook);
+  addEventListener("focus", () => { if (maskSeen()) owl.call("masking", "refresh", true); });
+}

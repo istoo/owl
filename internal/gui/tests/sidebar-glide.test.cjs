@@ -119,8 +119,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // reduced motion: there at once
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await navTo(page, "gateway");
-      await on(page, "gateway");
+      await navTo(page, "usage");
+      await on(page, "usage");
       assert.deepEqual(errors, []);
       await context.close();
     });

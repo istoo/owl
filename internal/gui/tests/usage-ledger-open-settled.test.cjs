@@ -74,7 +74,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
     // watch the table while the reader goes away and comes back
     const back = async () => {
-      await navTo(p, "gateway");
+      await navTo(p, "providers");
       await p.waitForTimeout(700);
       await p.evaluate(() => {
         const wrap = document.querySelector("#ledWrap");

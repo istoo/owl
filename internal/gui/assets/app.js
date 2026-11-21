@@ -4487,8 +4487,6 @@ async function load(again) {
     // does: drawn again only on a change, with no skeleton between; on the
     // Overview, where the allowances are, that is opening them (#1588)
     if (view === "usage") await owl.call("usage", "refresh", again);
-    // the Masking page names agents and providers from what came back
-    if (view === "masking") await owl.call("masking", "refresh", again);
     // so is an open sync form (WebDAV, export, import): its passwords are
     // never sent back, so a rebuild would empty it
     if (view === "settings" && !syncOpen) await loadSettings();
@@ -21075,13 +21073,6 @@ function renderRedact(s, keep) {
   // rides on that event: nothing goes without it
   if (!s.noStats) rowIn(share, t("Share the agents, providers and models I use"), t("Sent with that event, by owl's own ids, with how many of each, and how often each partner was shown, opened and added; a provider you added yourself is only “custom”. No names, addresses, accounts, keys or usage"),
     onOff(!s.noUsageStats, (on) => savePrefs({ ...keep, noUsageStats: !on })));
-  // what masking did is a page of its own, Insights › Masking
-  if (!featureHides($('#nav button[data-view="masking"]'))) {
-    const open = el("button", "", t("Open"));
-    open.type = "button";
-    open.onclick = () => openMaskRecord(0);
-    box.prepend(rowIn(box, t("What was masked"), t("Each request masking changed, what the vendor saw, and how, on Insights › Masking"), open));
-  }
 }
 
 // privacyModelRow: the local masking model (internal/pii); its state read
@@ -21328,7 +21319,7 @@ function maskedBadge(m) {
 // tray panel opens the window on it
 function openMaskRecord(key) {
   if (mode !== "window") return void api("window/main?view=masking" + (key ? "&key=" + key : ""), {}).catch(() => {});
-  show("masking").then((went) => { if (went !== false && key && view === "masking") owl.call("masking", "focus", key); });
+  show("masking").then(() => key && owl.call("masking", "focus", key));
 }
 
 // renderRedactRules: the user's own secret rules (#195), all set on their own each time
@@ -22386,9 +22377,9 @@ for (const v of document.querySelectorAll(".view")) {
 addEventListener("scroll", () => import("./scrollends.js"), { capture: true, passive: true, once: true });
 
 let settingsLoad = Promise.resolve(); // show()'s read of Settings, for openSettingsAt
-// pages that became a part of a Settings tab (the Gateway page): a
+// pages that became a part of a Settings tab (the Gateway and Masking pages): a
 // link to one (?view=, the tray, a notification) opens that part
-const MOVED = { gateway: ["network", "#gwDock"] };
+const MOVED = { gateway: ["network", "#gwDock"], masking: ["privacy", "#maskDock"] };
 async function show(v) {
   if (MOVED[v]) return openSettingsAt(true, ...MOVED[v]);
   // a built-in page a plugin's page replaces (owl.page.replaces) opens that

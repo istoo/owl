@@ -1,8 +1,9 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The Gateway page is a part of Settings now: the Gateway group on top of
-// Network and sharing (with All models under Providers' list). The old link
-// opens it there; Share on local network is one switch, not two; switched
-// off in Plugins › Built-in, the part leaves with its plugin; and the gateway keys' timer runs only
+// The Gateway and Masking pages are parts of Settings now: the Gateway group
+// on top of Network and sharing (with All models under Providers' list) and
+// What was masked on top of Privacy. The old links open them there; Share on
+// local network is one switch, not two; switched off in Plugins › Built-in,
+// each part leaves with its plugin; and the gateway keys' timer runs only
 // while the group is in sight: not on another tab, not off Settings, and
 // again when it is back.
 const assert = require("node:assert/strict");
@@ -46,13 +47,13 @@ const keyWithLimit = () => {
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
-    test(`${engine} ${lang}: the old Gateway link opens its part of Settings`, async (t) => {
+    test(`${engine} ${lang}: the old Gateway and Masking links open their parts of Settings`, async (t) => {
       const gw = await openGateway(engine, lang, t, { where: "?view=gateway" });
       await gw.page.locator("#gateway .name").waitFor();
       assert.equal(await gw.page.evaluate(() => location.search), "?view=settings&tab=network", "the address says where it is now");
       assert.equal(await gw.page.locator("#setTab-network").getAttribute("aria-selected"), "true");
       assert.equal(await gw.page.locator("#view-settings").isVisible(), true);
-      assert.equal(await gw.page.locator("#nav button[data-view=gateway]").count(), 0, "no page of its own in the sidebar");
+      assert.equal(await gw.page.locator("#nav button[data-view=gateway], #nav button[data-view=masking]").count(), 0, "no page of their own in the sidebar");
       // the group is on top of the tab, its heading first
       const order = await gw.page.evaluate(() => {
         const at = (s) => document.querySelector(s)?.getBoundingClientRect().top;
@@ -60,6 +61,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       });
       assert.deepEqual(order, [...order].sort((a, b) => a - b), "status, address, sharing, keys, Connect, recent requests, then the rest");
       assert.deepEqual(gw.errors, []);
+
+      const mk = await openGateway(engine, lang, t, { where: "?view=masking" });
+      await mk.page.locator("#maskCard").waitFor();
+      assert.equal(await mk.page.evaluate(() => location.search), "?view=settings&tab=privacy");
+      assert.equal(await mk.page.locator("#setTab-privacy").getAttribute("aria-selected"), "true");
+      assert.equal(await mk.page.locator("#maskList").isVisible(), true);
+      assert.equal(await mk.page.locator("#maskAlertRow").count(), 1, "the alert is the part's");
+      assert.deepEqual(mk.errors, []);
     });
 
     test(`${engine} ${lang}: Network and sharing has one Share on local network switch`, async (t) => {
@@ -84,6 +93,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await off.page.locator("#view-providers").waitFor();
       assert.equal(await off.page.locator("#gwModelsHead").isVisible(), false);
       assert.deepEqual(off.errors, []);
+
+      const redact = await openGateway(engine, lang, t, { where: "?view=settings&tab=privacy", featuresOff: ["redact"] });
+      await redact.page.locator("#redactList").waitFor({ state: "attached" });
+      for (const sel of ["#maskDock", "#maskCard", "#maskList", "#maskAlertRow"]) assert.equal(await redact.page.locator(sel).isVisible(), false, sel + " is hidden");
+      assert.equal(await redact.page.locator("#redactList").isVisible(), true, "the tab's own rows stay");
+      // and a link to the page left is not a way to it
+      assert.deepEqual(redact.errors, []);
 
       const on = await openGateway(engine, lang, t, { where: "?view=settings&tab=network" });
       await on.page.locator("#gateway .name").waitFor();
@@ -163,8 +179,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   });
 }
 
-test("every page the sidebar had is still a page, and the moved one is not", async () => {
+test("every page the sidebar had is still a page, and the two moved ones are not", async () => {
   const html = await fs.readFile(path.join(assets, "index.html"), "utf8");
-  assert(!/data-view="gateway"/.test(html));
+  assert(!/data-view="gateway"/.test(html) && !/data-view="masking"/.test(html));
   for (const v of ["agents", "sessions", "library", "providers", "routing", "usage", "plugins"]) assert(html.includes(`data-view="${v}"`), v);
 });
