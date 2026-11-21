@@ -1,7 +1,8 @@
-// Insights › Masking: what masking kept from vendors, request by request.
+// Settings › Privacy's What was masked: what masking kept from vendors,
+// request by request.
 //
-// A page the redact plugin adds to the window (kernel.js), its words in
-// i18n.js beside this file. This file registers the page and its markup,
+// A part the redact plugin docks at the top of that tab (kernel.js), its
+// words in i18n.js beside this file. This file registers the page and its markup,
 // before app.js; page.js, after app.js, is the page's code. The card on
 // top says how much was masked over 7 or 30 days and where it went, the
 // list under it each request (or each value) masking changed, and a
@@ -9,14 +10,15 @@
 // how each value was found and put back. The Masking alert closes the
 // page (it sat in Settings › Usage, where nb5p looked for it in vain),
 // after the list, so the requests still start in the first screen. The
-// hooks are what the shell asks of it: open, refresh (the window came
-// back), reload (Refresh in the sidebar), leave, and focus (a masked
+// hooks are what settings.js asks of it while the tab is in sight: open,
+// refresh (the window came back), reload, leave, and focus (a masked
 // call's badge opens its request).
 owl.plugin("redact", (ctx) => {
   ctx.slots.add("page", {
     key: "masking",
-    title: "Masking",
+    into: "#maskDock",
     html: `
+  <div class="row-head"><span class="label" data-t>What was masked</span></div>
   <section class="msk-card" id="maskCard"></section>
   <section class="msk-list" id="maskList"></section>
   <div class="list prefs msk-prefs" id="maskPrefs">

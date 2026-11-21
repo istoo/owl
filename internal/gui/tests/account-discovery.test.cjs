@@ -111,8 +111,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert(sub.includes("Claude Code") && sub.includes("Codex"), "the sub names what is read: " + sub);
           if (lang !== "en") assert(!sub.startsWith("Read the accounts"), lang + " sub not translated");
           // the same Off and On as Mask secrets above it (the list opens
-          // with "What was masked", an Open onto Insights › Masking, which
-          // has no Off and On of its own)
+          // with the What was masked card, which has no Off and On of its
+          // own)
           assert.deepEqual(await opts.allTextContents(), await page.locator("#redactList .row").filter({ has: page.locator(".opt") }).first().locator(".opt").allTextContents());
           assert.equal(await opts.nth(1).evaluate((b) => b.classList.contains("on")), true, "On by default");
 

@@ -20,7 +20,7 @@ const assets = path.resolve(__dirname, "../assets");
 // as plugins/*'s manifests say them, in pluginrt.Registered's order (by id)
 const PLUGINS = [
   { id: "budget", name: "Key limits", sub: "Hold each gateway key to the tokens or estimated cost you set for it", one: "1 key with a limit", many: "{n} keys with a limit" },
-  { id: "gateway", name: "Gateway page", sub: "The gateway's state and keys, how to connect a client, its models and recent calls", one: "1 gateway key", many: "{n} gateway keys" },
+  { id: "gateway", name: "Gateway", sub: "The gateway's state and keys, how to connect a client, its models and recent calls", one: "1 gateway key", many: "{n} gateway keys" },
   { id: "groups", name: "Routing groups", sub: "Several models agents pick as one: each request goes to the right one, and to the next when one fails", one: "1 group in use", many: "{n} groups in use" },
   { id: "library", name: "Library", sub: "Instructions, MCP servers, skills and hooks, kept once and given to every agent", one: "1 item given to agents", many: "{n} items given to agents" },
   { id: "middleware", name: "JS gateway plugins", sub: "Run the JavaScript gateway plugins: middleware on agents' requests and replies, routings and usage observers", one: "1 gateway plugin on", many: "{n} gateway plugins on" },
@@ -40,7 +40,7 @@ const PLUGINS = [
 // and two routing groups the user made
 const START = { budget: [true, 0], gateway: [true, 0], groups: [false, 2], library: [false, 0], middleware: [true, 0], otel: [false, 0], redact: [true, 0], rotation: [true, 0], routing: [true, 0], search: [true, 0], sessions: [false, 0], tools: [true, 0], usage: [true, 0], warmups: [false, 0] };
 
-// the Gateway page's settings, as pluginrt.SchemaOf makes them
+// the Gateway part's settings, as pluginrt.SchemaOf makes them
 const GATEWAY_SCHEMA = {
   type: "object",
   properties: { callsPage: { type: "integer", title: "Recent calls at a time", description: "How many of the gateway's recent calls the page shows, and how many more each Show more adds", enum: [10, 20, 50, 100], default: 20 } },
@@ -114,7 +114,7 @@ const tabs = (page) => page.evaluate(() => [...document.querySelectorAll("#nav b
 const everyTab = (page) => page.evaluate(() => [...document.querySelectorAll("#nav button[data-view]")].filter((b) => !b.hidden).map((b) => b.dataset.view));
 const viewShown = (page) => page.evaluate(() => [...document.querySelectorAll("main.view")].filter((v) => !v.hidden).map((v) => v.id));
 // the tabs with Sessions and Library off, the preset's masking on
-const KEPT = ["agents", "providers", "routing", "gateway", "usage", "masking", "plugins"];
+const KEPT = ["agents", "providers", "routing", "usage", "plugins"];
 const rowsOf = (page) => page.evaluate(() => [...document.querySelectorAll("#builtinList .feat-row")].map((r) => {
   const b = r.querySelector('[role="switch"]');
   return { id: r.dataset.id, name: r.querySelector(".name").textContent, on: b.getAttribute("aria-checked"), disabled: b.disabled, why: r.querySelector(".feat-why")?.textContent || "" };
@@ -172,7 +172,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(g.why, await page.evaluate(() => t("{n} groups in use", { n: 2 })), where);
         if (lang !== "en") assert.notEqual(g.why, "2 groups in use", `${where}: why translated`);
         const gw = rows.find((r) => r.id === "gateway");
-        assert.deepEqual([gw.on, gw.disabled], ["true", false], `${where}: the Gateway page, on`);
+        assert.deepEqual([gw.on, gw.disabled], ["true", false], `${where}: the Gateway part, on`);
         const rt = rows.find((r) => r.id === "routing");
         assert.deepEqual([rt.on, rt.disabled], ["true", false], `${where}: the Routing page, on`);
         const ro = rows.find((r) => r.id === "rotation");
@@ -190,7 +190,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // nothing wider than the window
         assert.ok(await page.evaluate(() => { const v = document.querySelector("#view-plugins"); return v.scrollWidth <= v.clientWidth + 1; }), `${where}: fits`);
 
-        // the Gateway page's setting, under its row, from its schema: in
+        // the Gateway part's setting, under its row, from its schema: in
         // the page's language, its value in the app's menu, saved as picked
         const set = page.locator('#builtinList .feat-set[data-of="gateway"][data-setting="callsPage"]');
         assert.equal(await set.locator(".name").textContent(), await page.evaluate(() => t("Recent calls at a time")), where);

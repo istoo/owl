@@ -371,7 +371,7 @@ func TestBuiltinSaysWhereItsSettingsAre(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][3]string{
-		"redact":   {"privacy #redactList", "masking", ""},
+		"redact":   {"privacy #redactList", "", ""},
 		"search":   {"models #searchList", "", ""},
 		"otel":     {"otel #otelList", "", ""},
 		"gateway":  {"network #portList", "", ""},

@@ -11,6 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const quotas = () => [
@@ -98,6 +99,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const row = (name) => page.locator("#setPage-privacy .list .row", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
       await row(w.hide).waitFor();
       const top = () => page.evaluate(() => document.querySelector("#view-settings").scrollTop);
+      await reach(page, row(w.personal).getByRole("button", { name: w.on, exact: true }));
       const y0 = await top();
       await row(w.personal).getByRole("button", { name: w.on, exact: true }).click();
       await page.waitForFunction(() => localStorage.getItem("owl.maskEmails") === "1");

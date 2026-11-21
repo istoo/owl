@@ -65,7 +65,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(lines.map((l) => l.text), w.groups.slice(1), "a line before each group but the first");
       assert.ok(lines.every((l) => l.h <= 1.5), `each a thin line, not a name: ${JSON.stringify(lines)}`);
       assert.deepEqual(await page.locator("#nav button[data-view]").evaluateAll((bs) => bs.map((b) => b.dataset.view)),
-        ["agents", "sessions", "library", "providers", "routing", "gateway", "usage", "masking", "plugins"]);
+        ["agents", "sessions", "library", "providers", "routing", "usage", "plugins"]);
       // each page an icon over its name, inside a rail no wider than 80
       const rail = await page.locator("#side").evaluate((s) => s.getBoundingClientRect().width);
       assert.ok(rail <= 80, `a narrow rail: ${rail}`);
