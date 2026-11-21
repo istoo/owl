@@ -314,7 +314,7 @@ Yes, by hand. Connecting dsh adds owl’s routes and leaves dsh’s DeepSeek row
 Users report that this works. Trae keeps custom models in your Trae account, on its servers, so owl can’t set it up for you, and Trae may not reach `127.0.0.1`. So:
 
 1. In owl, turn on Settings → Network and sharing → Share on local network, and note the Address it shows.
-2. Take a gateway key (Gateway → Gateway keys, or `owl gateway-key add "Trae"`).
+2. Take a gateway key (Settings → Network and sharing → Gateway keys, or `owl gateway-key add "Trae"`).
 3. In Trae’s custom model settings, enter that address as the address and the gateway key as the API key.
 
 The model id is owl’s (`owl models`). Sharing lets other computers on your network in with a gateway key; see [Remote owl](https://usemagpie.ai/docs/remote#share).
@@ -8778,7 +8778,7 @@ An agent that owl marks Apply again or How to fix: see [When an agent stops goin
 
 ## From another computer on the network
 
-By default the gateway answers only this computer. To use it from another: Settings › Network and sharing › Share on local network. The other computer sends a gateway key from the Gateway page’s Gateway keys.
+By default the gateway answers only this computer. To use it from another: Settings › Network and sharing › Share on local network. The other computer sends a gateway key from the Gateway keys just under it.
 
 - **“owl isn’t shared on the local network”..** Turn sharing on, on the computer that runs owl.
 - **401..** The key is missing, off or expired. Send an enabled gateway key as `Authorization: Bearer <key>` or `x-api-key`.
@@ -10594,7 +10594,7 @@ The computer you sit at still runs owl: it wires that computer’s agents, picks
 ## 1. Share the main owl
 
 1. **Turn on sharing.** On the computer that keeps your providers: Settings → Network and sharing → Share on local network → On. owl then listens on the local network and makes a gateway key named Owl. The Address row below the switch shows where other computers reach it, such as `http://192.168.1.20:3425`.
-2. **Make a key for each computer.** Gateway → Gateway keys, or `owl gateway-key add "Laptop"`, which prints its `sk-owl-key-…`. Each key can have its own daily, weekly or monthly limit and its own models, and its calls are counted under its name.
+2. **Make a key for each computer.** Settings → Network and sharing → Gateway keys, or `owl gateway-key add "Laptop"`, which prints its `sk-owl-key-…`. Each key can have its own daily, weekly or monthly limit and its own models, and its calls are counted under its name.
 
 While sharing is off, a desktop owl listens on its own computer only, and other computers can’t reach it. A owl in Docker is reached through its published port instead, and asks every caller outside its container for a gateway key, shared or not; see [Docker](https://usemagpie.ai/docs/docker#share).
 
@@ -10725,7 +10725,7 @@ curl -s http://127.0.0.1:3425/v1/owl/concurrency
 | You see | What to do |
 | --- | --- |
 | “owl isn’t shared on the local network”, or “remote owl isn’t shared” | turn on Share on local network on that computer |
-| “remote owl didn’t take this key” (401) | use one of its enabled gateway keys: Gateway → Gateway keys there |
+| “remote owl didn’t take this key” (401) | use one of its enabled gateway keys: Settings → Network and sharing → Gateway keys there |
 | 403 for a model | that key may use only some models: `owl gateway-key models <id>` on that computer shows or changes them. A bare `office` asks System One’s first decision model, whatever the key allows; use the full `office/provider/model` id |
 | “couldn’t reach the remote owl” | check the address, that owl is running there with sharing on, and that its firewall lets the port in |
 | no System One models, or “doesn’t share its quotas” | update owl on that computer, then refresh the list here |
@@ -10843,7 +10843,7 @@ A volume made by an older image keeps working: owl adds the folders it lacks whe
 
 ## Gateway keys and other machines
 
-1. **Make a key for each client.** Gateway → Gateway keys, or in a terminal `docker exec owl owl gateway-key add "Laptop"`, which prints the new `sk-owl-key-…`. Every request from outside the container, the host’s own included, must carry an enabled gateway key, and one without gets 401. A key can have its own daily, weekly, monthly, every-N-days or every-N-hours limit and its own list of models (`owl gateway-key limit`, `owl gateway-key models`).
+1. **Make a key for each client.** Settings → Network and sharing → Gateway keys, or in a terminal `docker exec owl owl gateway-key add "Laptop"`, which prints the new `sk-owl-key-…`. Every request from outside the container, the host’s own included, must carry an enabled gateway key, and one without gets 401. A key can have its own daily, weekly, monthly, every-N-days or every-N-hours limit and its own list of models (`owl gateway-key limit`, `owl gateway-key models`).
 2. **Publish the port.** Recreate the container with `-p 3425:3425`, or bound to the NAS’s LAN or VPN address (`-p 192.168.1.20:3425:3425`), and with `-e OWL_PUBLIC_URL=http://192.168.1.20:3425`.
 
 On each other computer, point the agent at the gateway with one of those keys as its API key: `http://192.168.1.20:3425/v1` for an OpenAI client, `http://192.168.1.20:3425` for an Anthropic or Gemini one. Model ids are `provider/model`, or a routing group’s; `GET /v1/models` lists them. If that computer runs owl itself, add the container as a [Remote owl](https://usemagpie.ai/docs/remote) instead, and owl wires its agents for you.

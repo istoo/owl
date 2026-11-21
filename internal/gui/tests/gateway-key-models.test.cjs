@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { wheelRest } = require("./fixtures/wheel-rest.cjs");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -22,8 +23,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const w = zh
         ? { label: "此密钥可用的模型", all: "全部模型", two: "2 个模型", relay: "Relay 的全部模型", only: /仅限这些模型/ }
         : { label: "Models this key may use", all: "All models", two: "2 models", relay: "Every Relay model", only: /Only these models/ };
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+      await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
       const badge = (id) => row(id).getByRole("button", { name: w.label, exact: true });
       // a held key says how many it may use, always; a free one "All models"
@@ -34,13 +36,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // nothing drawn with a coloured left border
       const lefts = await page.locator("#gatewayKeys .key-models").evaluateAll((els) => els.map((e) => getComputedStyle(e).borderLeftStyle));
       assert(lefts.every((s) => s === "none"), "a badge has a left border");
-      const view = page.locator("#view-gateway");
+      const view = page.locator("#view-settings");
       const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
       await page.mouse.move(500, 300);
       await page.mouse.wheel(0, 120);
       // the wheel's coast ends after its last step: the place is taken at
       // rest, not between two of its scrolls (a loaded Linux runner, #13)
-      await wheelRest(page, "#view-gateway");
+      await wheelRest(page, "#view-settings");
       const at = await scrolled();
       // the app's menu, not a native select
       await row("work").hover();

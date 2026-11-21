@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The Gateway page's model list (ARNO on Discord): a search box finds models
+// The All models list (Providers page, under the list) (ARNO on Discord): a search box finds models
 // by id, name, provider and a group's models, and each row ends with what
 // agents are told of the model — its reasoning levels, whether it takes
 // images, its context, its reply limit — the full detail in the chips' tooltip; a routing
@@ -9,6 +9,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -38,7 +40,7 @@ async function serve(route) {
   if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: 'window.bootPrefs = {lang:"en",theme:"light",web:true};' });
   if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
   if (url.pathname === "/api/state") return json(state);
-  if (url.pathname === "/api/providers") return json(providers);
+  if (url.pathname === "/api/providers") return json(providersOf(providers));
   if (url.pathname === "/api/groups") return json({ groups: [] });
   if (url.pathname === "/api/gateway/trace") {
     if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -54,7 +56,7 @@ const rowOf = (page, id) => page.locator("#gwModels .row.model").filter({ has: p
 const ids = (page) => page.locator("#gwModels .row.model .name").allTextContents();
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
-  test(engine + ": the Gateway's models can be searched and say what they take", async (t) => {
+  test(engine + ": the All models list can be searched and say what they take", async (t) => {
     assert(["chromium", "webkit"].includes(engine), "BROWSER must be chromium or webkit");
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     const context = await browser.newContext({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
@@ -76,7 +78,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await browser.close();
     });
 
-    await page.goto("http://owl.test/?view=gateway");
+    await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+    await page.goto("http://owl.test/?view=providers");
     await page.locator("#gwModels .row.model").first().waitFor();
     assert.deepEqual(await ids(page), ["group/smart", "acme/gpt-5.5", "acme/gpt-5.5-mini", "acme/text-only", "zeta/glm-5", "zeta/kimi-k3"]);
 

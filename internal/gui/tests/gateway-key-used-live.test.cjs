@@ -1,5 +1,5 @@
-// A gateway key's limit lines say what it has used while the Gateway
-// page stays open: Young (Discord, v0.1.18xx) reset his keys' usage and
+// A gateway key's limit lines say what it has used while Settings >
+// Network stays open: Young (Discord, v0.1.18xx) reset his keys' usage and
 // their lines read $0.00 from then on, while Usage showed the same keys
 // spending, because the keys were read only on a visit to the page. Now
 // the window coming back, and a timer while the page is in sight, read
@@ -52,7 +52,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       spend(0, 0);
       await page.clock.install();
       await page.route("**/*", fixture(lang, "light", [], { lan: true, keys }));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const lines = page.locator('#gatewayKeys .acc[data-key="pool"] .key-limit');
       await lines.first().waitFor();
       const zero = tr("{used} of {limit} estimated · {left} left", { used: "$0.00", limit: "$30.00", left: "$30.00" });

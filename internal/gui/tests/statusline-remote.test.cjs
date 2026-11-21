@@ -24,7 +24,7 @@ async function setup(t, engine, lang, width, options) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", fixture(lang, "light", [], { lan: true, ...options }));
-  await page.goto("http://owl.test/?view=gateway");
+  await page.goto("http://owl.test/?view=settings&tab=network");
   await page.locator("#prefs").waitFor();
   if (!(await page.locator("#view-settings").isVisible())) await page.locator("#prefs").click();
   await openPart(page, "about");

@@ -42,17 +42,22 @@
     if (!/^[a-z][a-z0-9-]*$/.test(part.key || "") || pages.has(part.key) || document.getElementById("view-" + part.key)) {
       throw new Error(`page ${part.key} is taken`);
     }
-    const main = document.createElement("main");
-    main.className = "view";
-    main.id = "view-" + part.key;
-    main.hidden = true;
+    // into: a place in another page (a Settings tab) the part's markup goes
+    // in, not a page of its own: its hooks run as a page's do, called by
+    // the shell while that place is in sight
+    const dock = part.into && document.querySelector(part.into);
+    const main = dock || document.createElement("main");
+    if (!dock) {
+      main.className = "view";
+      main.id = "view-" + part.key;
+      main.hidden = true;
+    }
     main.dataset.feature = p.id;
     main.innerHTML = part.html || "";
     window.owl?.fillSlots?.(main);
     const anchor = document.querySelector('template[data-slot="page"]');
-    if (anchor) anchor.before(main);
-    else document.body.append(main);
-    const page = { plugin: p, part, main, mounted: false, broken: null };
+    if (!dock) { if (anchor) anchor.before(main); else document.body.append(main); }
+    const page = { plugin: p, part, main, mounted: false, broken: null, dock: !!dock };
     pages.set(part.key, page);
     if (started) run(page, "mount", [main]);
   }
@@ -259,7 +264,7 @@
       }
     },
     page: (key) => pages.get(key)?.part,
-    pages: () => [...pages.keys()],
+    pages: () => [...pages].filter(([, g]) => !g.dock).map(([k]) => k),
     // the plugins' settings as Plugins › Built-in or boot.js has them
     configure(id, config) {
       const p = plugins.get(id);

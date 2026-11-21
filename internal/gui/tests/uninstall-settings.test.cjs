@@ -35,7 +35,7 @@ async function setup(t, engine, lang, width, { web = false, reply = { failed: fa
     if (p === "/api/uninstall/finish") return route.fulfill({ status: 204 });
     return route.fulfill({ json: { agents: [], system: [], data: [], ...reply } });
   });
-  await page.goto("http://owl.test/?view=gateway");
+  await page.goto("http://owl.test/?view=settings&tab=network");
   await page.locator("#prefs").click();
   await openPart(page, "about");
   await page.locator("#about .row").first().waitFor();

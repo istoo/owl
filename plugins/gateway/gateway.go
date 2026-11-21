@@ -21,14 +21,15 @@ type Settings struct {
 func init() {
 	pluginrt.Register(pluginrt.Manifest{
 		ID: "gateway", API: "^1", Requires: []string{"window", "gateway"}, Essential: true,
-		Name: "Gateway page", Sub: "The gateway's state and keys, how to connect a client, its models and recent calls",
+		Name: "Gateway", Sub: "The gateway's state and keys, how to connect a client, its models and recent calls",
 		One: "1 gateway key", Many: "{n} gateway keys",
 		InUse: func() (int, error) {
 			keys, err := access.List()
 			return len(keys), err
 		},
-		SetAt:    "network #portList",
-		Parts:    []pluginrt.Part{{Slot: "nav.page", Key: "gateway"}},
+		SetAt: "network #portList",
+		// Settings › Network and sharing: the gateway group on top
+		Parts:    []pluginrt.Part{{Slot: "settings.section", Key: "gateway"}},
 		Settings: Settings{CallsPage: 20},
 		Client:   []string{"keys.js", "client.js"},
 	})

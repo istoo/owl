@@ -4,6 +4,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -21,13 +22,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const w = zh
         ? { label: "此密钥可用的模型", all: "全部模型", groups: "全部路由组", relay: "Relay 的全部模型" }
         : { label: "Models this key may use", all: "All models", groups: "Every routing group", relay: "Every Relay model" };
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+      await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
       const badge = (id) => row(id).getByRole("button", { name: w.label, exact: true });
       // a key held to one group says which
       assert.equal((await badge("server").textContent()).trim(), "group/fast");
-      const view = page.locator("#view-gateway");
+      const view = page.locator("#view-settings");
       const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
       const at = await scrolled();
       await row("work").hover();

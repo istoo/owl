@@ -10,6 +10,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const saved = { en: "Gateway key order saved", zh: "网关密钥的顺序已保存", "zh-TW": "閘道金鑰的順序已儲存", ja: "ゲートウェイキーの順番を保存しました", de: "Reihenfolge der Gateway-Schlüssel gespeichert" };
@@ -25,9 +26,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], events = [], options = { lan: true };
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", fixture(lang, "light", events, options));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const rows = page.locator("#gatewayKeys .acc[data-key]");
       await rows.last().waitFor();
+      await reach(page, rows.last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const order = () => rows.evaluateAll((rs) => rs.map((r) => r.dataset.key).join(","));
       const waitOrder = (want) => page.waitForFunction((want) => [...document.querySelectorAll("#gatewayKeys .acc[data-key]")].map((r) => r.dataset.key).join(",") === want, want);
       const moves = () => events.filter((e) => e.action !== "ledger");
@@ -46,7 +48,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       const clear = () => page.evaluate(() => { const s = document.querySelector("#status"); s.className = "status"; s.textContent = ""; });
       const said = () => page.waitForFunction(() => document.querySelector("#status")?.classList.contains("ok")).then(() => page.locator("#status").textContent());
-      const y0 = await page.evaluate(() => scrollY);
+      const y0 = [await page.evaluate(() => scrollY), await page.locator("#view-settings").evaluate((v) => v.scrollTop)]; // Settings scrolls in #view-settings, the window not at all
 
       // drag Work, by its masked key, above Laptop
       await clear();
@@ -83,11 +85,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.waitForFunction(() => document.querySelector('#gatewayKeys .acc[data-key="laptop"]')?.classList.contains("off"));
       assert.equal(moves().at(-1).action, "off-key");
       assert.equal(await order(), "laptop,work,server");
-      assert.equal(await page.evaluate(() => scrollY), y0, "arranging moved the page");
+      assert.deepEqual([await page.evaluate(() => scrollY), await page.locator("#view-settings").evaluate((v) => v.scrollTop)], y0, "arranging moved the page");
 
       // opened again, the keys are in the order saved
       await page.reload();
       await rows.last().waitFor();
+      await reach(page, rows.last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       assert.equal(await order(), "laptop,work,server");
       assert(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), "nothing wider than the window");
       assert.deepEqual(errors, []);

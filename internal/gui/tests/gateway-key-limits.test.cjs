@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const src = fs.readFileSync(path.resolve(__dirname, "../assets/i18n.js"), "utf8");
@@ -46,8 +47,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const events = [], errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", events, { lan: true, limits: limits() }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+        await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
         const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
         const sent = (action) => events.filter((e) => e.action === action);
         const fits = async (what) => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, what + " scrolls sideways");

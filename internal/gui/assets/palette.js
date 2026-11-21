@@ -34,6 +34,8 @@ export function openPalette() {
       out.push({ name, kind: "Page", run: () => show(b.dataset.view) });
     }
     out.push({ name: t("Settings"), kind: "Page", run: () => show("settings") });
+    // pages that became parts of a Settings tab
+    for (const v in MOVED) if (!featureHides($(MOVED[v][1]))) out.push({ name: t(v === "gateway" ? "Gateway" : "Masking"), kind: "Page", words: [v], run: () => show(v) });
     if (providers) {
       for (const p of providers.providers) {
         out.push({ name: p.name, kind: "Provider", words: [p.id, p.host || "", ...(p.models || []).slice(0, 12).map((m) => m.id)],

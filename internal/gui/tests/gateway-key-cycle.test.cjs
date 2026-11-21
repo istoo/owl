@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const src = fs.readFileSync(path.resolve(__dirname, "../assets/i18n.js"), "utf8");
@@ -42,16 +43,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const events = [], errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", fixture(lang, "light", events, { lan: true, limits: limits() }));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+      await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
       const sent = (action) => events.filter((e) => e.action === action);
       const badge = row("laptop").locator(".amodels.limit");
       assert.match(await badge.textContent(), new RegExp(tr("every {n} days", { n: 10 })));
       assert.equal(await row("laptop").locator(".amodels.limit.spent").count(), 1);
-      const view = page.locator("#view-gateway");
+      const view = page.locator("#view-settings");
       const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
-      const at = await scrolled();
 
       // its editor: the window is "Every N days", its days 10
       await row("laptop").getByRole("button", { name: tr("Change this key's limit"), exact: true }).click();
@@ -69,6 +70,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // Reset usage: asked first; Cancel sends nothing
       const resetBtn = ed.getByRole("button", { name: tr("Reset usage"), exact: true });
+      await reach(page, resetBtn); // the click doesn't scroll to it: the reader does, so the baseline is taken after
+      const at = await scrolled();
       await resetBtn.click();
       const modal = page.locator("#modal");
       await modal.getByText(tr("Reset {name}'s usage?", { name: "Laptop" })).waitFor();

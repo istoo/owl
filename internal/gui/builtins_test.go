@@ -359,7 +359,7 @@ func TestBuiltinSearchSaysWhatSearches(t *testing.T) {
 	}
 }
 
-// A built-in with settings says where they are, and its page on or off,
+// A built-in with settings says where they are, and its page when it has one,
 // for its row to go to both (netube99 on X: masking's switch, settings and
 // page didn't name each other)
 func TestBuiltinSaysWhereItsSettingsAre(t *testing.T) {
@@ -374,7 +374,7 @@ func TestBuiltinSaysWhereItsSettingsAre(t *testing.T) {
 		"redact":   {"privacy #redactList", "masking", ""},
 		"search":   {"models #searchList", "", ""},
 		"otel":     {"otel #otelList", "", ""},
-		"gateway":  {"network #portList", "gateway", ""},
+		"gateway":  {"network #portList", "", ""},
 		"library":  {"", "library", ""},
 		"groups":   {"", "", "groups"},
 		"budget":   {"", "", "gateway"},

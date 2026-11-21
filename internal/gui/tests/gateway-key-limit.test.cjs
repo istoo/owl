@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { wheelRest } = require("./fixtures/wheel-rest.cjs");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const day = 864e5;
@@ -35,8 +36,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const w = zh
         ? { limit: "为此密钥设置限额", change: "修改此密钥的限额", left: /剩余/, refused: /前拒绝请求/, tokens: "Token 限额", cost: "估算费用限额（美元）", window: "限额周期", cache: "缓存读取也计入", save: "保存", cancel: "取消", none: "不限制", unsaved: "未保存", week: "每周", bad: /Token 应为数量/ }
         : { limit: "Set a limit for this key", change: "Change this key's limit", left: /tokens · .* left/, refused: /refused until/, tokens: "Token limit", cost: "Estimated cost limit, US$", window: "Limit window", cache: "Count cache reads too", save: "Save", cancel: "Cancel", none: "No limit", unsaved: "unsaved", week: "per week", bad: /Tokens is a count/ };
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+      await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
       const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
       // what each limited key has used, has left and when it resets
       assert.match(await row("laptop").locator(".key-limit").textContent(), w.left);
@@ -52,13 +54,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const styles = await page.locator("#gatewayKeys " + sel).evaluateAll((els) => els.map((e) => getComputedStyle(e).borderLeftStyle));
         assert(styles.every((s) => s === "none"), sel + " has a left border");
       }
-      const view = page.locator("#view-gateway");
+      const view = page.locator("#view-settings");
       const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
       await page.mouse.move(500, 300);
       await page.mouse.wheel(0, 120);
       // the wheel's coast ends after its last step: the place is taken at
       // rest, not between two of its scrolls (a loaded Linux runner, #13)
-      await wheelRest(page, "#view-gateway");
+      await wheelRest(page, "#view-settings");
       const at = await scrolled();
       // open Work's editor: staged, nothing sent
       await row("work").getByRole("button", { name: w.limit, exact: true }).click();

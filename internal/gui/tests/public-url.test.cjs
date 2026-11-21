@@ -86,7 +86,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         for (const c of cases) {
           await t.test(c.name, async () => {
             Object.assign(gateway, c.gateway);
-            await page.goto("http://owl.test/?view=gateway");
+            await page.goto("http://owl.test/?view=settings&tab=network");
             await note.waitFor();
             assert.equal(await note.textContent(), w[c.note]);
             if (c.noAnyKey) assert.equal(await page.locator("#connect code", { hasText: /^owl$/ }).count(), 0, "a key-less owl is offered");

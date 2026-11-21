@@ -4,6 +4,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 const { watchSettingsReads, settingsDrawn, navTo } = require("./reader.cjs");
 const assets = path.resolve(__dirname, "../assets");
 const settings = { theme: "light", lang: "en", tray: "panel", textSize: 100, currency: "usd",
@@ -21,7 +23,7 @@ async function serve(route) {
   if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: 'window.bootPrefs = {lang:"en",theme:"light",web:true};' });
   if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings });
   if (url.pathname === "/api/settings") return json(settings);
-  if (url.pathname === "/api/providers") return json(providers);
+  if (url.pathname === "/api/providers") return json(providersOf(providers));
   if (url.pathname === "/api/groups") return json({ groups: [], models: [] });
   if (url.pathname === "/api/usage/quotas") return json([]);
   if (url.pathname === "/api/plugins") return json({ plugins: [] });
@@ -31,7 +33,9 @@ async function serve(route) {
 }
 
 async function contrast(locator) {
-  return locator.evaluate((element) => {
+  // found and read in one call: a part drawn again between the two hands the
+  // read an element just replaced, which has no colour
+  return locator.evaluateAll(([element]) => {
     const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map((value) => {
       const n = Number(value) / 255; return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4;
     }).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
@@ -80,17 +84,25 @@ for (const engine of process.env.BROWSER ? [process.env.BROWSER] : ["chromium", 
 
     await t.test("connection instructions and editor help are readable in both themes", async () => {
       await watchSettingsReads(page);
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => { localStorage.setItem("owl.gwModelsFolded", "0"); localStorage.setItem("owl.gwConnectFolded", "0"); }); // All models and Connect are folded until opened
+      // Connect is on Settings > Network and sharing, the model list on Providers
+      await page.goto("http://owl.test/?view=settings&tab=network");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
-      await page.locator("#gwModels .name").first().waitFor();
+      await page.locator(".connect label").first().waitFor({ state: "visible" });
       for (const theme of ["light", "dark"]) {
         await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
-        for (const selector of [".connect label", ".connect .hint", "#gwModels .sub"]) {
+        for (const selector of [".connect label", ".connect .hint"]) {
           const ratio = await contrast(page.locator(selector).first());
           assert.ok(ratio >= 4.5, `${theme} ${selector}: contrast ${ratio}`);
         }
       }
       await navTo(page, "providers");
+      await page.locator("#gwModels .name").first().waitFor();
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+        const ratio = await contrast(page.locator("#gwModels .sub").first());
+        assert.ok(ratio >= 4.5, `${theme} #gwModels .sub: contrast ${ratio}`);
+      }
       await page.locator("#providers .row.provider").click();
       for (const theme of ["light", "dark"]) {
         await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
@@ -112,7 +124,10 @@ for (const engine of process.env.BROWSER ? [process.env.BROWSER] : ["chromium", 
 
     await t.test("selecting a model ID does not activate or redraw its row", async () => {
       await watchSettingsReads(page);
-      await page.goto("http://owl.test/?view=gateway");
+      // All models is folded until it is opened; the model the snippets use was the one Connect
+      // picked as it drew on the Gateway page, and is the one kept here now
+      await page.addInitScript(() => { localStorage.setItem("owl.gwModelsFolded", "0"); localStorage.setItem("owl.model", "acme/example"); });
+      await page.goto("http://owl.test/?view=providers");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
       const name = page.locator("#gwModels .name").nth(1);
       await name.waitFor();

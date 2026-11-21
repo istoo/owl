@@ -146,7 +146,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", fixture(lang, "light", [], { lan: true, web: true }));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const line = page.locator("#gatewayKeys .gw-key-page");
       await line.waitFor();
       assert.equal(await line.locator("code").textContent(), "http://192.168.1.10:3999/me");
@@ -167,12 +167,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     page.setDefaultTimeout(6000);
     page.setDefaultNavigationTimeout(60000);
     await page.route("**/*", fixture("en", "light", [], { lan: true, web: true, publicURL: "https://ai.corp.example" }));
-    await page.goto("http://owl.test/?view=gateway");
+    await page.goto("http://owl.test/?view=settings&tab=network");
     await page.locator("#gatewayKeys .gw-key-page").waitFor();
     assert.equal(await page.locator("#gatewayKeys .gw-key-page code").textContent(), "https://ai.corp.example/me");
     page = await ctx.newPage();
     await page.route("**/*", fixture("en", "light", [], { lan: true, web: true, keys: [] }));
-    await page.goto("http://owl.test/?view=gateway");
+    await page.goto("http://owl.test/?view=settings&tab=network");
     await page.locator("#gatewayKeys .none").waitFor();
     assert.equal(await page.locator("#gatewayKeys .gw-key-page").count(), 0);
   });
