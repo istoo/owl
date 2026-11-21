@@ -174,3 +174,9 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 原因：v1 在 state() 里每次读今日汇总。40 万行日志、今日 2.6 万次调用时，SummarizeTop 冷 750ms、热 1.2ms；而 state() 本身热态约 6ms。改为只读网关环 + `usage.LastCalls()`（ReadAhead 与 Usage 页已经算好的汇总顺手发布）后，agentLives 热态 0.13ms（3 个 agent）、无记录 0.4µs。
 - 怎么验证：临时测量测试打印 state() 与 agentLives 的冷/热耗时（空日志、单条、40 万行/2.6 万今日）；`SummaryReads()` 计数在 state() 前后不变。红证：在 agentLives 里加回 SummarizeTop，`TestAgentLiveFromTheLastCall` 报 "state() read 1 summaries"。
 - 同一教训的语义部分：「最近一次实际命中的供应商」只算 owl 真正送到供应商的请求——客户端自报的（reported）、owl 自己用 key 跑的搜索（SourceSearch）、标题生成（Provider "owl"）、以及在任何供应商被询问前就被拒的请求都不算；到达供应商后失败的请求算（它确实命中了）。直连/导入的会话用量不进 topSummary，也不会被当成经 owl 的请求。请求身份用 `Record.RouteID`/`Call.Route`，时间与用量记录同一瞬间；对应的测试是 `TestAgentLastCallSkipsWhatOwlDidNotCarry`、`TestAgentLiveSkipsWhatOwlDidNotCarry` 和 `TestAgentLiveFromTheLastCall`。
+
+## 2026-11-21：分片缺日志的那一片，等于没比
+
+- 规则：用 CI 的全量 GUI 运行判断「分支有没有引入新红」时，必须逐个分片比，而且分支和主干基线都要有该分片的完整日志（日志末尾有 `ℹ tests`）。任一边缺某片（Playwright 安装超时、被取消），就重跑那一片，或拿另一次主干运行的同一片当基线；不能只比两边都有的分片就下结论。合入前把四片都列出来：每片是「比过、无新红」，还是「未比」。
+- 原因：一键安装（f857d7b05）合入时，主干基线 44812393599 没有第 2 片的日志，我只比了 1、3、4 片。`old-webkit.test.cjs` 在第 2 片，它因为新的懒加载脚本 `agentinstall.js` 没登记而红，就这样漏进了主干，直到 S3 分支在基线上跑到它才发现（7e4c29ee3 修复）。
+- 怎么验证：比对脚本对每片输出「分支红 / 基线红 / 分支独有红」三个数；任何一片缺日志，就输出「未比」并拒绝给出结论。
