@@ -51,7 +51,7 @@ plugins' scripts and `app.js`, all classic scripts sharing one scope. It is
   is, at once, so app.js finds the page as it finds its own. A part with
   `into: "<selector>"` is docked instead: its markup goes in that place of
   another page (the gateway plugin's two parts in Settings › Network and
-  sharing), the element keeps its own id,
+  sharing, redact's in Settings › Privacy), the element keeps its own id,
   `owl.pages()` leaves it out, and the shell calls its hooks while that place
   is in sight (`gwLook`, `maskLook`). app.js calls
   `owl.start()` when it is set up, which mounts every page, and then each

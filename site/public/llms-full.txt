@@ -3760,8 +3760,8 @@ When the model answers *“I set OPENAI_API_KEY to {{API_KEY_srhjgvja}} in .env�
 ## Check that it works
 
 - **Before:.** Try it on Settings → Privacy shows the text as the vendor would get it, with each value’s kind.
-- **Each request:.** a shield badge with a count appears on the request in the Gateway page’s recent calls and in the Routing log. Point at it for the kinds; click it to open the request’s record.
-- **Over time:.** Insights → Masking (also What was masked on the Privacy page) shows the values masked over 7 or 30 days by kind, agent and provider, and each request’s text as the vendor saw it, placeholders marked.
+- **Each request:.** a shield badge with a count appears on the request in Settings › Network and sharing’s recent requests and in the Routing log. Point at it for the kinds; click it to open the request’s record.
+- **Over time:.** Settings → Privacy → What was masked (at the top of the page) shows the values masked over 7 or 30 days by kind, agent and provider, and each request’s text as the vendor saw it, placeholders marked.
 
 The records are kept in `~/.config/owl/masking` for 30 days: the agent, provider, model, and each placeholder’s kind, length and first characters, never the value.
 

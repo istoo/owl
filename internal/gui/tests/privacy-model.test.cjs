@@ -114,13 +114,13 @@ const runs = {
 
 // what the row shows: its words and its New mark, whether they rest out of
 // sight for the hover card (hint) or are cut, that it is inside the list,
-// and that it is the page's first setting
+// and that it is the page's first setting (the masked records above it are not a setting)
 const look = (page) => page.evaluate(() => {
   const r = document.querySelector("#privacyModelRow"), list = r.closest(".list").getBoundingClientRect();
   const sub = r.querySelector(".sub"), b = r.getBoundingClientRect(), v = r.querySelector(".val").getBoundingClientRect();
   return {
     name: r.querySelector(".name").firstChild.textContent, badge: r.querySelector(".name .badge.new")?.textContent, sub: sub.textContent,
-    first: r === document.querySelector("#setPage-privacy .list.prefs > .row"),
+    first: r === [...document.querySelectorAll("#setPage-privacy .list.prefs > .row")].find((x) => !x.closest("#maskDock")),
     on: r.querySelector(".segs .opt.on")?.textContent, buttons: [...r.querySelectorAll("button.text")].map((x) => x.textContent),
     hint: getComputedStyle(sub).getPropertyValue("--hint").trim() === "1",
     cut: sub.scrollWidth > sub.clientWidth + 1 || sub.scrollHeight > sub.clientHeight + 1,

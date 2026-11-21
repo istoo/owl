@@ -1,5 +1,6 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// Insights › Masking: a short card of what masking kept from vendors (the
+// Settings › Privacy's "What was masked" (#maskDock, at the top of the tab; the
+// old ?view=masking link opens it there): a short card of what masking kept from vendors (the
 // number, the days, agents to providers, each with its logo, through
 // owl's bird in the middle of its ring) over the requests it changed,
 // by day, narrowed by facets, agents and providers, or the values masked
@@ -9,8 +10,8 @@
 // a value lights its places. A request held back says why and offers to
 // mask instead; one whose text is gone (a restart, or older than the
 // newest kept) shows the lines that are left. Masking off and nothing
-// masked, the card offers to turn it on. A masked call on the Gateway page
-// and a key= in the address open its request. Nothing is left in English,
+// masked, the card offers to turn it on. A masked call in Settings › Network & sharing's
+// recent requests and a key= in the address open its request. Nothing is left in English,
 // nothing is wider than the window, and a click scrolls nothing.
 // Every language, Chromium and WebKit, 1100 and 640px; the API is faked.
 const assert = require("node:assert/strict");
@@ -18,6 +19,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const KEY = "{{API_KEY_aaaa1111}}", NAME = "{{PERSON_bbbb2222}}", MAIL = "{{EMAIL_cccc3333}}", PK = "{{PRIVATE_KEY_dddd4444}}";
@@ -144,7 +146,9 @@ async function open(engine, lang, width, sum, where, opts) {
   const errors = [], asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/*", serve(lang, sum, asked, opts));
-  await page.goto("http://owl.test/" + (where || "?view=masking"));
+  // the recent requests are folded to begin with; this page reads them open
+  await page.addInitScript(() => { try { localStorage.setItem("owl.gwCallsFolded", "0"); } catch {} });
+  await page.goto("http://owl.test/" + (where || "?view=settings&tab=privacy"));
   return { browser, page, errors, asked };
 }
 // what the fake API was asked is on this side, not the page's
@@ -162,22 +166,33 @@ const english = ["Kept from vendors", "By request", "By value", "masked these on
   "This request was not sent", "Mask it instead", "See the rules", "Nothing to put back", "no longer in memory", "never on disk", "Masked most", "Local model"];
 const untranslated = async (page, lang) => {
   if (lang === "en") return;
-  const said = await page.locator("#view-masking").innerText();
+  const said = await page.locator("#maskDock").innerText();
   for (const w of english) assert(!said.includes(w), `${w} left in English: ${said}`);
 };
 const wide = (page) => page.evaluate(() => {
-  const over = [...document.querySelectorAll("#view-masking *")].filter((n) => n.getClientRects().length && n.getBoundingClientRect().right > innerWidth + 1 && !n.closest(".msk-text, .msk-same")).map((n) => n.className?.baseVal ?? n.className);
+  const over = [...document.querySelectorAll("#maskDock *")].filter((n) => n.getClientRects().length && n.getBoundingClientRect().right > innerWidth + 1 && !n.closest(".msk-text, .msk-same")).map((n) => n.className?.baseVal ?? n.className);
   return { page: document.documentElement.scrollWidth > document.documentElement.clientWidth, over };
 });
-const scrolled = (page) => page.evaluate(() => [scrollX, scrollY, document.querySelector("#view-masking").scrollTop, document.querySelector("main, .main, #main")?.scrollTop ?? 0]);
+const scrolled = (page) => page.evaluate(() => [scrollX, scrollY, document.querySelector("#view-settings").scrollTop, document.querySelector("main, .main, #main")?.scrollTop ?? 0]);
 // a click that moves nothing: Playwright brings the target into view
 // first, so the page is read after that and again after the click
 async function stillClick(page, loc) {
-  await loc.scrollIntoViewIfNeeded();
+  await reach(page, loc);
   const before = await scrolled(page);
   await loc.click();
   await page.waitForTimeout(100);
   assert.deepEqual(await scrolled(page), before, "no click moved the page");
+}
+
+// A link to Settings › Privacy's own rows (words, rules) is on that tab
+// already: it brings "What to mask" (#redactList) into view and lights it,
+// and stays on the tab
+async function toWhatToMask(page) {
+  await page.locator("#redactList.flash").waitFor();
+  await page.waitForFunction(() => { const r = document.querySelector("#redactList").getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; });
+  const at = new URL(page.url()).searchParams;
+  assert.equal(at.get("view"), "settings");
+  assert.equal(at.get("tab"), "privacy");
 }
 
 // The page comes to rest while it sits open (#3185): the flow's dots, its
@@ -187,14 +202,14 @@ async function stillClick(page, loc) {
 // moved on and each CSS animation's end is read, so nothing waits.
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const width of [1100, 640]) {
-    test(`${engine} ${width}px: the masking page's motion ends`, async (t) => {
+    test(`${engine} ${width}px: the masking records' motion ends`, async (t) => {
       const { browser, page, errors } = await open(engine, "en", width, summary, "", { motion: true });
       t.after(() => browser.close());
       const card = page.locator("#maskCard");
       await card.locator(".mo-flow .mo-dot").first().waitFor({ state: "attached" });
       await page.locator("#maskList .msk-live i").waitFor({ state: "attached" });
       const rest = await page.evaluate(() => {
-        const smil = [...document.querySelectorAll("#view-masking animate, #view-masking animateMotion")];
+        const smil = [...document.querySelectorAll("#maskDock animate, #maskDock animateMotion")];
         for (const svg of new Set(smil.map((a) => a.ownerSVGElement))) svg.setCurrentTime(3600);
         // WebKit keeps an ended one's start time, so only Chromium is asked
         // the clock; both are asked each one's own timing
@@ -268,7 +283,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await untranslated(page, lang);
         assert.deepEqual(await wide(page), { page: false, over: [] });
         await shot(page, `${engine}-${lang}-${width}-main`);
-        const before = await scrolled(page);
 
         // a facet narrows the list, and All brings it back
         await list.locator(".msk-facet.model").click();
@@ -349,10 +363,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(JSON.parse(asked.find((x) => x.startsWith("actions")).slice(8)), { actions: { PRIVATE_KEY: "mask" } });
 
         // back to the list, as it was
+        // the reader wheeled the view while reading the request, which is
+        // his; what the click on Back must not do is move it again
+        await reach(page, one.locator(".msk-back"));
+        const atBack = await scrolled(page);
         await one.locator(".msk-back").click();
         await list.locator(".msk-row").first().waitFor();
         assert.equal(await one.isHidden(), true);
-        assert.deepEqual(await scrolled(page), before, "no click moved the page");
+        assert.deepEqual(await scrolled(page), atBack, "no click moved the page");
         assert.deepEqual(errors, []);
       });
     }
@@ -363,7 +381,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#maskCard.off").waitFor();
       await page.locator("#maskList .msk-none").waitFor();
       if (lang !== "en") {
-        const said = await page.locator("#view-masking").innerText();
+        const said = await page.locator("#maskDock").innerText();
         for (const w of ["Requests go to vendors", "Turn on masking", "You can also", "Nothing masked yet"]) assert(!said.includes(w), `${w} left in English: ${said}`);
       }
       assert.deepEqual(await wide(page), { page: false, over: [] });
@@ -396,7 +414,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(await wide(page), { page: false, over: [] });
       await shot(page, `${engine}-${lang}-secrets-only`);
       await none.locator("button").click();
-      await page.locator("#view-settings").waitFor({ state: "visible" });
+      await toWhatToMask(page);
       assert.deepEqual(errors, []);
     });
     test(`${engine} ${lang}: your own words alone are masking on`, async (t) => {
@@ -413,7 +431,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       else assert(!(await off.innerText()).includes("Turn"), "Turn off in Settings left in English");
       assert(!(await page.locator("#maskCard .msk-flow-none").innerText()).includes("Only keys"), "words alone: not the secrets-only line");
       await off.click();
-      await page.locator("#view-settings").waitFor({ state: "visible" });
+      await toWhatToMask(page);
       assert(!asked.some((x) => x.startsWith("settings")), "opening Settings saves nothing");
       assert.deepEqual(errors, []);
     });
@@ -458,8 +476,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     }
   }
 
-  test(`${engine}: a masked call on the Gateway page, and a key in the address, open its request`, async (t) => {
-    const { browser, page, errors } = await open(engine, "en", 1100, summary, "?view=gateway");
+  test(`${engine}: a masked call in the recent requests, and a key in the address, open its request`, async (t) => {
+    const { browser, page, errors } = await open(engine, "en", 1100, summary, "?view=settings&tab=network");
     t.after(() => browser.close());
     const badge = page.locator("#activity .call .mask-badge:not(.warn)");
     await badge.waitFor();
@@ -470,17 +488,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(await badge.textContent(), "3");
     assert.match(await badge.getAttribute("title"), /^3 values masked before it went to the vendor: API keys 2, Emails 1$/);
     await badge.click();
-    await page.locator("#view-masking #maskOne .msk-msg").first().waitFor();
+    await page.locator("#maskDock #maskOne .msk-msg").first().waitFor();
     assert.equal(await page.locator("#activity .call-item.open").count(), 0, "the click wasn't the row's");
     assert.match(await page.locator("#maskOne .msk-when").textContent(), /\d/);
     // the tray panel's badge opens the window on key=
-    await page.goto("http://owl.test/?view=masking&key=" + K1);
+    await page.goto("http://owl.test/?view=settings&tab=privacy&key=" + K1);
     await page.locator("#maskOne .msk-gone").waitFor();
     assert.equal(new URL(page.url()).searchParams.get("key"), null, "read once");
-    // and Settings › Privacy links to the page
+    // Settings › Privacy has it at the top, and no second row that opens it
     await page.goto("http://owl.test/?view=settings&tab=privacy");
-    await page.locator("#redactList .row", { hasText: "What was masked" }).locator("button").click();
     await page.locator("#maskCard .msk-num").waitFor();
+    assert.equal(await page.locator("#redactList .row", { hasText: "What was masked" }).count(), 0, "no Open row beside it");
     assert.deepEqual(errors, []);
   });
 }

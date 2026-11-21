@@ -26,8 +26,8 @@ func init() {
 		One: "Masking is on", Many: "Masking is on",
 		InUse: InUse,
 		SetAt: "privacy #redactList",
-		// Insights › Masking: what masking did, request by request
-		Parts:  []pluginrt.Part{{Slot: "nav.page", Key: "masking"}},
+		// Settings › Privacy: what masking did, request by request
+		Parts:  []pluginrt.Part{{Slot: "settings.section", Key: "masking"}},
 		Client: []string{"i18n.js", "redact.css", "client.js", "page.js"},
 		Apply: func(c *pluginrt.Ctx) error {
 			c.OnDispose(gwmw.Mask(masking.Masker{}))

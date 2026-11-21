@@ -253,7 +253,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             await page.mouse.move(...mid(await reveal(page, opts.nth(i))));
             await page.evaluate(() => { optClicks.length = 0; });
             await page.mouse.down();
-            const swapped = await box.evaluate((x) => { renderSettings(); return !x.isConnected; });
+            // What was masked is a part docked in Privacy: it draws its own
+            // controls, as it does while requests come in, not renderSettings
+            const swapped = await box.evaluate((x) => { renderSettings(); if (x.closest("#maskDock")) { maskDrawAll(); drawMaskAlert(); } return !x.isConnected; });
             if (!swapped) { await page.mouse.up(); missed.push(place); continue; }
             await page.mouse.up();
             await settle(page);

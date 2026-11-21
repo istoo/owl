@@ -266,10 +266,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           // the smallest window at 150% is 840×630 points, 560×420 CSS pixels
           for (const [zoom, size] of [[1, 100], [1.5, 150]]) {
             const page = await open(lang, theme, size, [], { width: Math.round(840 / zoom), height: Math.round(630 / zoom), zoom });
-            for (const v of ["agents", "providers", "gateway", "routing", "usage", "library", "settings"]) {
+            for (const v of ["agents", "providers", "routing", "usage", "library", "settings", "settings:network", "settings:privacy"]) {
               // at 560 CSS px, 150% of the smallest window, the pages that don't
               // fit are under More
-              if (v === "settings") await page.locator("#prefs").click();
+              // the Gateway and Masking pages are the top of Settings' Network and Privacy tabs now
+              if (v.startsWith("settings:")) await page.locator("#setTab-" + v.slice(9)).click();
+              else if (v === "settings") await page.locator("#prefs").click();
               else await navTo(page, v);
               await page.waitForTimeout(250);
               assert.deepEqual(await overflow(page), [], `${v} at ${size}%`);
