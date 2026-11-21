@@ -388,6 +388,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
                 await original.addStyleTag({ content: '#nav button[data-view="gateway"], #nav button[data-view="masking"] { display: none !important; }' });
                 await current.addStyleTag({ content: "#gwModelsHead, #gwModels { display: none !important; }" });
               }
+              // Routing's two once-made settings fold under Advanced, after the
+              // groups, on purpose: until BASE_REF has the fold the page is
+              // not compared (routing-advanced-fold.test.cjs covers it).
+              if (view === "routing" && !baselineFile("plugins/routing/client.js").includes("rt-gadv")) continue;
               await go(current, view); await go(original, view);
               await current.mouse.move(0, 0); await original.mouse.move(0, 0);
               // Removing hover can repaint the tab's shadow in a later frame.
