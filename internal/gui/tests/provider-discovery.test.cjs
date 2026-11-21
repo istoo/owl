@@ -35,7 +35,10 @@ async function fixture(t, engine, lang = "en", options = {}) {
     const req = route.request(), url = new URL(req.url());
     const json = (data) => route.fulfill({ json: data });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs={lang:"${lang}",theme:"light",web:true};` });
-    if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: { lang, theme: "light" } });
+    // Get started put away: its first step looks for local configurations
+    // on Agents too (b26480df9, first-run-guide.test.cjs), and this file is
+    // about every page but that one and Providers scanning nothing
+    if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: { lang, theme: "light", guideHidden: !options.firstUse } });
     if (url.pathname === "/api/providers") return json(state());
     if (url.pathname === "/api/groups") return json({ groups: [], pools: [] });
     if (url.pathname === "/api/importapps/discovery") {
