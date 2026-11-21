@@ -16,7 +16,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, agentRow, openAgentSettings } = require("./reader.cjs");
+const { watchSettingsReads, agentRow, openAgentSettings, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -121,7 +121,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     t.after(() => browser.close());
     for (const lang of ["en", "zh"]) {
       const where = `${engine} ${lang}`;
-      const context = await browser.newContext({ viewport: { width: 1100, height: 560 }, reducedMotion: "reduce" });
+      const context = await browser.newContext({ viewport: { width: 1100, height: 900 }, reducedMotion: "reduce" }); // Settings' Advanced is below a short window's foot, and a click must not scroll
       const page = await context.newPage();
       page.setDefaultTimeout(5000);
       page.setDefaultNavigationTimeout(60000);
@@ -143,6 +143,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // Settings: the switch, why it is on, and the agents' rows gone
       await clickStill(page, "#prefs", `${where}: Settings`);
+      await openAdvanced(page, "general");
       await page.waitForSelector("#gatewayModeSegs .opt");
       assert.ok(await page.locator("#gatewayModeRow").isVisible(), `${where}: the switch`);
       assert.equal((await page.locator("#gatewayModeRow .name").textContent()).trim(), L[lang].mode, where);
@@ -193,6 +194,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(await viewShown(page), ["view-agents"], where);
         await page.locator("#prefs").click();
         await page.waitForSelector("#langPick span");
+        await openAdvanced(page, "general");
         assert.equal(await page.locator("#gatewayModeRow").isVisible(), web, `${where}: the switch`);
         if (web) assert.match(await page.locator("#gatewayModeSub").textContent(), new RegExp(L[lang].off), where);
         assert.deepEqual(errors, [], where);

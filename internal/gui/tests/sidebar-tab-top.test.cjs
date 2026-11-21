@@ -16,7 +16,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { navTo } = require("./reader.cjs");
+const { navTo, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const HOME = "/Users/aimer";
@@ -104,6 +104,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await sub(page, w.allowances).click();
       await page.waitForFunction(() => document.querySelector("#setTab-usage").classList.contains("on"));
       await settle(page);
+      await openAdvanced(page, "usage"); // Allowances is taller than the window with its fold open
       assert.ok(await room(page, set) > 100, "Allowances is taller than the window");
       assert.equal(await top(page, set), 0, "Allowances opens at its top");
 

@@ -13,6 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const said = {
@@ -88,6 +89,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       test(`${engine} ${lang} ${width}px: Settings and Routing name the connected agents the setting changes nothing in`, async (t) => {
         const { page, errors } = await launch(t, engine, lang, agents, width);
         await page.goto("http://owl.test/?view=settings");
+        await openAdvanced(page, "general");
         const sub = page.locator(".row.pref", { has: page.locator("#plainNamesSegs") }).locator(".sub.no-names");
         await sub.waitFor();
         assert.equal(await sub.textContent(), said[lang]);
@@ -125,6 +127,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(await note.textContent(), said.en);
     for (const [view, sel] of [["routing", ".rt-gnames .no-names"], ["settings", ".row.pref .sub.no-names"]]) {
       await page.goto(`http://owl.test/?view=${view}`);
+      if (view === "settings") await openAdvanced(page, "general");
       await page.locator(sel).waitFor();
       assert.equal(await page.locator(sel).textContent(), said.en);
     }
@@ -133,6 +136,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   test(`${engine}: with every connected agent following it, nothing is said`, async (t) => {
     const { page, errors } = await launch(t, engine, "en", agents.filter((a) => a.id === "claude" || a.id === "jcode"));
     await page.goto("http://owl.test/?view=settings");
+    await openAdvanced(page, "general");
     await page.locator("#plainNamesSegs .opt").first().waitFor();
     assert.equal(await page.locator(".row.pref", { has: page.locator("#plainNamesSegs") }).locator(".sub").count(), 0);
     await page.goto("http://owl.test/?view=routing");

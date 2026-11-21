@@ -13,7 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { openPart, reach } = require("./reader.cjs");
+const { openPart, reach, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const LINK = "https://accounts.example/o/oauth2/auth?client_id=x&redirect_uri=http%3A%2F%2F127.0.0.1%3A51234%2Fcallback&state=" + "s".repeat(80);
@@ -94,6 +94,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.goto("http://owl.test/?view=usage");
           await page.locator("#prefs").click();
           await openPart(page, "privacy");
+          await openAdvanced(page, "privacy");
           const box = page.locator("#signInOpenList");
           await box.locator(".opt").first().waitFor();
           assert.equal((await box.evaluate((b) => b.previousElementSibling.querySelector(".label").textContent)).trim(), w.head);

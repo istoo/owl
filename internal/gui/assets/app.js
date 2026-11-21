@@ -8035,7 +8035,7 @@ function shown(x) {
 // (shown). A click while it moves turns it back.
 const foldMoves = new WeakMap();
 document.addEventListener("click", (e) => {
-  const sum = e.target.closest?.(".editor details.more > summary");
+  const sum = e.target.closest?.(":is(.editor, .set-page) details.more > summary");
   const d = sum?.parentElement, inner = d?.querySelector(":scope > .inner");
   if (!inner) return;
   const was = foldMoves.get(d);
@@ -18850,6 +18850,7 @@ function setSetTab(tab, remember) {
   const sv = $("#view-settings"), head = sv.querySelector(":scope > .set-head");
   sv.addEventListener("scroll", () => head.classList.toggle("stuck", sv.scrollTop > 0), { passive: true });
   import("./settingshints.js").catch(() => {});
+  import("./settingsadv.js").catch(() => {});
   // opened on a part (a reload, a link): that part, and remembered
   if (mode === "window" && params.get("view") === "settings" && SET_TABS.includes(params.get("tab"))) {
     setTab = params.get("tab");
@@ -18871,13 +18872,14 @@ function findSettings() {
   const v = $("#view-settings");
   v.classList.add("set-searching");
   const words = setQuery.split(/\s+/);
-  let any = false;
+  let any = false, fold;
   for (const id of SET_TABS) {
     const page = $("#setPage-" + id), tab = $("#setTab-" + id);
     const part = setText(tab) + " " + id;
     let hits = 0, head = "";
     const lit = new Set();
     for (const n of page.querySelectorAll(".row-head, .row")) {
+      if (n.closest(".set-adv") !== fold) { fold = n.closest(".set-adv"); head = ""; }
       if (n.matches(".row-head")) {
         head = n.matches(".warm-head") ? "" : setText(n);
         continue;
@@ -18906,7 +18908,14 @@ function findSettings() {
       box.classList.toggle("set-miss", ![...lit].some((l) => box.contains(l)));
     }
     // a heading stays while a matched row precedes the next one
-    for (const h of page.querySelectorAll(":scope > .row-head")) {
+    // Advanced opens for a row that matches, and goes while none does
+    const adv = page.querySelector(":scope > .set-adv");
+    if (adv) {
+      const hit = !!adv.querySelector(".set-hit");
+      adv.classList.toggle("set-miss", !hit);
+      if (hit && !adv.open) { adv.open = true; adv.dataset.s = ""; }
+    }
+    for (const h of page.querySelectorAll(":scope > .row-head, :scope > .set-adv > .inner > .row-head")) {
       let shows = false;
       if (!h.matches(".warm-head")) {
         for (let n = h.nextElementSibling; n && !n.matches(".row-head"); n = n.nextElementSibling) {
@@ -18930,6 +18939,7 @@ function searchSettings(q) {
   const v = $("#view-settings");
   v.classList.remove("set-searching");
   for (const n of v.querySelectorAll(".set-miss, .set-hit")) n.classList.remove("set-miss", "set-hit");
+  for (const d of v.querySelectorAll("details[data-s]")) { d.open = false; delete d.dataset.s; }
   $("#setNone").hidden = true;
   setSetTab(setTab);
 }
@@ -22588,6 +22598,7 @@ async function openSettingsAt(e, tab, row) {
   // a selector: the row as drawn from the page's read
   if (typeof row == "string") row = await settingsLoad.then(() => $(row), () => null);
   if (!row) return;
+  shown(row); // a row in Advanced opens it
   if (go) { row.scrollIntoView({ block: "center" }); arrived($("#view-settings")); }
   row.classList.remove("flash");
   void row.offsetWidth; // the light goes again on a second click

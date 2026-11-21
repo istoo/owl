@@ -13,7 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach, openAdvanced } = require("./reader.cjs");
 const { wheelRest } = require("./fixtures/wheel-rest.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -70,16 +70,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve(lang, calls));
         await watchSettingsReads(page);
         await page.goto("http://owl.test/?view=settings&tab=privacy");
-        const head = page.locator("#redactList .row.rule-row").first();
+        const head = page.locator("#setPage-privacy details.set-adv .row.rule-row").first();
         await head.waitFor();
         await settingsDrawn(page); // the rows found are the ones that stay (#1653)
+        await openAdvanced(page, "privacy");
         // the rules, in order, from the row that adds one
         const listed = () => head.evaluate((h) => {
           const out = [];
           for (let n = h.nextElementSibling; n && out.length < 3; n = n.nextElementSibling) out.push({ name: n.querySelector(".name").textContent, sub: n.querySelector(".sub").textContent, editing: n.classList.contains("rule-editing") });
           return out;
         });
-        const rule = (name) => page.locator("#redactList .row").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
+        const rule = (name) => page.locator("#setPage-privacy details.set-adv .row").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
         const scroll = () => page.evaluate(() => [scrollX, scrollY, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)]);
         const click = async (loc) => {
           // the app undoes a script's scroll: the reader's wheel brings it
@@ -99,7 +100,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const edit = rule("NS").locator("button.rule-edit");
         assert.equal(await edit.textContent(), w.edit);
         await click(edit);
-        const ed = page.locator("#redactList .row.rule-editing");
+        const ed = page.locator("#setPage-privacy details.set-adv .row.rule-editing");
         await ed.waitFor();
         assert.deepEqual((await listed()).map((x) => [x.name, x.editing]), [["GATEWAY_KEY", false], ["NS", true], ["LAST", false]], "opened where it stands");
         assert.equal(await ed.locator("input.rule-kind").inputValue(), "NS");
@@ -161,7 +162,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const after = await listed();
         assert.deepEqual(after.map((x) => x.name), ["GATEWAY_KEY", "NS_KEY", "LAST"]);
         assert.equal(after[1].sub, w.matches);
-        assert.equal(await page.locator("#redactList .row.rule-editing").count(), 0);
+        assert.equal(await page.locator("#setPage-privacy details.set-adv .row.rule-editing").count(), 0);
         assert.deepEqual(errors, []);
       });
     }

@@ -13,7 +13,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -70,6 +70,7 @@ async function open(engine, t, lang, saved, opts, width = 1100, all = []) {
   await watchSettingsReads(page);
   await page.goto(`http://owl.test/?view=settings&tab=models&lang=${lang}`);
   await settingsDrawn(page); // rows found are the ones that stay (#1659)
+  await openAdvanced(page, "models");
   return { page, errors };
 }
 
@@ -85,7 +86,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       test(`${engine} ${lang} ${width}px: a model that searches by itself can be given owl's search`, async (t) => {
         const saved = [], all = [];
         const { page, errors } = await open(engine, t, lang, saved, {}, width, all);
-        const row = page.locator("#searchList #searchAllRow");
+        const row = page.locator("#searchAllRow");
         await reach(page, row);
         assert.equal(await row.locator(".name").textContent(), w.name);
         const own = row.locator(".segs button", { hasText: w.own });
@@ -130,7 +131,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // ("开关在哪个位置"): it stays, dimmed, and says where to add a search
       const all = [];
       const { page } = await open(engine, t, lang, [], { provider: false, apis: "off", searcher: "off" }, 560, all);
-      const row = page.locator("#searchList #searchAllRow");
+      const row = page.locator("#searchAllRow");
       await reach(page, row);
       assert.equal(await row.locator(".name").textContent(), w.name);
       assert((await row.locator(".sub").innerText()).includes(w.none), await row.locator(".sub").innerText());

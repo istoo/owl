@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -83,6 +83,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // Settings' line: the accounts, then the reason once
         await page.goto("http://owl.test/?view=settings&tab=usage");
         await settingsDrawn(page);
+        await openAdvanced(page, "usage");
         const tab = page.locator("#warmTab-plugins");
         await tab.waitFor();
         await reach(page, tab);

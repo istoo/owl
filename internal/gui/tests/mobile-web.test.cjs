@@ -327,6 +327,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.setViewportSize({ width: 390, height: 600 });
           await page.goto("http://owl.test/?view=settings&tab=usage");
           await go(page, "settings");
+          // the part is long enough to scroll with its fold open; opened by
+          // script, since a key press would open the page's input window
+          await page.locator("#setPage-usage > details.set-adv").evaluate(d => { d.open = true; });
           await page.waitForTimeout(500);
           const view = page.locator("#view-settings");
           assert(await view.evaluate(v => v.scrollHeight > v.clientHeight + 400));
@@ -372,6 +375,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
               // window's comparison, as the rail's own pages already are.
               // The header's layout under SIDE_AT keeps its own comparison.
               if (width >= 1024 && view === "usage" && !baselineFile("app.css").includes("body.side-nav .usage-head > #usageTab .opt.on")) continue;
+              // Settings' rarely used rows moved into each part's Advanced fold
+              // on purpose (settings-advanced.test.cjs): until BASE_REF has
+              // settingsadv.js, Settings is left out of the comparison.
+              if (view === "settings" && !baselineHas("settingsadv.js")) continue;
               // The Gateway and Masking pages moved into Settings and
               // Providers (moved-pages.test.cjs): until BASE_REF has that, its
               // sidebar buttons are taken out of the original's picture, and
