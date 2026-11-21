@@ -134,7 +134,7 @@ function settle() {
     d.querySelector(":scope > summary").textContent = t("Advanced");
     d.hidden = ![...inner.querySelectorAll(".row")].some((r) => shownIn(r, inner));
     // opened by the setting that is set, unless the reader has shut it
-    if (!d.hidden && manual[tab] === undefined && !d.open && FOLDS[tab].set(s)) d.open = true;
+    // BROKEN ON PURPOSE (CI check): a changed row no longer opens its fold
   }
 }
 
