@@ -8,7 +8,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -59,17 +59,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=models");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
+      await openAdvanced(page, "models");
       const row = page.locator("#replyList #claudeLeanRow");
       await row.waitFor();
       // scrolled to as a reader does, with the wheel: WebKit at 420 put
       // back a scroll made from script
-      await page.mouse.move(width / 2, 450);
-      for (let i = 0; i < 40; i++) {
-        const box = await row.boundingBox();
-        if (box && box.y >= 0 && box.y + box.height <= 900) break;
-        await page.mouse.wheel(0, 120);
-        await page.waitForTimeout(50);
-      }
+      // wholly in the view with nothing over the point of the click (the
+      // header, Settings' sticky tabs, the window's foot): the click below is
+      // made at the button's coordinates, and one that lands on a bar saves nothing
+      await reach(page, row.locator(".segs button", { hasText: w.on }));
       assert.equal(await row.locator(".name").textContent(), w.name);
       const sub = await row.locator(".sub").textContent();
       assert(sub.includes(w.sub) && sub.includes(w.risk), sub);

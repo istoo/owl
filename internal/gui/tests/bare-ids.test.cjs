@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, wheelTo } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, wheelTo, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -96,6 +96,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await watchSettingsReads(page);
         await page.goto("http://owl.test/?view=settings&tab=network");
         await settingsDrawn(page);
+        await openAdvanced(page, "network");
         const segs = page.locator("#bareIdsSegs .opt");
         await segs.first().waitFor();
         const row = page.locator("#bareIdsRow");

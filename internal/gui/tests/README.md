@@ -944,6 +944,23 @@ screenshot of each size:
 node --test --test-concurrency=1 internal/gui/tests/settings-sections.test.cjs internal/gui/tests/settings-groups.test.cjs
 ```
 
+`settings-advanced.test.cjs` checks Settings' Advanced, the closed fold at the
+foot of General, Allowances, Network and sharing, Models, Privacy and About
+(settingsadv.js, the provider editor's own fold): a default setup shows each
+part's common rows and keeps the rest in the fold, shut; a row set to
+something other than its default opens it, so a changed setting is never
+hidden, and a fold the reader shut stays shut through a redraw; Settings'
+search opens it for a row in it and shuts it when cleared; a link to a row in
+it (openSettingsAt) opens it; Colorblind mode, Reduce motion and the two
+telemetry rows are never in it; About lists no Gateway URL. A test that
+reaches a folded row opens the fold with `openAdvanced` (reader.cjs), and
+scrolls to it with the wheel as a reader does. Chromium and WebKit, in every
+language:
+
+```sh
+node --test internal/gui/tests/settings-advanced.test.cjs
+```
+
 `segs-press-redraw.test.cjs` presses a Settings option, redraws the page
 (`renderSettings()`, as a save's answer does) while the button is held and
 lets go on the same spot: Lightweight mode → On is posted once and shown on.

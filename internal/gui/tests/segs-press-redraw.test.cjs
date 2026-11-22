@@ -17,7 +17,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = { en: { on: "On", off: "Off", display: "Screen on too" }, zh: { on: "开启", off: "关闭", display: "屏幕也常亮" }, ja: { on: "オン", off: "オフ", display: "画面もオン" }, de: { on: "An", off: "Aus", display: "Bildschirm auch an" } };
@@ -266,6 +266,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.evaluate((tab) => document.querySelector("#setTab-" + tab).click(), tab);
           await page.locator(`#setPage-${tab}`).waitFor();
           await settle(page);
+          if (await page.locator(`#setPage-${tab} > details.set-adv:not([hidden])`).count()) { await openAdvanced(page, tab); await settle(page); } // the fold holds controls too
           if (tab === "usage") {
             for (const id of ["codex", "claude", "wb", "trae", "minimax", "qoder", "plugins"]) {
               // the last sweep can leave the tabs above or below the view (a

@@ -97,7 +97,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           rule: [...document.querySelectorAll("#setPage-general .row.pref")].filter((r) => r.getClientRects().length).map((r, i) => {
             const b = r.getBoundingClientRect(), w = r.querySelector(".who").getBoundingClientRect(), line = parseFloat(getComputedStyle(r).borderTopWidth);
             const oneLine = ![...r.querySelectorAll(".who .sub")].some((s) => s.getClientRects().length && s.textContent.trim() && !hint(s));
-            return { id: r.id || r.querySelector(".name").textContent, lined: i === 0 || line >= 1, above: w.top - b.top - line, below: b.bottom - w.bottom, height: Math.round(b.height - line), oneLine };
+            return { id: r.id || r.querySelector(".name").textContent, lined: !r.previousElementSibling || line >= 1, above: w.top - b.top - line, below: b.bottom - w.bottom, height: Math.round(b.height - line), oneLine };
           }),
         };
       }, [bare, kept]);

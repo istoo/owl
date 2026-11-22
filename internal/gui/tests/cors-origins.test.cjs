@@ -14,7 +14,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -113,6 +113,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await watchSettingsReads(page);
         await page.goto("http://127.0.0.1:4999/?view=settings&tab=network");
         await settingsDrawn(page); // rows found are the ones that stay (#1659)
+        await openAdvanced(page, "network");
         const box = page.locator("#corsList");
         await box.locator(".rule-row").waitFor();
         const tr = (s) => page.evaluate((s) => t(s), s);
@@ -151,6 +152,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const view = page.locator("#view-settings");
         // where the view rests once the frame is drawn
         const scroll = () => view.evaluate((v) => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(v.scrollTop)))));
+        // The list ends the page now (it is in Advanced), and the last row of a
+        // page can't be wheeled clear of the page-end fade: Playwright's own
+        // scroll to fill the field then moves the view past where the reader
+        // left it, and the page's click guard puts it back at the click, 31px,
+        // before Add has done anything (the height was the same at both reads).
+        // Room under the part, window unchanged, so Add is judged on what it does.
+        await view.evaluate((v) => { v.style.paddingBottom = "600px"; });
         // scrolled with the wheel, as a reader would (a script's scroll is
         // put back), until the field is well inside the view
         await view.hover();
@@ -164,6 +172,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // added from the field: saved as the gateway cleaned it
         await field.fill("http://LocalHost:3000/");
+        // wholly in sight, nothing over the click's point: else Playwright's own
+        // scroll into view moves the page by a pixel or more (WebKit on Linux, 814 for 813)
+        await reach(page, add);
         let before = await scroll();
         await add.click();
         await box.locator(".row:not(.rule-row) .name", { hasText: "http://localhost:3000" }).waitFor();
@@ -179,6 +190,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // a browser extension, by its origin as copied from its page
         const ext = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
         await row.locator("input").fill(ext.toUpperCase() + "/");
+        await reach(page, row.locator("button", { hasText: w.add }));
         before = await scroll();
         await row.locator("button", { hasText: w.add }).click();
         await box.locator(".row:not(.rule-row) .name", { hasText: ext }).waitFor();
@@ -189,6 +201,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // refused, in the page's language, and nothing saved
         for (const [bad, says] of [["*", w.wildcard], ["localhost:4000/v1", w.notOrigin], ["chrome-extension://abc", w.notOrigin], ["chrome-extension://*", w.wildcard]]) {
           await row.locator("input").fill(bad);
+          await reach(page, row.locator("button", { hasText: w.add }));
           before = await scroll();
           await row.locator("button", { hasText: w.add }).click();
           await page.waitForFunction((s) => document.querySelector("#corsList .rule-row .sub.err")?.textContent.trim() === s, says);
@@ -204,6 +217,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // taken away with its Remove
         const gone = box.locator(".row:not(.rule-row)").filter({ hasText: "http://localhost:3000" });
+        await reach(page, gone.locator("button", { hasText: w.remove }));
         before = await scroll();
         await gone.locator("button", { hasText: w.remove }).click();
         await page.waitForFunction(() => document.querySelectorAll("#corsList .row:not(.rule-row)").length === 2);

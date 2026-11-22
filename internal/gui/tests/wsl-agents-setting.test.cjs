@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -84,6 +84,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const sw = () => row.locator("#wslAgentsSegs [role=switch]");
       assert.equal(await sw().getAttribute("aria-checked"), "true", "on by default");
       const where = () => page.evaluate(() => [scrollX, scrollY, document.scrollingElement.scrollTop, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)]);
+      // both rows pressed below wholly in sight with nothing over the point of
+      // the press, before the place is taken: a press made where the foot's fade
+      // is, or Playwright's own scroll to it, is what moved the page by a pixel
+      await reach(page, sw());
+      await reach(page, page.locator("#keepAwakeSegs .opt").nth(1));
+      await reach(page, sw());
       const before = await where();
       const click = async (loc) => {
         await page.waitForFunction(() => prefsBusy === 0);

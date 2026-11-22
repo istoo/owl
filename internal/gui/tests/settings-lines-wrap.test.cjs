@@ -16,7 +16,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(process.env.OWL_WRAP_ASSETS || path.join(__dirname, "../assets"));
 
@@ -107,6 +107,7 @@ for (const engine of engines) {
         await openPart(page, part);
         await page.locator(`#setPage-${part}`).waitFor();
         await settingsDrawn(page);
+        if (await page.locator(`#setPage-${part} > details.set-adv:not([hidden])`).count()) await openAdvanced(page, part); // the fold's rows are rows too
         const m = await page.evaluate(measure, `#setPage-${part}`);
         seen += m.rows;
         assert.deepEqual(m.cut, [], `${part}: a row's line is cut short`);
@@ -116,6 +117,7 @@ for (const engine of engines) {
       assert.ok(seen > 30, `only ${seen} setting rows were looked at`);
       // the reported rows were among them, and read whole
       await openPart(page, "models");
+      await openAdvanced(page, "models");
       for (const sel of ["#imagesList .image-gen-vendor", "#visionMcpRow .sub", ".searcher-row .who > .sub"]) {
         const s = page.locator(sel).first();
         await s.waitFor({ state: "attached" });

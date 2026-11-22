@@ -435,15 +435,15 @@ function renderLAN(s) {
 // network. The page always asks for its key: the link carries it, and a
 // browser without it gets nothing. The app's windows alone draw it; a
 // browser on the page can't turn it off under itself.
-let webPageState = null, webPagePort = null;
+let webPageState = null, webPagePort = null, webPageAsked = false;
 // Each draw asks again, as a port another program held can come free; the
 // answer draws without asking.
 function renderWebPage(asked) {
   const head = $("#webPageHead"), box = $("#webPageList");
   if (!box) return;
   head.hidden = box.hidden = web;
-  if (web) return;
-  if (!asked) api("web-page").then((r) => { webPageState = r; renderWebPage(true); }).catch(() => {});
+  if (web) { webPageAsked = true; return; }
+  if (!asked) api("web-page").then((r) => { webPageState = r; renderWebPage(true); }).catch(() => {}).finally(() => { webPageAsked = true; window.settleAdvanced?.(); });
   const s = webPageState;
   if (!s) return;
   const set = (body) => writingPrefs(api("web-page", body))
@@ -504,15 +504,24 @@ function renderWebPage(asked) {
 // timer; going out of sight (another tab, another page, the window put
 // away, the plugin off, Settings' search) stops it. The window coming
 // back, and a change of sharing, read the state again.
-let gwWasSeen = false;
+let gwWasSeen = false, gwFirstRead = false;
+// The Advanced fold under this tab waits for the group's first answers (the
+// gateway's state, the browser page's): they draw rows above it, and one
+// that came in after the reader had scrolled to a row in the fold and
+// pressed it moved the page under the press (the page keeps what was
+// pressed where it was, scrolling to do it). Either answer failing lets it
+// in too: a read that failed never hides a setting.
+const gwAdvancedHeld = (tab) => tab === "network" && gwSeen() && !(gwFirstRead && webPageAsked);
 async function gwRead() {
   const was = providers;
-  try { await loadProviders(); } catch (e) { return statusErr(e); }
+  try { await loadProviders(); } catch (e) { gwFirstRead = true; window.settleAdvanced?.(); return statusErr(e); }
+  gwFirstRead = true;
   // Settings isn't a page that draws the list (providersPage), so the
   // Providers page's list is behind: drawn the moment that page is opened
   providersBehind = true;
-  if (!gwSeen() || !providers) return;
+  if (!gwSeen() || !providers) return window.settleAdvanced?.();
   owl.call("gateway", "render", was);
+  window.settleAdvanced?.();
   if (providers.gateway.lan && gatewayKeys === null) loadGatewayKeys();
 }
 function gwLook() {
@@ -523,6 +532,7 @@ function gwLook() {
   if (!seen) return;
   owl.call("gateway", providers ? "draft" : "loading");
   owl.call("gateway", "open");
+  window.settleAdvanced?.();
   gwRead();
 }
 {

@@ -15,7 +15,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
 const { wheelRest } = require("./fixtures/wheel-rest.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
@@ -180,6 +180,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // the wheel's coast ends after its last step; the place is taken at
         // rest, not between two of its scrolls (a loaded Linux runner, #13)
         await wheelRest(page, "#view-settings");
+        await reach(page, row.locator("button", { hasText: w.add })); // wholly in sight and clear of the sticky tabs: else Playwright's own scroll to it moves the page (WebKit on Linux, 492 to 42)
         let before = await scroll();
         await row.locator("button", { hasText: w.add }).click();
         await box.locator(".allow-ip-row .name", { hasText: "10.0.0.0/8" }).waitFor();
@@ -195,6 +196,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // refused, in the page's language, and nothing saved
         await row.locator("input").fill("my-laptop");
+        await reach(page, row.locator("button", { hasText: w.add })); // wholly in sight and clear of the sticky tabs: else Playwright's own scroll to it moves the page (WebKit on Linux, 492 to 42)
         before = await scroll();
         await row.locator("button", { hasText: w.add }).click();
         await page.waitForFunction((s) => document.querySelector("#allowList .rule-row .sub.err")?.textContent.trim() === s, w.notIP);
@@ -215,6 +217,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.mouse.wheel(0, 40);
           await scroll();
         }
+        await reach(page, remove); // wholly in sight and clear of the sticky tabs: else Playwright's own scroll to it moves the page (WebKit on Linux, 492 to 42)
         before = await scroll();
         await remove.click();
         await page.waitForFunction(() => document.querySelectorAll("#allowList .allow-ip-row").length === 2);
@@ -261,6 +264,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await fits(box);
       const view = page.locator("#view-settings");
       const scroll = () => view.evaluate((v) => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(v.scrollTop)))));
+      await reach(page, fix); // wholly in sight and clear of the sticky tabs: else Playwright's own scroll to it moves the page (WebKit on Linux, 492 to 42)
       const before = await scroll();
       await fix.click();
       await page.waitForFunction(() => !document.querySelector("#allowList .rule-row .sub.err"));

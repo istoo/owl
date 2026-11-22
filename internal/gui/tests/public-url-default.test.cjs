@@ -15,7 +15,7 @@ const { openPart } = require("./reader.cjs");
 // gateway's address and Settings' MCP server show the public URL too; in
 // the app they stay this computer's. Without OWL_PUBLIC_URL nothing
 // changes: Connect starts at this computer's. The sidebar's gateway line
-// and About's Gateway URL follow the same rule (noahhrreion on Discord:
+// and About's status line command follow the same rule (noahhrreion on Discord:
 // owl web in Docker with OWL_PUBLIC_URL, and the line at the foot
 // said the container's own address).
 const PUBLIC = "https://owl.example.com";
@@ -86,13 +86,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await open();
         assert.equal(await shown("#connectAddress"), LOCAL + "/v1");
 
-        // About keeps the local address agents use, and shows the public one
+        // About shows the public one (its Gateway URL row is gone: the local
+        // address agents use is the Gateway group's, under Network and sharing)
         await settingsTab("about");
         await page.locator("#publicURLRow").waitFor();
         assert.match(await shown("#publicURLRow .who"), new RegExp(words[lang]));
         assert.equal(await shown("#publicURLRow code"), PUBLIC);
-        assert.match(await shown("#about"), /127\.0\.0\.1:3999/);
+        assert.doesNotMatch(await shown("#about"), /127\.0\.0\.1:3999/, "About lists no Gateway URL of its own");
         await fits("About");
+        await settingsTab("network");
+        await page.locator("#gatewayLan .gw-url").first().waitFor();
+        assert.match(await shown("#gatewayLan"), /127\.0\.0\.1:3999/, "the Gateway group has the local address");
         await settingsTab("models");
         assert.equal(await shown("#searchMcpRow code"), LOCAL + "/mcp/owl/web-search");
         assert.deepEqual(errors, []);
@@ -111,10 +115,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.match(await shown("#sideGw span:not(.side-gw-chev)"), /owl\.example\.com/);
         assert.doesNotMatch(await page.locator("#sideGw").getAttribute("title"), /127\.0\.0\.1/);
       }
-      // and About's Gateway URL, with no second row saying the same
+      // and About's status line command, with no Gateway URL row there
+      // saying the same (the Gateway group above has the address)
       await settingsTab("about");
       await page.locator("#about .row").first().waitFor();
-      assert.match(await shown("#about"), /owl\.example\.com/);
+      assert.match(await shown("#statuslineRemoteRow code"), /owl\.example\.com/);
       assert.doesNotMatch(await shown("#about"), /127\.0\.0\.1/);
       assert.equal(await page.locator("#publicURLRow").count(), 0);
       await settingsTab("models");

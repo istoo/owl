@@ -16,7 +16,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 const { strings } = require("./strings.cjs");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const { I18N } = strings();
@@ -85,7 +85,7 @@ function fixture(lang, { libOn, have = false, gateway = false }) {
   return { route, posts };
 }
 
-const row = (page) => page.locator("#searchList #searchMcpRow");
+const row = (page) => page.locator("#searchMcpRow");
 const wide = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -112,6 +112,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=models");
       await settingsDrawn(page);
+      await openAdvanced(page, "models");
       await row(page).waitFor();
       return { page, posts: f.posts };
     };

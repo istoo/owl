@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, openAdvanced, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -68,17 +68,13 @@ function server(lang, ctl) {
   };
 }
 
-// wheel a row into sight, as a user would; a click must then not move the page
+// wheel a row into sight, as a user would, to where it is wholly in the view
+// and nothing drawn over it (Settings' sticky tabs, the window's foot) takes
+// the point of the click: a row only clear of the view's top was under the
+// tabs, and Playwright's own scroll into view then moved the page (WebKit on
+// Linux: 226 to 0), which the page rightly puts back. A click must then not move it
 async function showRow(page, row) {
-  await page.locator("#view-settings").hover();
-  for (let i = 0; i < 40; i++) {
-    const box = await row.boundingBox();
-    const view = await page.locator("#view-settings").boundingBox();
-    if (box && view && box.y >= view.y + 4 && box.y + box.height <= view.y + view.height - 4) break;
-    await page.mouse.wheel(0, 180);
-    await page.waitForTimeout(16);
-  }
-  await page.waitForTimeout(250);
+  await reach(page, row);
 }
 const scrolls = (page) => page.evaluate(() => [window.scrollY, document.scrollingElement.scrollTop, ...[...document.querySelectorAll(".view")].map((v) => v.scrollTop)].join(","));
 
@@ -103,9 +99,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const aboutTab = async () => {
             await openPart(page, "about");
             await page.locator("#setPage-about").waitFor({ state: "visible" });
+            await openAdvanced(page, "about");
           };
           await aboutTab();
-          const rowOf = (name) => page.locator("#about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
+          const rowOf = (name) => page.locator("#setPage-about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
           const channel = rowOf(w.name), auto = rowOf(w.auto);
           await channel.waitFor();
           assert.deepEqual((await channel.locator(".opt").allInnerTexts()).map((s) => s.trim()), [w.every, w.stable]);

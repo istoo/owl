@@ -10,7 +10,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, footTop } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, footTop, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -61,6 +61,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=models");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
+      await openAdvanced(page, "models");
       const row = page.locator("#replyList #loopGuardRow");
       await row.waitFor();
       // scrolled to as a reader does, with the wheel: WebKit at 420 put

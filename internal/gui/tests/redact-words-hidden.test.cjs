@@ -10,7 +10,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { wheelTo, watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { wheelTo, watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const words = {
@@ -50,9 +50,9 @@ function serve(lang, saved) {
 // redraws the list, so a row found a moment before can be gone): dots by
 // text security, or a password box where the engine has none
 const shown = (page, name) => page.evaluate((name) => {
-  const r = [...document.querySelector("#redactList").children].find((r) => r.querySelector(".who .name")?.textContent === name);
+  const r = [...document.querySelector("#setPage-privacy details.set-adv .list").children].find((r) => r.querySelector(".who .name")?.textContent === name);
   const i = r.querySelector("input.words"), s = getComputedStyle(i), eye = r.querySelector(".redact-eye");
-  const list = document.querySelector("#redactList").getBoundingClientRect(), b = i.getBoundingClientRect(), e = eye.getBoundingClientRect();
+  const list = document.querySelector("#setPage-privacy details.set-adv .list").getBoundingClientRect(), b = i.getBoundingClientRect(), e = eye.getBoundingClientRect();
   return {
     type: i.type, dots: s.getPropertyValue("-webkit-text-security") === "disc" || i.type === "password", value: i.value,
     eye: eye.textContent, pressed: eye.getAttribute("aria-pressed"),
@@ -75,9 +75,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve(lang, saved));
         await watchSettingsReads(page);
         await page.goto("http://owl.test/?view=settings&tab=privacy");
-        const row = page.locator("#redactList > .row", { has: page.locator(".who .name", { hasText: new RegExp(`^${w.name}$`) }) });
+        const row = page.locator("#setPage-privacy details.set-adv .list > .row", { has: page.locator(".who .name", { hasText: new RegExp(`^${w.name}$`) }) });
         await row.locator(".redact-eye").waitFor();
         await settingsDrawn(page);
+        await openAdvanced(page, "privacy");
         await wheelTo(page, row, 300);
 
         let m = await shown(page, w.name);
@@ -113,7 +114,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // the save redraws the page (Enter, then the old box's blur): wait
         // for the box on the page now, never one a redraw took away
         await page.waitForFunction(() => {
-          const i = document.querySelector("#redactList input.words");
+          const i = document.querySelector("#setPage-privacy details.set-adv input.words");
           return i?.isConnected && i.value.includes("Kestrel") && i.nextElementSibling?.classList.contains("redact-eye") && getComputedStyle(i).getPropertyValue("-webkit-text-security") === "disc";
         }, null, { timeout: 3000 }).catch(() => {});
         const last = await shown(page, w.name);

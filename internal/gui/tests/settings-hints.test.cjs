@@ -18,7 +18,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, openAdvanced, wheelTo } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -84,6 +84,7 @@ for (const engine of engines) {
         await page.goto("http://owl.test/?view=settings&tab=models");
         await settingsDrawn(page);
         await openPart(page, "models");
+        await openAdvanced(page, "models");
         const mcp = page.locator("#visionMcpRow");
         await mcp.waitFor();
         const hint = mcp.locator(":scope > .who > .sub").first();
@@ -116,7 +117,8 @@ for (const engine of engines) {
 
         // the pointer resting on the row: a card with the whole line, and
         // nothing moves
-        await mcp.evaluate((e) => e.scrollIntoView({ block: "center" }));
+        // in Advanced, below a narrow window's fold: scrolled as a reader scrolls
+        await wheelTo(page, mcp, 300);
         await page.mouse.move(1, 1);
         const before = await page.evaluate(boxes);
         await mcp.locator(":scope > .who > .name").hover();

@@ -18,7 +18,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { openPart, navTo } = require("./reader.cjs");
+const { openPart, navTo, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -161,6 +161,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         }
         // the warm-ups are in Allowances, still a tab each
         await openPart(page, "usage");
+        await openAdvanced(page, "usage");
         assert(await page.locator("#warmTab-codex").isVisible(), "the warm-ups under Allowances");
 
         // a part's control posts what it did

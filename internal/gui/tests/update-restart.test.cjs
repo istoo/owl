@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, openPart } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openPart, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 
@@ -108,9 +108,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const aboutTab = async () => {
           await openPart(page, "about");
           await page.locator("#setPage-about").waitFor({ state: "visible" });
+          await openAdvanced(page, "about");
         };
         await aboutTab();
-        const rowOf = (name) => page.locator("#about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
+        const rowOf = (name) => page.locator("#setPage-about .row.pref", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
         const auto = rowOf(w.auto), restart = rowOf(w.restart);
         await restart.waitFor();
         await restart.locator(".sub", { hasText: w.what }).waitFor();

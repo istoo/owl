@@ -10,6 +10,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const address = "http://127.0.0.1:3999/mcp/owl/web-search";
@@ -84,9 +85,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const { page, errors } = await open(t, engine, lang, "settings&tab=models", width);
         // Settings is drawn again as its answers come in, each time with a
         // new row: it is read in one go, never held across a redraw
-        await page.waitForFunction((a) => document.querySelector("#searchList #searchMcpRow code")?.textContent === a, address);
+        await page.waitForFunction((a) => document.querySelector("#searchMcpRow code")?.textContent === a, address);
+        await openAdvanced(page, "models");
         const row = await page.evaluate(() => {
-          const r = document.querySelector("#searchList #searchMcpRow");
+          const r = document.querySelector("#searchMcpRow");
           r.scrollIntoView({ block: "nearest" });
           return { name: r.querySelector(".name").textContent, sub: r.querySelector(".sub").textContent,
             code: r.querySelector("code").textContent, buttons: r.querySelectorAll(".val button").length };

@@ -11,7 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const HOME = "/Users/aimer";
@@ -82,6 +82,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await watchSettingsReads(page);
       await page.goto("http://owl.test/?view=settings&tab=network");
       await settingsDrawn(page); // rows found are the ones that stay (#1659)
+      await openAdvanced(page, "network");
       const list = page.locator("#githubList");
       const row = list.locator(".row.github-token");
       await row.waitFor();

@@ -255,5 +255,5 @@ body.window .msk-onebar::before { inset: -6px calc(var(--bar, 0px) - 16px) -6px 
 @media (prefers-reduced-motion: reduce) { .mo-scan, .msk-live i { animation: none; } }
 
 /* Masked words as dots until Show (plugins/redact/settings.js) */
-#redactList input.words.words-hidden { -webkit-text-security: disc; }
-#redactList .redact-eye { flex: none; }
+#setPage-privacy input.words.words-hidden { -webkit-text-security: disc; }
+#setPage-privacy .redact-eye { flex: none; }

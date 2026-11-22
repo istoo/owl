@@ -17,7 +17,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { watchSettingsReads, settingsDrawn, wheelTo } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, wheelTo, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const fetched = new Date(Date.now() - 3600e3).toISOString();
@@ -150,6 +150,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         if (!web) await page.route("**/boot.js", (r) => r.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light"};` }));
         await page.goto("http://owl.test/?view=settings&tab=network");
         await settingsDrawn(page);
+        await openAdvanced(page, "network");
         const segs = page.locator("#busyLoadSegs .opt");
         await segs.first().waitFor();
         const row = page.locator("#busyLoadRow");
@@ -190,6 +191,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await watchSettingsReads(page);
         await page.goto("http://owl.test/?view=settings&tab=network");
         await settingsDrawn(page);
+        await openAdvanced(page, "network");
         const row = page.locator("#busyLoadRow"), sub = row.locator(".sub"), field = row.locator("input.busy-load-at");
         const custom = row.locator(".opt", { hasText: w.custom }), apply = row.locator("#busyLoadSegs .val button").first();
         // a press on what is in sight moves the page no more than the row

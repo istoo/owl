@@ -12,7 +12,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
-const { reach, wheelTo, watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { reach, wheelTo, watchSettingsReads, settingsDrawn, openAdvanced } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const SECRET = "sk-proj-Tr1eDq8Wm3Rt6YxN2vLp";
@@ -76,6 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await watchSettingsReads(page);
         await page.goto("http://owl.test/?view=settings&tab=privacy");
         await settingsDrawn(page);
+        await openAdvanced(page, "privacy");
 
         // the secret kinds first, each on Mask; personal ones behind a button
         const acts = page.locator("#maskActList");
@@ -162,6 +163,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await watchSettingsReads(page);
     await page.goto("http://owl.test/?view=settings&tab=privacy");
     await settingsDrawn(page);
+    await openAdvanced(page, "privacy");
     const box = page.locator("#maskTryList textarea.mask-try-in");
     await reach(page, box);
     await box.fill(`OPENAI_API_KEY=${REAL} sk_not_found_here, again ${REAL}`);

@@ -218,13 +218,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     t.after(() => browser.close());
     await page.locator("#redactList .row", { hasText: "Mask personal data" }).waitFor();
     // How it's found, before What to mask: the model first, marked new,
-    // then the rules, both waiting on something to mask, with nothing to
-    // press
+    // then the rules (in Advanced), both waiting on something to mask,
+    // with nothing to press
     const found = await page.$$eval("#findList > .row", (rs) => rs.map((r) => [r.id, r.querySelector(".name").textContent, r.querySelector(".sub").textContent, r.querySelectorAll("button").length]));
     assert.deepEqual(found, [
       ["privacyModelRow", "Find with a local model" + "New", "Turn on Mask secrets or Mask personal data first", 0],
-      ["maskRulesRow", "Rules", "Turn on Mask secrets or Mask personal data first", 0],
     ]);
+    // Rules, the other half of that pair, is in Privacy's Advanced
+    const rules = await page.$eval("#setPage-privacy > details.set-adv #maskRulesRow", (r) => [r.querySelector(".name").textContent, r.querySelector(".sub").textContent, r.querySelectorAll("button").length]);
+    assert.deepEqual(rules, ["Rules", "Turn on Mask secrets or Mask personal data first", 0]);
     assert(await page.evaluate(() => document.querySelector("#findList").compareDocumentPosition(document.querySelector("#redactList")) & Node.DOCUMENT_POSITION_FOLLOWING), "How it's found comes before What to mask");
     assert.equal(await page.locator("#privacyModelRow.pm-wait").count(), 1);
     await browser.close();
