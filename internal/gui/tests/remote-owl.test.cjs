@@ -20,7 +20,7 @@ const assets = path.resolve(__dirname, "../assets");
 
 const presets = [
   { id: "openai", name: "OpenAI", icon: "openai", kind: "vendor", chat: "https://api.openai.com/v1", added: false },
-  { id: "openrouter", name: "OpenRouter", icon: "openai", kind: "relay", chat: "https://openrouter.ai/api/v1", added: true },
+  { id: "openrouter", name: "OpenRouter", icon: "openai", kind: "relay", chat: "https://openrouter.ai/api/v1", added: false },
   { id: "ollama", name: "Ollama", icon: "ollama", kind: "local", chat: "http://localhost:11434/v1", noKey: true, added: false },
   { id: "remote-owl", name: "Remote owl", icon: "owl", kind: "remote", added: false,
     note: "another computer's owl, shared on its network", endpoint: "http://192.168.1.20:3425",

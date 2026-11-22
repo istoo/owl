@@ -115,12 +115,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
         // added: a green dot and no word, a subscription's count beside it
         const row = (name) => rows.filter({ has: page.locator(".n", { hasText: new RegExp("^" + name + "$") }) });
-        for (const name of ["Anthropic", "OpenRouter", "Claude", "Kimi"]) assert.equal(await row(name).locator(".have").count(), 1, name);
+        for (const name of ["Claude", "Kimi"]) assert.equal(await row(name).locator(".have").count(), 1, name);
+        // a plain preset already added is left to the list; a search finds it (add-sheet-exits.test.cjs)
+        for (const name of ["Anthropic", "OpenRouter"]) assert.equal(await row(name).count(), 0, name);
         assert.equal(await row("OpenAI").locator(".have").count(), 0);
         assert.equal(await sheet.locator(".tile .st.added").count(), 0);
         assert.equal(await row("Claude").locator(".cnt").textContent(), "2");
-        assert.equal(await row("Anthropic").locator(".cnt").count(), 0);
-        const dot = await row("Anthropic").locator(".have").evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).backgroundColor]; });
+        assert.equal(await row("Kimi").locator(".cnt").count(), 0);
+        const dot = await row("Kimi").locator(".have").evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height, getComputedStyle(e).backgroundColor]; });
         assert.deepEqual(dot.slice(0, 2), [6, 6]);
         assert.notEqual(dot[2], "rgba(0, 0, 0, 0)");
         assert.match(await row("OpenAI").getAttribute("title"), /api\.openai\.example\.com/);

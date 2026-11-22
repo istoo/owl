@@ -6500,7 +6500,7 @@ function providerText(p, row) {
 const pvSq = (s) => (s || "").toLowerCase().replace(/[\s._-]+/g, "");
 function findProviders() {
   const view = $("#view-providers"), q = $("#pvQ"), none = $("#pvNone");
-  q.setAttribute("aria-label", t("Find a provider"));
+  q.setAttribute("aria-label", t("Find a configured provider"));
   $("#pvHead").hidden = !providers.providers.length;
   view.classList.toggle("pv-searching", !!pvQuery);
   const words = pvQuery.split(/\s+/).filter(Boolean), byId = new Map(providers.providers.map((p) => [p.id, p]));
@@ -7334,7 +7334,7 @@ function renderAdd() {
   if (!adding) return editing && typeof editing === "object" ? renderEditor(null, editing.preset) : null;
   const head = el("div", "row-head");
   head.append(el("span", "label", t(providers.providers.length ? "Add a provider" : "Add your first provider")), el("span", "grow"));
-  const q = input(presetQuery, t("Find a vendor…"));
+  const q = input(presetQuery, t("Find a preset to add…"));
   q.className = "find";
   // Escape empties the search, then closes the sheet; it never hides the tray
   q.onkeydown = (e) => {
@@ -7447,23 +7447,29 @@ function renderAdd() {
     // this machine's (Avalon on Discord didn't find it among the relays)
     for (const [kind, title, hint] of [["vendor", "Vendors", "the makers' own APIs"], ["relay", "Relays", "one key, many vendors"], ["local", "On this machine", ""], ["remote", "Another computer's owl", "shared on its network"]]) {
       // a vendor's China endpoint is a preset of its own: one row with the global one
+      // with no search, one already added (both ends of a pair) is left out: its row in the list opens it
       const rows = providers.presets.filter((p) => p.kind === kind && !globalOf(p))
-        .map((p) => [p, chinaOf(p)]).filter(([p, cn]) => hit(p) || (cn && hit(cn)));
+        .map((p) => [p, chinaOf(p)]).filter(([p, cn]) => f ? hit(p) || (cn && hit(cn)) : !(p.added && (!cn || cn.added)));
       if (!rows.length) continue;
       any = true;
       const grid = section(title, hint);
-      for (const [pr, cn] of rows) grid.append(cn ? pairTile(pr, cn) : tile(pr));
+      for (const [pr, cn] of rows) {
+        const b = cn ? pairTile(pr, cn) : tile(pr);
+        if (pr.added && (!cn || cn.added)) addedBadge(b);
+        grid.append(b);
+      }
     }
-    if (!any) {
+    if (f) {
+      // both ways out stay under whatever the search found
       const none = el("div", "none");
-      none.append(t("Nothing called “{q}”. ", { q: presetQuery.trim() }));
+      if (!any) none.append(t("Nothing called “{q}”. ", { q: presetQuery.trim() }));
       const b = el("button", "link", t("Add it as a custom provider"));
       b.onclick = () => { editing = { custom: true }; draft = null; renderProviders(); };
       const pl = el("button", "link", t("look for a plugin"));
       pl.onclick = () => openPlugins(presetQuery.trim());
       none.append(b, t(", or "), pl);
       tiles.append(none);
-    } else if (!f) {
+    } else {
       // a vendor not listed: one line under them all
       const foot = el("div", "custom-foot");
       const c = el("button", "custom" + (editing?.custom ? " on" : ""));
@@ -7551,6 +7557,9 @@ function markAdded(b, n = 1) {
   nm.append(el("span", "have"));
   if (n > 1) nm.append(el("span", "cnt", String(n)));
 }
+
+// found by a search, an added row says so: a click opens its settings
+const addedBadge = (b) => b.querySelector(".nm").append(el("span", "badge", t("Added")));
 
 // the add sheet names a row without what its title tells: a subscription's
 // plan in brackets, a preset's long name
