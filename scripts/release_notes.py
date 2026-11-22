@@ -41,6 +41,12 @@ def notes(rev_range):
         subject = git("log", "-1", "--format=%s", sha).strip()
         trailer = git("log", "-1", "--format=%(trailers:key=Notes-zh,valueonly,separator=%x1f)", sha).strip()
         chinese = trailer.split("\x1f")[0].strip() if trailer else ""
+        if not chinese:
+            # A Notes-zh line that a later paragraph (a run record added
+            # after it) left out of the trailers still says the change; a
+            # commit made of two keeps both, in order.
+            body = git("log", "-1", "--format=%b", sha)
+            chinese = "；".join(l[len("Notes-zh:"):].strip() for l in body.splitlines() if l.startswith("Notes-zh:"))
         en.append("- " + subject)
         zh.append("- " + (chinese or subject))
         any_zh = any_zh or bool(chinese)
