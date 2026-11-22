@@ -214,7 +214,7 @@ function quotaCard() {
       const tight = ws.reduce((a, w) => ((w.used || 0) > (a.used || 0) ? w : a), ws[0]);
       const pct = Math.round(quotaFill(tight));
       const bar = el("span", "ph-q-bar");
-      const fill = el("i");
+      const fill = quotaPaced(el("i"), tight);
       fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
       bar.append(fill);
       if (to100(tight.used) >= 90) bar.classList.add("full");

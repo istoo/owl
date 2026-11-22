@@ -13082,7 +13082,7 @@ function accountQuota(data, user, capFor = () => 0, settable = null, prov) {
     const used = to100(w.used);
     const m = el("span", "aq-w" + (used >= 90 ? " full" : ""));
     const track = el("span", "aq-track");
-    const fill = el("i");
+    const fill = quotaPaced(el("i"), w);
     fill.style.width = quotaFill(w) + "%";
     track.append(fill);
     capMark(track, w, capFor(w));
@@ -13117,7 +13117,7 @@ function poolLine(line, ws, q, capFor = () => 0, settable = null) {
     m.append(el("span", "aq-n", p.name));
     for (const w of p.ws) {
       const track = el("span", "aq-track");
-      const fill = el("i");
+      const fill = quotaPaced(el("i"), w);
       fill.style.width = quotaFill(w) + "%";
       track.append(fill);
       capMark(track, w, capFor(w));
@@ -13498,6 +13498,14 @@ function quotaPace(w, now = Date.now()) {
   const d = to100(w.used) - (100 * (now - s)) / (e - s);
   const n = Math.round(quotaLeft ? -d : d);
   return { n: n === 0 ? 0 : n, over: Math.round(d) > 0, under: Math.round(d) < 0, by: Math.abs(Math.round(d)) };
+}
+// quotaPaced: a window's meter (its fill, or the ring) marked pace-over when
+// more is used than an even pace would have, which the css paints amber; a
+// nearly used window's own colour (full) outranks it; none where quotaPace
+// knows no pace. Every meter of a window goes through it.
+function quotaPaced(node, w) {
+  if (quotaPace(w)?.over) node.classList.add("pace-over");
+  return node;
 }
 // paceNumber: +12%, −8% (a true minus), ±0%
 function paceNumber(n) {
@@ -16900,6 +16908,7 @@ function panelQuotaCard(q) {
   for (const w of ws) {
     const used = to100(w.used);
     const r = el("span", "pq-ring" + (used >= 90 ? " full" : ""));
+    quotaPaced(r, w);
     const dial = el("span", "pq-dial");
     dial.style.setProperty("--p", quotaFill(w));
     dial.append(el("b", "", quotaFill(w) + "%"));
@@ -17829,7 +17838,7 @@ function quotaWindows(sub) {
     n.onclick = () => setQuotaLeft(!quotaLeft);
     labels.append(el("span", "quota-name", t(w.name)), n);
     const track = el("div", "quota-track");
-    const fill = el("i");
+    const fill = quotaPaced(el("i"), w);
     fill.style.width = w.historyMissing ? "0%" : `${quotaFill(w)}%`;
     if (w.historyMissing) track.style.visibility = "hidden";
     track.append(fill);

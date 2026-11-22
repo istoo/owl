@@ -84,7 +84,7 @@ function quotaAll(subs, cls = "", max = Infinity) {
     item.append(el("span", "quota-all-name", name), el("span", "quota-all-n", quotaText(w)));
     if (!w.unlimited && !quotaNoShare(w)) {
       const bar = el("span", "quota-all-bar" + (to100(w.used) >= 90 ? " full" : ""));
-      const fill = el("i");
+      const fill = quotaPaced(el("i"), w);
       fill.style.width = quotaFill(w) + "%";
       bar.append(fill);
       item.append(bar);

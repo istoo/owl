@@ -120,6 +120,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert.equal(week.text, `${w.pace} ${left ? "+" : "−"}30%`, where);
           assert.ok(five.over && !week.over, `${where}: over is by use, whichever way the meter reads`);
           assert.equal(five.color, meta.amber, `${where}: over is amber`);
+          // the meter's fill follows: amber past an even pace, as it was under it, and where no pace is known
+          const fills = await page.evaluate(() => [...document.querySelectorAll(".quota")].map((q) => {
+            const i = q.querySelector(".quota-track i");
+            return i && getComputedStyle(i).backgroundColor;
+          }));
+          assert.equal(fills[0], meta.amber, `${where}: the over window's bar is amber`);
+          assert.ok(fills[1] && fills[1] !== meta.amber, `${where}: the under window's bar isn't`);
+          assert.ok(fills[2] && fills[2] !== meta.amber, `${where}: a window with no start keeps its bar`);
           assert.notEqual(week.color, meta.amber, where);
           assert.ok(five.title.includes(w.over), `${where}: ${five.title}`);
           assert.ok(week.title.includes(w.under), `${where}: ${week.title}`);
