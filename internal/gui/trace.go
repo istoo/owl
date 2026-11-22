@@ -332,10 +332,18 @@ func mainView(q url.Values) string {
 		if card := q.Get("card"); q.Get("tab") == "usage" && card != "" {
 			view += "&card=" + url.QueryEscape(card)
 		}
-		for _, k := range []string{"provider", "agent"} {
+		for _, k := range []string{"provider", "agent", "computer"} {
 			if v := q.Get(k); mainName.MatchString(v) {
 				view += "&" + k + "=" + url.QueryEscape(v)
 			}
+		}
+		// the panel's Usage tab at its period, and the day picked in its
+		// chart (a calendar day, as the Requests take it)
+		if p := q.Get("period"); p == "7d" || p == "30d" || p == "all" {
+			view += "&period=" + p
+		}
+		if d, err := time.Parse(time.DateOnly, q.Get("day")); err == nil {
+			view += "&day=" + d.Format(time.DateOnly)
 		}
 	}
 	// the panel's line about an update owl made: the window opens on

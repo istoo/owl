@@ -4245,11 +4245,13 @@ if (mode === "window" && params.get("view") === "usage") {
   ledAgent = params.get("agent") || "";
   ledPurpose = params.get("purpose") || "";
   ledComputer = params.get("computer") || "";
-  const v = params.get("via") || "";
+  // the day picked in the panel's chart
+  ledDay = /^\d{4}-\d\d-\d\d$/.test(params.get("day")) ? params.get("day") : "";
+  const v =params.get("via") || "";
   ledVia = v === "through" || v === "direct" || v === "reported" ? v : "";
   // a way in, not the reader's pick: they go once the Requests are left
-  for (const [k, x] of [["provider", ledProvider], ["agent", ledAgent], ["purpose", ledPurpose], ["computer", ledComputer], ["via", ledVia]]) if (x) ledLent.add(k);
+  for (const [k, x] of [["provider", ledProvider], ["agent", ledAgent], ["purpose", ledPurpose], ["computer", ledComputer], ["day", ledDay], ["via", ledVia]]) if (x) ledLent.add(k);
   const u = new URL(location.href);
-  for (const k of ["tab", "provider", "agent", "computer", "card", "purpose", "via", "period"]) u.searchParams.delete(k);
+  for (const k of ["tab", "provider", "agent", "computer", "card", "purpose", "via", "period", "day"]) u.searchParams.delete(k);
   history.replaceState(null, "", u);
 }
