@@ -21,13 +21,13 @@ func TestDismissedAlertOpensNothing(t *testing.T) {
 		{"linux", alert, linuxClick, "usage"},                       // clicked
 		{"linux", turn, linuxClick, ""},
 		{"linux", mask, notifications.DefaultActionIdentifier, ""},
-		{"linux", mask, linuxClick, "masking&key=1761700000000000001"},
+		{"linux", mask, linuxClick, "settings&tab=privacy&key=1761700000000000001"},
 		{"darwin", alert, notifications.DefaultActionIdentifier, "usage"},
-		{"darwin", mask, notifications.DefaultActionIdentifier, "masking&key=1761700000000000001"},
-		{"darwin", maskNotice + "0-1", notifications.DefaultActionIdentifier, "masking"},
+		{"darwin", mask, notifications.DefaultActionIdentifier, "settings&tab=privacy&key=1761700000000000001"},
+		{"darwin", maskNotice + "0-1", notifications.DefaultActionIdentifier, "settings&tab=privacy"},
 		{"windows", alert, notifications.DefaultActionIdentifier, "usage"},
 		{"windows", turn, notifications.DefaultActionIdentifier, ""},
-		{"windows", mask, notifications.DefaultActionIdentifier, "masking&key=1761700000000000001"},
+		{"windows", mask, notifications.DefaultActionIdentifier, "settings&tab=privacy&key=1761700000000000001"},
 	} {
 		r := notifications.NotificationResponse{ID: c.id, ActionIdentifier: c.action}
 		if got := clickView(c.goos, r); got != c.want {

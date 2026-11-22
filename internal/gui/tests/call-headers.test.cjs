@@ -1,7 +1,7 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // A call's HTTP headers both ways (usrname1833 on Discord: 查看原始请求和原始
 // 响应的http头, to debug what a capture would show): folded under its bodies
-// on the Gateway page's recent calls and on the Routing page, the client's
+// in Settings > Network and sharing's Recent requests and on the Routing page, the client's
 // headers, then each request owl sent upstream and the head of its
 // answer, an error in place of one that had none, a plugin's hand-off said
 // as one, and the tries not kept counted. The request archive's copy shows
@@ -115,7 +115,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const w = want[lang];
     test(`${engine} ${lang}: a recent call's HTTP headers fold open under its bodies`, async (t) => {
       const { page, errors } = await open(engine, lang, t, lang === "en" ? 1100 : 380);
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const item = page.locator("#activity .call-item").first();
       await item.waitFor();
       await item.locator(".call").click();

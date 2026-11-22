@@ -411,7 +411,7 @@ IP-CIDR6,::1/128,DIRECT,no-resolve</pre>
     <p>この方法で動いたという報告があります。Trae はカスタムモデルを Trae アカウント（Trae のサーバー側）に保存するため、owl からワンクリックで設定することはできず、Trae から <code>127.0.0.1</code> に届かないこともあります。手順：</p>
     <ol>
       <li>owl で <span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ローカルネットワークで共有</span> をオンにし、表示される <span class="ui">アドレス</span> を控えます。</li>
-      <li>ゲートウェイキーを用意します（<span class="ui">ゲートウェイ</span> → <span class="ui">ゲートウェイキー</span>、または <code>owl gateway-key add "Trae"</code>）。</li>
+      <li>ゲートウェイキーを用意します（<span class="ui">設定</span> → <span class="ui">ネットワークと共有</span> → <span class="ui">ゲートウェイキー</span>、または <code>owl gateway-key add "Trae"</code>）。</li>
       <li>Trae のカスタムモデル設定で、アドレスにそのアドレスを、API キーにそのゲートウェイキーを入力します。</li>
     </ol>
     <p>モデル id は owl のもの（<code>owl models</code>）です。共有をオンにすると、同じネットワークのほかのコンピューターもゲートウェイキーで接続できます。<a href="/docs/ja/remote#share">リモート owl</a> を参照してください。</p>

@@ -8,6 +8,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 
 const assets = path.resolve(__dirname, "../assets");
 const providers = (lang) => ({
@@ -31,7 +33,7 @@ function server(lang) {
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:true};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers(lang));
+    if (url.pathname === "/api/providers") return json(providersOf(providers(lang)));
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -58,7 +60,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", server(lang));
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwModelsFolded", "0")); // All models is folded until it is opened
+      await page.goto("http://owl.test/?view=providers");
       await rowOf(page, "workers/@cf/cloudflare/clef").waitFor();
 
       const info = async (id) => {

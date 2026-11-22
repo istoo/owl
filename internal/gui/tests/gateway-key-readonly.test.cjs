@@ -5,6 +5,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const words = {
@@ -33,8 +34,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const events = [], errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", events, { lan: true, keys: keys() }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+        await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
         const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
         const tag = (id) => row(id).locator(".key-readonly");
         const item = (name) => page.locator(".row-menu [role=menuitem]").filter({ hasText: name });
@@ -50,7 +52,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.ok((await tag("laptop").getAttribute("title")).length > 10, "the tag says what read-only means");
         assert.equal(await tag("server").count(), 0);
 
-        const view = page.locator("#view-gateway");
+        const view = page.locator("#view-settings");
         const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
         const before = await scrolled();
         await menu("server");

@@ -51,7 +51,11 @@ const agentRows = [
 ];
 // the labels app.js groups into omp's roles square (OMP_ROLES)
 const OMP_ROLES = ["subagents", "smol", "slow", "plan", "vision", "advisor"];
-const views = ["agents", "providers", "gateway", "routing", "usage", "library", "plugins", "settings"];
+// The Gateway and Masking pages are gone from the sidebar: their content is
+// Settings' Network and Privacy parts and Providers' All models fold
+// (moved-pages.test.cjs), so the phone test visits those parts below.
+const views = ["agents", "providers", "routing", "usage", "library", "plugins", "settings"];
+const movedParts = ["network", "privacy"];
 
 // BASE_REF's assets, all read in one git call the first time one is asked
 // for. A git show per file blocked the fake server for each of the ~100
@@ -300,6 +304,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
               }
               } catch (e) { failures.push(view + ": " + e.message); }
             }
+            // the parts that took in the Gateway and Masking pages fit as well
+            for (const part of movedParts) {
+              try {
+                await page.goto(`http://owl.test/?view=settings&tab=${part}`);
+                await page.locator("#view-settings").waitFor();
+                await page.locator(`#setPage-${part}`).waitFor();
+                await page.evaluate(() => document.fonts.ready);
+                await fits(page, "settings");
+              } catch (e) { failures.push("settings " + part + ": " + e.message); }
+            }
             assert.deepEqual(errors, []);
             assert.deepEqual(failures, []);
           } finally { await page.close(); }
@@ -358,6 +372,15 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
               // window's comparison, as the rail's own pages already are.
               // The header's layout under SIDE_AT keeps its own comparison.
               if (width >= 1024 && view === "usage" && !baselineFile("app.css").includes("body.side-nav .usage-head > #usageTab .opt.on")) continue;
+              // The Gateway and Masking pages moved into Settings and
+              // Providers (moved-pages.test.cjs): until BASE_REF has that, its
+              // sidebar buttons are taken out of the original's picture, and
+              // Providers' All models fold out of the current one, so the
+              // rest of each page is still compared.
+              if (!baselineFile("index.html").toString().includes('id="gwDock"')) {
+                await original.addStyleTag({ content: '#nav button[data-view="gateway"], #nav button[data-view="masking"] { display: none !important; }' });
+                await current.addStyleTag({ content: "#gwModelsHead, #gwModels { display: none !important; }" });
+              }
               await go(current, view); await go(original, view);
               await current.mouse.move(0, 0); await original.mouse.move(0, 0);
               // Removing hover can repaint the tab's shadow in a later frame.
@@ -446,17 +469,6 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
               // BASE_REF has it, both pictures keep the old weight.
               if (!baselineFile("app.css").includes(".opt.on { color: var(--fg); font-weight: 560")) {
                 for (const p of [current, original]) await p.addStyleTag({ content: ".opt.on { font-weight: 400 !important; }" });
-                await current.waitForTimeout(350);
-              }
-              // Gateway's line now says "one address for every API format" (the review
-              // asked for it in place of "five APIs, one URL"): until BASE_REF
-              // has it, both pictures show the same line; gateway-systemone
-              // checks the words.
-              if (view === "gateway" && !baselineFile("plugins/gateway/client.js").toString().includes("one address for every API format")) {
-                for (const p of [current, original]) await p.evaluate(() => {
-                  const s = document.querySelector("#gateway .who > .sub");
-                  if (s) s.textContent = "N models · no agent routed through it yet · one address for every API format";
-                });
                 await current.waitForTimeout(350);
               }
               // Usage's cost note now says "at your model prices" (the review asked

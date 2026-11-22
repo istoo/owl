@@ -295,7 +295,7 @@ func publicRoute(r gateway.Route, pub func(string) string) gateway.Route {
 
 // mainView is the tab the window is asked to open on, as the page's view
 // parameter: the Routing page on one request (req, its id) when the tray
-// panel's Routing tab asks for it, Masking on one request's record (key)
+// panel's Routing tab asks for it, Settings › Privacy on one request's record (key)
 // when a masked call's badge there does, or the Usage page's Requests on one
 // provider or agent when its Usage tab does, its Overview (the allowances)
 // when a menu-bar cell's click does, or Plugins' Discover, looking for what
@@ -320,6 +320,8 @@ func mainView(q url.Values) string {
 			view += "&req=" + strconv.FormatInt(id, 10)
 		}
 	case "masking":
+		// the Masking page is a part of Settings › Privacy now
+		view = "settings&tab=privacy"
 		if key, err := strconv.ParseInt(q.Get("key"), 10, 64); err == nil && key > 0 {
 			view += "&key=" + strconv.FormatInt(key, 10)
 		}

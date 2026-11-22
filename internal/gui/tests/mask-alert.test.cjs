@@ -1,6 +1,6 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // The masking alert (Must2333 on X: 我还希望能即时的知道发生了替换，但不是
-// 通过随时监控网关的方式): Insights › Masking has "Masking alert" after its
+// 通过随时监控网关的方式): Settings › Privacy's "What was masked" (#maskDock) has "Masking alert" after its
 // list of requests, and Settings › Usage no longer does (nb5p on Discord: 这个脱敏提醒被
 // 放到额度设置里了，害得我找半天没找到). Off to begin with; On saves
 // maskAlert, another setting saved later keeps it, Off saves false, and no
@@ -59,7 +59,7 @@ const words = {
     sub: "Eine Benachrichtigung, wenn ein Wert zum ersten Mal maskiert wird: Art und Anzahl, nie der Wert selbst" },
 };
 
-async function open(engine, width, lang, posts, featuresOff, t, name, where = "?view=masking") {
+async function open(engine, width, lang, posts, featuresOff, t, name, where = "?view=settings&tab=privacy") {
   const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
   const page = await (await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" })).newPage();
   t.after(async () => {
@@ -83,7 +83,7 @@ async function open(engine, width, lang, posts, featuresOff, t, name, where = "?
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of Object.keys(words)) {
     for (const width of [900, 380]) {
-      test(`${engine} ${lang} ${width}px: the masking alert is turned on and off on the Masking page`, async (t) => {
+      test(`${engine} ${lang} ${width}px: the masking alert is turned on and off in What was masked`, async (t) => {
         const posts = [];
         const { page, errors } = await open(engine, width, lang, posts, [], t, "mask-alert");
         const posted = async (n) => { for (let i = 0; i < 100 && posts.length < n; i++) await page.waitForTimeout(20); assert.equal(posts.length, n, "posts"); return posts[n - 1]; };
@@ -95,16 +95,18 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal((await page.locator("#maskAlertRow .sub").textContent()).trim(), w.sub);
         assert.deepEqual(await opts.allTextContents(), [w.off, w.on]);
         assert.equal(await page.locator("#maskAlertSegs .opt.on").textContent(), w.off, "off until turned on");
-        // it is the Masking page's, after its list of requests
-        assert.equal(await page.locator("#view-masking #maskList + #maskPrefs > #maskAlertRow").count(), 1);
-        assert.equal(await page.locator("#view-settings #maskAlertRow").count(), 0, "no copy in Settings");
+        // it is What was masked's, after its list of requests
+        assert.equal(await page.locator("#maskDock #maskList + #maskPrefs > #maskAlertRow").count(), 1);
+        assert.equal(await page.locator("#maskAlertRow").count(), 1, "one row in the page");
+        assert.equal(await page.locator("#maskDock #maskAlertRow").count(), 1, "and it is What was masked's");
+        assert.equal(await page.locator("#view-settings .row .name", { hasText: w.name }).count(), 1, "no second copy in Settings' own rows")
         const over = await page.evaluate(() => {
           const row = document.querySelector("#maskAlertRow").getBoundingClientRect();
           return [...document.querySelectorAll("#maskAlertRow *")].filter((e) => e.getBoundingClientRect().right > Math.max(row.right, innerWidth) + 1).map((e) => e.className || e.id);
         });
         assert.deepEqual(over, [], "nothing past the edge");
 
-        const scrolled = () => page.locator("#view-masking").evaluate((v) => v.scrollTop);
+        const scrolled = () => page.locator("#view-settings").evaluate((v) => v.scrollTop);
         await reach(page, opts.nth(1));
         let top = await scrolled();
         await opts.nth(1).click();
@@ -135,7 +137,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   test(`${engine}: Settings › Usage has no masking alert`, async (t) => {
     const { page, errors } = await open(engine, 900, "en", [], [], t, "mask-alert-usage", "?view=settings&tab=usage");
     await page.locator("#turnDoneSegs .opt").first().waitFor();
-    assert.equal(await page.locator("#view-settings #maskAlertRow").count(), 0);
+    assert.equal(await page.locator("#maskAlertRow").isVisible(), false, "not on Usage's tab");
     assert.equal(await page.locator("#turnDoneRow").isVisible(), true);
     assert.deepEqual(errors, []);
   });

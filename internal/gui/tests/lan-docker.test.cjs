@@ -11,8 +11,8 @@
 // own is OWL_PUBLIC_URL's. With no default route known it keeps the
 // container's addresses, said to be its own. Outside a container nothing
 // changes. The OpenAI/Anthropic switch keeps the host and moves nothing.
-// The Gateway page's list, the key page's address and the sidebar's line
-// say the same, whether Share on local network is on or not (the image's
+// Settings' Share on local network row (its address and the menu of the
+// others), the key page's address and the sidebar's line say the same, whether Share on local network is on or not (the image's
 // OWL_ADDR puts the gateway on the network either way). No backend,
 // the API is faked here.
 const assert = require("node:assert/strict");
@@ -179,7 +179,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
   });
 }
 
-// The Gateway page, the key page and the sidebar read the gateway's own
+// The share row's addresses, the key page and the sidebar read the gateway's own
 // flags, not Settings': in Docker, Share on local network is off and the
 // gateway is on the network all the same (jiezhengj: other containers on
 // the NAS needed the host's bridge address).
@@ -197,16 +197,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", [], { lan: true, web: true, container, containerHost, lanURLs: [OWN], bootGateway: true }));
-        await page.goto(at + "/?view=gateway");
+        await page.goto(at + "/?view=settings&tab=network");
         await page.locator("#gatewayLan .gw-url").first().waitFor();
+        await page.locator("#lanList .lan-address-row").waitFor();
         await page.waitForFunction(() => document.querySelector("#gatewayKeys .gw-key-page code"));
         return { page, errors };
       };
+      // the addresses the share row offers, each with the note beside it:
+      // several are the address button's menu (name, note), one is the
+      // address itself with no note
       const list = async (page) => {
-        const rows = page.locator("#gatewayLan .gw-url");
+        const picker = page.locator("#lanList .lan-interface");
+        if (!await picker.count()) return [["", (await page.locator("#lanList .lan-address-text").textContent()).trim().replace(/\/v1$/, "")]];
+        await picker.click();
+        const items = page.locator(".lan-address-menu .pm-item");
         const out = [];
-        for (let i = 0; i < await rows.count(); i++)
-          out.push([(await rows.nth(i).locator(".gw-url-label").textContent()).trim(), (await rows.nth(i).locator("code").textContent()).trim()]);
+        for (let i = 0; i < await items.count(); i++)
+          out.push([(await items.nth(i).locator(".pm-note").textContent()).trim(), (await items.nth(i).locator(".pm-name").textContent()).trim().replace(/\/v1$/, "")]);
+        await page.keyboard.press("Escape");
+        await page.locator(".lan-address-menu").waitFor({ state: "detached" });
         return out;
       };
       const side = (page) => page.locator("#sideGw span:not(.side-gw-chev)").textContent();
@@ -217,7 +226,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // page name the host's
       {
         const { page, errors } = await open("http://192.168.31.218:3430", true, HOSTBR);
-        assert.deepEqual((await list(page)).slice(1), [[w.lan, "http://192.168.31.218:3999"], [w.others, HOSTBR]]);
+        assert.deepEqual(await list(page), [["", "http://192.168.31.218:3999"], [w.others, HOSTBR]]);
         assert.match(await side(page), /192\.168\.31\.218:3999/);
         assert.equal(await keyPage(page), "http://192.168.31.218:3999/me");
         assert.deepEqual(errors, []);
@@ -226,14 +235,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // never the container's own as the local network's
       {
         const { page, errors } = await open("http://localhost:3430", true, HOSTBR);
-        assert.deepEqual((await list(page)).slice(1), [[w.others, HOSTBR]]);
+        // one address only: the bridge's, said to be other containers' in the row under it
+        assert.deepEqual(await list(page), [["", HOSTBR]]);
+        assert.equal((await page.locator("#lanList .lan-container .sub").textContent()).trim(),
+          await page.evaluate(() => t("Other containers on this host use the host’s Docker bridge address, on the gateway’s port; other devices use the host’s own, which OWL_PUBLIC_URL puts here")));
         assert.match(await side(page), /172\.17\.0\.1:3999/);
         assert.deepEqual(errors, []);
       }
       // not in a container: as it was
       {
         const { page, errors } = await open("http://192.168.31.218:3430", false);
-        assert.deepEqual((await list(page)).slice(1), [[w.lan, OWN]]);
+        assert.deepEqual(await list(page), [["", OWN]]);
         assert.match(await side(page), /172\.17\.0\.2:3999/);
         assert.equal(await keyPage(page), OWN + "/me");
         assert.deepEqual(errors, []);

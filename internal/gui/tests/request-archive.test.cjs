@@ -5,8 +5,8 @@
 // same and keeps calls on this computer, its tooltip the folder and the size
 // they are kept under (CyberCaius on Discord), with one its tooltip says the
 // bucket; a failed upload, or a failed save on this computer, is said
-// beside it. The Gateway page has no switch
-// any more, and its recent calls show their own bodies with nothing of the
+// beside it. Recent requests (Settings > Network and
+// sharing) has no switch any more, and its calls show their own bodies with nothing of the
 // archive under them, even one it kept: reading a call back from the archive
 // is the Usage page's (request-archive-usage.test.cjs). No click moves the
 // page. In English and Chinese, Chromium and WebKit.
@@ -95,7 +95,7 @@ const words = {
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
-    test(`${engine} ${lang}: the request archive's switch over the Usage page's requests, none on the Gateway page`, async (t) => {
+    test(`${engine} ${lang}: the request archive's switch over the Usage page's requests, none in Recent requests`, async (t) => {
       const w = words[lang];
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       const page = await (await browser.newContext({ viewport: { width: 1000, height: 760 }, reducedMotion: "reduce" })).newPage();
@@ -117,19 +117,20 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       };
       const wait = async (n) => { for (let i = 0; i < 60 && seen.length < n; i++) await page.waitForTimeout(50); };
 
-      // the Gateway page: no switch, and a call the archive kept shows its
+      // Recent requests: no switch, and a call the archive kept shows its
       // bodies with nothing of the archive under them
-      await page.goto("http://owl.test/?view=gateway");
+      await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const calls = page.locator("#activity .call-item");
       await calls.first().waitFor();
-      assert.equal(await page.locator("#archiveList, #view-gateway [role=switch]").count(), 0, "no archive switch on the Gateway page");
-      await press(calls.nth(0).locator(".call"), "#view-gateway");
+      assert.equal(await page.locator("#archiveList, #gwDockMore [role=switch]").count(), 0, "no archive switch in Recent requests");
+      await press(calls.nth(0).locator(".call"), "#view-settings");
       const details = calls.nth(0).locator(".call-details");
       await details.waitFor();
       assert.equal(await details.locator(".call-body").count(), 2, "the call's own request and response bodies");
-      assert.equal(await page.locator("#view-gateway .call-archive").count(), 0, "no archive panel under a recent call");
-      assert.equal(await page.locator("#view-gateway").getByRole("button", { name: w.fetch }).count(), 0, "no Fetch from archive on the Gateway page");
-      assert(!(await page.locator("#view-gateway").innerText()).includes(w.name), "the Gateway page doesn't name the archive");
+      assert.equal(await page.locator("#gwDockMore .call-archive").count(), 0, "no archive panel under a recent call");
+      assert.equal(await page.locator("#gwDockMore").getByRole("button", { name: w.fetch }).count(), 0, "no Fetch from archive in Recent requests");
+      assert(!(await page.locator("#gwDockMore").innerText()).includes(w.name), "Recent requests doesn't name the archive");
 
       // the Usage page's requests: the switch at the top right of their list
       await navTo(page, "usage");

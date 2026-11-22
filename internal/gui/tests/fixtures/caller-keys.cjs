@@ -75,7 +75,8 @@ function fixture(lang, theme, events, options = {}) {
     if (url.pathname === "/favicon.ico") return route.fulfill({ status: 204 });
     if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings: { lang, theme } });
     if (url.pathname === "/api/providers") return json({
-      providers: [{ id: "relay", name: "Relay", icon: "generic", models: [{ id: "m", name: "Model", on: true }], agents: [] }],
+      providers: [{ id: "relay", name: "Relay", icon: "generic", ready: true, key: { set: true, masked: "sk-…1234" }, models: [{ id: "m", name: "Model", on: true }], agents: [] }],
+      excluded: [],
       gateway: { running: true, window: true, mine: true, url: "http://127.0.0.1:3999", lan, lanURLs: lan ? lanURLs : [], ...lanPublic(), ...container(), ...publicURL(), calls: [], groups: [] },
     });
     if (url.pathname === "/api/groups") return json({ groups: [], models: [] });

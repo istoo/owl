@@ -15,7 +15,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 const { strings } = require("./strings.cjs");
-const { watchSettingsReads, settingsDrawn } = require("./reader.cjs");
+const { watchSettingsReads, settingsDrawn, reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const { I18N } = strings();
@@ -130,6 +130,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             shots.push([`${lang}-${width}-${name}`, await row.screenshot()]);
             if (name === "works") {
               // a change of proxy takes the old answer away
+              await reach(page, page.locator("#proxySegs .segs button", { hasText: w("Off") })); // the row sits lower in the tab
               await page.locator("#proxySegs .segs button", { hasText: w("Off") }).click();
               await page.waitForFunction(() => document.querySelector("#proxyCheck")?.hidden);
             }
@@ -146,6 +147,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await watchSettingsReads(page);
           await page.goto("http://owl.test/?view=settings&tab=network");
           await settingsDrawn(page);
+          await reach(page, page.locator("#proxySegs button.proxy-test"));
           await page.locator("#proxySegs button.proxy-test").click();
           await page.locator("#proxyCheck").waitFor({ state: "visible" });
           assert.equal(await page.locator("#proxyCheck").textContent(), w("The test couldn't run: {error}", { error: w("boom") }));

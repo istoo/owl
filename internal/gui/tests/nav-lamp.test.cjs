@@ -87,7 +87,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const at = (id) => all.findIndex((w) => w.id === id);
       const lit = (i) => page.waitForFunction(([q, i]) => { const s = [...document.querySelectorAll(q)].filter((s) => s.offsetWidth)[i]; return s.classList.contains("lit") && +s.style.getPropertyValue("--si") > 0.99; }, [ROWS, i]);
       const out = (i) => page.waitForFunction(([q, i]) => ![...document.querySelectorAll(q)].filter((s) => s.offsetWidth)[i].classList.contains("lit"), [ROWS, i]);
-      const pv = at("providers"), gw = at("gateway"), rt = at("routing"), word = all[pv];
+      const pv = at("providers"), gw = at("usage"), rt = at("routing"), word = all[pv];
 
       // at the word's start, the start stands off the ground more than its end
       await page.mouse.move(word.x + 2, word.y + word.h / 2);
@@ -101,7 +101,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const atEnd = await ink(page, word);
       assert(atEnd.end > atEnd.start + 12, `the light follows the pointer: ${JSON.stringify(atEnd)}`);
 
-      // to Routing, then Gateway: each takes the light from the one before
+      // to Routing, then Usage: each takes the light from the one before
       await page.mouse.move(all[rt].x + 4, all[rt].y + all[rt].h / 2, { steps: 4 });
       await lit(rt);
       await out(pv);

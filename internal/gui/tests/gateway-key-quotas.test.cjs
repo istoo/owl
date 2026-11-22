@@ -5,6 +5,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const words = {
@@ -27,8 +28,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const events = [], errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", events, { lan: true, keyHolds: { server: { models: ["relay/*"], quotas: true }, work: { models: ["relay/*"] } } }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#gatewayKeys .acc[data-key]").last().waitFor();
+        await reach(page, page.locator("#gatewayKeys .acc[data-key]").last()); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
         const row = (id) => page.locator(`#gatewayKeys .acc[data-key="${id}"]`);
         const badge = (id) => row(id).getByRole("button", { name: w.label, exact: true });
         // on: said always, not only on hover
@@ -40,7 +42,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // off: on hover only
         assert.equal(await badge("work").getAttribute("aria-pressed"), "false");
         assert.equal(await badge("work").evaluate((b) => getComputedStyle(b).opacity), "0");
-        const view = page.locator("#view-gateway");
+        const view = page.locator("#view-settings");
         const scrolled = async () => [await view.evaluate((v) => v.scrollTop), await page.evaluate(() => window.scrollY)];
         const before = await scrolled();
         await row("work").hover();

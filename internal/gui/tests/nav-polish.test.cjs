@@ -76,7 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           const r = s.getBoundingClientRect();
           return { at: s.closest("button").dataset.view || s.closest("button").id, box: s.getAttribute("viewBox"), strokes: [...new Set([...s.querySelectorAll("[stroke-width]")].map((e) => e.getAttribute("stroke-width")))], w: Math.round(r.width), h: Math.round(r.height) };
         }));
-        assert.ok(icons.length >= 10, "the nine pages and Settings");
+        assert.ok(icons.length >= 8, "the seven pages and Settings");
         // the rail's drawn at 21px over their names, Settings' gear at 16 in
         // the status bar
         for (const i of icons) {

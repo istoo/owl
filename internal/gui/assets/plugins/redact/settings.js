@@ -70,3 +70,43 @@ function redactWordsHidden() {
     if (s.redact || s.redactPersonal || (s.redactWords || []).length) redactRouteRow(s);
   };
 }
+
+// What was masked (client.js, docked at the top of this tab) runs its hooks
+// while the tab is in sight, as the Masking page did while it was the page
+// shown: coming into sight opens it, going out lets go of what was only
+// for the visit, and the window coming back reads it again.
+let maskWasSeen = false, maskFirst = true;
+function maskLook() {
+  const seen = maskSeen();
+  if (seen === maskWasSeen) return;
+  maskWasSeen = seen;
+  const asked = owl.call("masking", seen ? "open" : "leave");
+  if (!seen || !maskFirst) return;
+  // The part docked above this tab's rows grows as its answers come in
+  // (the card, the list, the providers' names), and a row pressed before
+  // then was moved from under the press, or off the screen, by the page
+  // keeping up with it. The rows wait for the first answers, up to 4s: a
+  // read that is slow or fails never keeps a setting hidden.
+  maskFirst = false;
+  const page = $("#setPage-privacy");
+  page.classList.add("mask-wait");
+  Promise.race([Promise.resolve(asked).catch(() => {}), new Promise((ok) => setTimeout(ok, 4000))]).then(() => page.classList.remove("mask-wait"));
+}
+{
+  const tab = setSetTab;
+  setSetTab = function (...a) { const r = tab.apply(this, a); maskLook(); return r; };
+  const go = show;
+  show = async function (...a) { const r = await go.apply(this, a); maskLook(); return r; };
+  // Settings' search finds rows; the records stand aside while one is typed
+  const find = findSettings;
+  findSettings = function (...a) { $("#maskDock").hidden = true; return find.apply(this, a); };
+  const search = searchSettings;
+  searchSettings = function (...a) {
+    const r = search.apply(this, a);
+    if (!setQuery) $("#maskDock").hidden = false;
+    maskLook();
+    return r;
+  };
+  document.addEventListener("visibilitychange", maskLook);
+  addEventListener("focus", () => { if (maskSeen()) owl.call("masking", "refresh", true); });
+}

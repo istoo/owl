@@ -95,6 +95,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(body.baseAPI, "responses");
 
       // saved: a new chat URL typed, then Anthropic's typed after it
+      // what the page still has in flight is answered first: a navigation aborts it, and WebKit reports each aborted fetch as a page error
+      await page.waitForLoadState("networkidle");
       await page.goto("http://owl.test/?view=providers");
       await page.locator('#providers .row[data-id="plain"]').click();
       await baseURL.waitFor();

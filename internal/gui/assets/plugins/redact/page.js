@@ -1,4 +1,4 @@
-// Insights › Masking's code (client.js has its markup and hooks): run after
+// Settings › Privacy's What was masked, its code (client.js has its markup and hooks): run after
 // app.js, whose masking helpers it shares (maskTip, maskColor,
 // maskShape, maskValue: Settings' Try it and the masked calls' badges use
 // them too; Try it uses this page's maskMatches in turn). What a
@@ -7,6 +7,9 @@
 // (/api/masking/sent), kept for the newest requests only.
 
 const stillMotion = calm;
+// What was masked is in sight while Settings is open on Privacy, the window
+// is shown and nothing hides it (the plugin off, Settings' search)
+const maskSeen = () => view === "settings" && setShown === "privacy" && !document.hidden && !!$("#maskDock")?.offsetParent;
 // maskMatches is text's stand-ins as matchAll gives them: its {{…}}
 // placeholders, and the made-up keys "Keep a key's form" sent (redact's
 // shape.go), the keys of info that are no placeholder, which only the
@@ -71,9 +74,10 @@ const maskSettings = () => prefs || state?.settings || {};
 const maskOn = () => { const s = maskSettings(); return !!(s.redact || s.redactPersonal || s.redactWords?.length); };
 
 function maskPageOpen() {
+  let named = null;
   if (!providers && !maskProvAsked) {
     maskProvAsked = true;
-    api("providers").then((r) => { maskProv = r; maskDrawn = ""; maskDrawAll(); }).catch(() => { maskProvAsked = false; });
+    named = api("providers").then((r) => { maskProv = r; maskDrawn = ""; maskDrawAll(); }).catch(() => { maskProvAsked = false; });
   }
   // a masked call in the tray panel opens the window on its request
   if (!maskKeyRead) {
@@ -86,7 +90,7 @@ function maskPageOpen() {
       maskOneOpen(k);
     }
   }
-  return maskPageLoad();
+  return Promise.all([maskPageLoad(), named]);
 }
 function maskPageLoad(force) {
   maskDrawAll();
@@ -111,7 +115,7 @@ function drawMaskAlert() {
 }
 // while the page is on screen it keeps up with requests as they go
 setInterval(() => {
-  if (view !== "masking" || document.hidden) return;
+  if (!maskSeen()) return;
   maskLoad(true)?.then(() => { drawMaskCard(); if (maskL.mode === "val" || !maskO) drawMaskList(); });
   if (!maskL.busy) maskRefresh();
 }, 15000);
@@ -188,7 +192,7 @@ function maskOffCard(box) {
   const also = el("span", "msk-also");
   const link = el("button", "text", t("Settings › Privacy"));
   link.type = "button";
-  link.onclick = (e) => openSettingsAt(e, "privacy");
+  link.onclick = (e) => openSettingsAt(e, "privacy", "#redactList");
   also.append(el("span", "", t("You can also change it in")), link);
   box.append(s, el("h2", "", t("Requests go to vendors as they are")),
     el("p", "", t("Turned on, keys, passwords and tokens become placeholders before they leave this computer, and are put back in each answer. Emails and phone numbers too once Mask personal data is on. What each request had masked shows here.")),
@@ -207,7 +211,7 @@ function maskNone() {
   box.append(el("span", "", t("Only keys, passwords and tokens are masked now, and a request that carries one shows here as it goes. Emails and phone numbers are masked once Mask personal data is on, in")));
   const link = el("button", "text", t("Settings › Privacy"));
   link.type = "button";
-  link.onclick = (e) => openSettingsAt(e, "privacy");
+  link.onclick = (e) => openSettingsAt(e, "privacy", "#redactList");
   box.append(" ", link);
   return box;
 }
@@ -222,7 +226,7 @@ function maskOffButton() {
   b.type = "button";
   if (words) {
     b.title = t("Your own masked words still mask until you take them out, in Settings › Privacy");
-    b.onclick = (e) => openSettingsAt(e, "privacy");
+    b.onclick = (e) => openSettingsAt(e, "privacy", "#redactList");
     return b;
   }
   b.onclick = () => {

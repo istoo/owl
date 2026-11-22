@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// The Gateway card's button (leslie_luo on Discord: the page said an older
+// The gateway group's card's button (Settings > Network & sharing) (leslie_luo on Discord: the page said an older
 // owl served the gateway, with no way to quit it). With an older owl
 // on the port it reads "Quit owl {v} and take over" and asks the backend
 // to; once this one serves, it is "Restart gateway" and restarts it. A
@@ -76,7 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, world, theme));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#gateway .state").waitFor();
         return { context, page };
       };

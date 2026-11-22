@@ -2,7 +2,8 @@
 // A row on a phone (zaidu259434 on X: 移动端适配真的希望优化下). At 360px a
 // provider's row squeezed its name to a letter or two beside its key pill
 // and agent icons, and pushed its switch past the card; a gateway key's row
-// cut its name and its buttons; a model's badges, a call's model and path,
+// (Settings > Network and sharing) cut its name and its buttons; a model's
+// badges (All models, on the Providers page), a call's model and path,
 // and a routed request's reasoning beside its upstream were cut to "m…".
 // On a phone the trailing parts go to a line of their own: nothing on the
 // page runs off the side, no text in a row is cut to a sliver, and every
@@ -117,7 +118,10 @@ function broken(sel) {
 
 const pages = [
   { view: "providers", rows: ".row.provider", wait: "#view-providers .row.provider" },
-  { view: "gateway", rows: ".row.gw, #gwModels .row.model, #activity .call, #gatewayKeys .acc[data-key]", wait: "#gatewayKeys .acc[data-key]" },
+  // Network and sharing: the gateway's status row, its recent requests (opened) and its keys
+  { view: "settings&tab=network", name: "network", rows: ".row.gw, #activity .call, #gatewayKeys .acc[data-key]", wait: "#gatewayKeys .acc[data-key]", wait2: "#activity .call" },
+  // All models, under the Providers list (opened)
+  { view: "providers", name: "models", rows: "#gwModels .row.model", wait: "#gwModels .row.model" },
   // the requests are today's in the history: open the day
   { view: "routing", rows: ".rt-req", wait: ".rt-days .rt-day >> nth=1", open: (page) => page.locator(".rt-days .rt-day").nth(1).click(), then: ".rt-req .upstream" },
 ];
@@ -136,17 +140,18 @@ for (const engine of engines) {
         page.setDefaultTimeout(6000);
         page.setDefaultNavigationTimeout(60000);
         await page.route("**/*", serve(lang));
+        await page.addInitScript(() => { localStorage.setItem("owl.gwModelsFolded", "0"); localStorage.setItem("owl.gwCallsFolded", "0"); }); // All models and Recent requests are folded until opened
         await page.goto("http://owl.test/?view=" + p.view);
         await page.waitForSelector(p.wait, { timeout: 15000 });
         if (p.open) { await p.open(page); await page.waitForSelector(p.then); }
-        if (p.view === "gateway") await page.waitForSelector("#gwModels .row.model");
+        if (p.wait2) await page.waitForSelector(p.wait2);
         await page.waitForTimeout(200);
         const got = await page.evaluate(broken, p.rows);
-        assert.ok(got.rows > 0, `${p.view}: rows drawn`);
+        assert.ok(got.rows > 0, `${p.name || p.view}: rows drawn`);
         // every page is looked at before one fails, so a run names them all
-        if (got.wide) bad[p.view + ": runs off the side by"] = got.wide;
-        if (got.cut.length) bad[p.view + ": text cut to a sliver"] = got.cut;
-        if (got.outside.length) bad[p.view + ": controls outside their row"] = got.outside;
+        if (got.wide) bad[(p.name || p.view) + ": runs off the side by"] = got.wide;
+        if (got.cut.length) bad[(p.name || p.view) + ": text cut to a sliver"] = got.cut;
+        if (got.outside.length) bad[(p.name || p.view) + ": controls outside their row"] = got.outside;
         await context.close();
       }
       assert.deepEqual(bad, {});

@@ -83,13 +83,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
             assert(Math.abs(h.left - h.right) <= 6.5, "the tabs aren't halfway at " + at);
           } else {
             middle++;
+            assert(h.left >= 7.5, "the tabs run off the left at " + at);
             assert(Math.abs(h.off) <= 0.5, "the tabs aren't in the middle at " + at);
           }
           // the closer tabs are tried in the middle before the row
           if (h.cls.includes("cramped") && !h.cls.includes("inrow")) middle += 1000;
         }
         assert(middle > 1000, `the closer tabs were never in the middle (${middle})`);
-        assert(inrow > 0, "the narrowest windows never put the tabs in the row");
+        // seven tabs, not nine: in Chinese they fit in the middle all the way
+        // down to the phone layout (560pt), where nothing is left to put in
+        // the row. Every step above held them off the buttons and the left
+        // edge, which is what the row is for; the row's own layout is still
+        // checked wherever the tabs reach it.
+        assert(inrow > 0 || (lang === "zh" && middle > 1000), "the narrowest windows never put the tabs in the row");
         await ctx.close();
       });
     }

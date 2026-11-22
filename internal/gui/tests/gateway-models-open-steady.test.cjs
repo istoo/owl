@@ -1,14 +1,16 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// Opening the Gateway page's models leaves the heads over them where they
-// were. The view is a flex column, and once the open list made it taller
-// than the window it shrank every head of a set height: Connect's from 26px
-// to 21 and the models' to their search field's 24, so the models' head
-// moved up ~5px (the owner, 10-29: "展开模型的时候，这块部分会整体向上移动几个像素").
+// Opening All models (the Providers page, under its list) leaves the heads
+// over them where they were. The view is a flex column, and once the open
+// list made it taller than the window it shrank every head of a set height
+// (it was Connect's from 26px to 21 and the models' to their search field's
+// 24 when both were on one page), so the models' head moved up ~5px (the owner, 10-29: "展开模型的时候，这块部分会整体向上移动几个像素").
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+// Providers' own list draws from these too, now that the model list is under it: what a real read always has
+const providersOf = (p) => ({ excluded: [], ...p, providers: p.providers.map((x) => ({ ready: true, key: { set: false }, ...x })) });
 
 const assets = path.resolve(__dirname, "../assets");
 // enough models for the search field, and for the open list to run past the window
@@ -26,7 +28,7 @@ function serve(lang, web) {
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:${JSON.stringify(lang)},theme:"dark",web:${web}};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json(state);
-    if (url.pathname === "/api/providers") return json(providers);
+    if (url.pathname === "/api/providers") return json(providersOf(providers));
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/gateway/trace") {
       if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
@@ -42,11 +44,10 @@ function serve(lang, web) {
 const heads = (page) => page.evaluate(() => {
   const box = (e) => { const r = e.getBoundingClientRect(); return { top: r.top, height: r.height }; };
   return {
-    connect: box(document.querySelector("#foldConnect").parentElement),
     models: box(document.querySelector("#foldModels").parentElement),
     label: box(document.querySelector("#foldModels .label")),
-    // every head on the page, Recent calls' under the list too
-    all: [...document.querySelectorAll("#view-gateway > .row-head")].filter((h) => h.offsetParent).map((h) => h.getBoundingClientRect().height),
+    // every head on the Providers page, the Turned off one over the list too
+    all: [...document.querySelectorAll("#view-providers > .row-head")].filter((h) => h.offsetParent).map((h) => h.getBoundingClientRect().height),
   };
 });
 
@@ -65,7 +66,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.addInitScript(() => { try { localStorage.setItem("owl.gwModelsFolded", "1"); } catch {} });
         await page.route("**/*", serve(lang, web));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=providers");
         await page.locator("#modelsCount").filter({ hasText: String(models.length) }).waitFor();
         const fold = page.locator("#foldModels");
         assert.equal(await fold.getAttribute("aria-expanded"), "false", "the models start folded");
@@ -74,10 +75,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await fold.click();
         await page.locator("#gwModels .row.model").first().waitFor();
         await page.locator("#findModel").waitFor();
-        assert(await page.locator("#view-gateway").evaluate((v) => v.scrollHeight > v.clientHeight), "open, the page is taller than the window");
+        assert(await page.locator("#view-providers").evaluate((v) => v.scrollHeight > v.clientHeight), "open, the page is taller than the window");
         const is = await heads(page);
         assert.deepEqual(is.all, was.all, "every head keeps its height");
-        for (const k of ["connect", "models", "label"]) {
+        for (const k of ["models", "label"]) {
           assert(Math.abs(is[k].top - was[k].top) <= 0.5, `opening moved ${k} ${(is[k].top - was[k].top).toFixed(1)}px`);
           assert(Math.abs(is[k].height - was[k].height) <= 0.5, `opening took ${k} from ${was[k].height}px to ${is[k].height}px`);
         }

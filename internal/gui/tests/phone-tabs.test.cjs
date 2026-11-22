@@ -77,9 +77,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(all.includes("library"), !gateway, "the Library is a page here unless gateway mode leaves it out");
         assert.equal(all.includes("agents"), !gateway, "Agents shows unless gateway mode leaves it out");
         const bar = await tabs(page);
-        assert.equal(bar.length, 5, "five tabs: " + JSON.stringify(bar.map((b) => b.view)));
-        assert.equal(bar[4].view, "more", "the fifth is More");
-        assert.equal(bar[4].label, moreWord, "More in this language");
+        // five fit; with more pages the fifth is More. Gateway mode leaves four pages, which fit with no More
+        const needsMore = all.length > 5;
+        assert.equal(bar.length, needsMore ? 5 : all.length, "the tabs: " + JSON.stringify(bar.map((b) => b.view)));
+        if (needsMore) {
+          assert.equal(bar[4].view, "more", "the fifth is More");
+          assert.equal(bar[4].label, moreWord, "More in this language");
+        } else assert.ok(!bar.some((b) => b.view === "more"), "no More while every page fits");
         const vw = await page.evaluate(() => innerWidth), vh = await page.evaluate(() => innerHeight);
         for (const b of bar) {
           assert.ok(b.x >= 0 && b.x + b.w <= vw + 0.5, b.view + " is inside the window: " + JSON.stringify(b));
@@ -87,7 +91,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           assert.ok(b.h >= 44, b.view + " is a touch target");
         }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "nothing scrolls sideways");
-        const onBar = bar.slice(0, 4).map((b) => b.view);
+        const onBar = (needsMore ? bar.slice(0, 4) : bar).map((b) => b.view);
         // the bar's own pages open with a tap
         for (const v of onBar) {
           await page.locator(`#nav > button[data-view="${v}"]`).tap();
@@ -95,7 +99,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         }
         // the rest are in More's list, each with its icon, and open from it
         const rest = all.filter((v) => !onBar.includes(v));
-        assert.ok(rest.length >= 1);
+        assert.equal(rest.length >= 1, needsMore);
         for (const v of rest) {
           await page.locator("#nav .tb-more").tap();
           const menu = page.locator(".nav-more-menu");
@@ -116,7 +120,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // back on a tab of the bar, More lets go of its mark
         await page.locator(`#nav > button[data-view="${onBar[0]}"]`).tap();
         await page.waitForSelector("#view-" + onBar[0], { state: "visible" });
-        assert.equal((await tabs(page)).find((b) => b.view === "more").on, false);
+        if (needsMore) assert.equal((await tabs(page)).find((b) => b.view === "more").on, false);
         assert.deepEqual(page.errors, []);
       });
     }

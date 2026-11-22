@@ -1,9 +1,10 @@
-/* Insights › Masking (page.js): what masking kept from vendors, in a
+/* Settings › Privacy's What was masked (page.js): what masking kept from vendors, in a
    short band over the requests it changed, and one request opened. Flat
    only: hairlines, one thin number, the accent kept for what left this
    computer as placeholders */
-#view-masking { container-type: inline-size; }
-#view-masking .grow { flex: 1; }
+#maskDock { container-type: inline-size; margin-bottom: 14px; }
+#maskDock .grow { flex: 1; }
+#setPage-privacy.mask-wait > :not(#maskDock) { display: none; }
 .msk-card { position: relative; padding: 16px 20px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
 .msk-card[hidden], .msk-list[hidden], .msk-one[hidden] { display: none; }
 .msk-head { display: flex; align-items: flex-start; gap: 12px; }

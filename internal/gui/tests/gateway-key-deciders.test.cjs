@@ -7,6 +7,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
 const notes = {
@@ -29,9 +30,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const events = [], errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(lang, "light", events, { lan: true, groups: true, deciders: true, limits: { server: { models: ["group/fast", "group/coding"] } } }));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         const badge = page.locator('#gatewayKeys .acc[data-key="server"] .key-models');
         await badge.waitFor();
+        await reach(page, badge); // Settings scrolls by the reader's wheel only: the keys are brought into sight first
         await badge.click();
         const menu = page.locator(".proto-menu");
         await menu.waitFor();

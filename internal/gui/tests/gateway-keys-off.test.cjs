@@ -3,15 +3,15 @@ const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 const { fixture } = require("./fixtures/caller-keys.cjs");
 
-// Gateway keys are left out of Gateway while owl isn't shared, and a
+// Gateway keys are left out of Settings > Network while owl isn't shared, and a
 // tunnel to loopback (Cloudflare Tunnel) is refused until it is. DD on
 // Discord looked for the keys to put a tunnel behind one and found none:
 // the page says where they come from, and sharing is switched on right
-// there, on the gateway's card. Shared, the line gives way to the keys.
+// there, in the same tab (the Local-network sharing switch). Shared, the line gives way to the keys.
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const locale of ["en", "zh", "zh-TW", "ja", "de"]) {
     for (const width of [1100, 420]) {
-      test(`${engine} ${locale} ${width}: Gateway says where gateway keys come from while not shared`, async (t) => {
+      test(`${engine} ${locale} ${width}: Settings > Network says where gateway keys come from while not shared`, async (t) => {
         const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
         t.after(() => browser.close());
         const page = await (await browser.newContext({ viewport: { width, height: 760 }, reducedMotion: "reduce" })).newPage();
@@ -21,7 +21,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", fixture(locale, "dark", []));
-        await page.goto("http://owl.test/?view=gateway");
+        await page.goto("http://owl.test/?view=settings&tab=network");
         await page.locator("#connect .snip").waitFor();
 
         const hint = page.locator("#gatewayKeysOff");
@@ -35,11 +35,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert(fits, "the hint overflows at " + width);
 
         // shared from the card: the keys show and the line is gone
-        const y = await page.evaluate(() => scrollY);
-        await page.locator("#gatewayLan .segs button").last().click();
+        const y = [await page.evaluate(() => scrollY), await page.locator("#view-settings").evaluate((v) => v.scrollTop)]; // Settings scrolls in #view-settings, the window not at all
+        await page.locator("#lanList .segs button").last().click();
         await page.locator("#gatewayKeysBlock").waitFor({ state: "visible" });
         assert.equal(await hint.isVisible(), false);
-        assert.equal(y, await page.evaluate(() => scrollY), "sharing moved the page");
+        assert.deepEqual(y, [await page.evaluate(() => scrollY), await page.locator("#view-settings").evaluate((v) => v.scrollTop)], "sharing moved the page");
         assert.deepEqual(errors, []);
       });
     }

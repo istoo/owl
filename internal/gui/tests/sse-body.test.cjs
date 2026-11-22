@@ -1,5 +1,5 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
-// A streamed reply's body in the Gateway page's recent calls reads as JSON:
+// A streamed reply's body in the Recent requests (Settings > Network and sharing) reads as JSON:
 // its reply put together, each event's data pretty-printed, or the body as it
 // came; a long stream draws its events a page at a time, and no click moves
 // the page.
@@ -90,7 +90,7 @@ const words = {
   en: { reply: "Reply", events: "Events", raw: "Raw", count: "12 events", foot: (n) => `${n} of 450 events shown Show ${Math.min(200, 450 - n)} more events` },
   zh: { reply: "回复", events: "事件", raw: "原文", count: "12 个事件", foot: (n) => `已显示 ${n} / 450 个事件 再显示 ${Math.min(200, 450 - n)} 个事件` },
 };
-const view = "#view-gateway";
+const view = "#view-settings";
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
@@ -113,7 +113,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await browser.close();
       });
 
-      await page.goto("http://owl.test/?view=gateway");
+      // A redraw of the recent requests must not leave the page too short for
+      // where the reader is, even for an instant: a layout in that gap clamps
+      // the view to the top (WebKit did it when a row was opened). Each redraw
+      // of #activity reads the view's position right after it, which forces
+      // that layout; one that took the position down is kept here.
+      await page.addInitScript(() => {
+        window.__clamped = [];
+        const o = Element.prototype.replaceChildren;
+        Element.prototype.replaceChildren = function (...a) {
+          const v = document.getElementById("view-settings");
+          if (this.id !== "activity" || !v) return o.apply(this, a);
+          const was = v.scrollTop;
+          const r = o.apply(this, a);
+          if (v.scrollTop < was) window.__clamped.push(`${was} -> ${v.scrollTop}`);
+          return r;
+        };
+      });
+      await page.addInitScript(() => localStorage.setItem("owl.gwCallsFolded", "0")); // Recent requests is folded until it is opened
+      await page.goto("http://owl.test/?view=settings&tab=network");
       const rows = page.locator("#activity .call-item");
       await rows.first().waitFor();
       const body = (i) => rows.nth(i).locator(".call-body").nth(1);
@@ -123,7 +141,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // of the view by the wheel, as the reader would, and clicked where it is.
       const reach = async (loc) => {
         const [dy, x, y] = await loc.evaluate((e) => {
-          const v = document.querySelector("#view-gateway").getBoundingClientRect();
+          const v = document.querySelector("#view-settings").getBoundingClientRect();
           return [e.getBoundingClientRect().top - v.top - v.height / 2, v.left + 6, v.top + v.height / 2];
         });
         await page.mouse.move(x, y);
@@ -158,6 +176,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.match(first, /^event: message_start\n\{\n  "type": "message_start",\n  "message": \{\n    "id": "msg_1"/, "pretty-printed JSON, not the data line");
       assert(!(await shown(0)).includes("data: {"), "no raw data lines in the events view");
 
+      assert.deepEqual(await page.evaluate(() => window.__clamped), [], "opening a row never leaves the page too short for where the reader is");
       // its reply put together: thinking, text and the tool's input as an object
       // the option is wheeled to first, so the page is measured after the
       // reader's own wheel and before the click

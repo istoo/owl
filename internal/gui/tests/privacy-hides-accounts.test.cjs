@@ -11,6 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
+const { reach } = require("./reader.cjs");
 
 const assets = path.resolve(__dirname, "../assets");
 const quotas = () => [
@@ -98,14 +99,27 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const row = (name) => page.locator("#setPage-privacy .list .row", { has: page.locator(".name", { hasText: new RegExp("^" + name + "$") }) });
       await row(w.hide).waitFor();
       const top = () => page.evaluate(() => document.querySelector("#view-settings").scrollTop);
-      const y0 = await top();
+      await reach(page, row(w.personal).getByRole("button", { name: w.on, exact: true }));
+      // Find with a local model sits above this row and is drawn again by
+      // this very press (nothing masked, then masked: its words, so its
+      // height, change). The page then holds the pressed switch where it
+      // was by scrolling by what the row above changed, and by nothing else.
+      const pm = () => page.locator("#privacyModelRow").evaluate((r) => r.getBoundingClientRect().height);
+      const onBtn = () => row(w.personal).getByRole("button", { name: w.on, exact: true }).or(row(w.personal).locator(".opt.on")).first().evaluate((b) => b.getBoundingClientRect().top);
+      const y0 = await top(), pm0 = await pm(), at0 = await onBtn();
       await row(w.personal).getByRole("button", { name: w.on, exact: true }).click();
       await page.waitForFunction(() => localStorage.getItem("owl.maskEmails") === "1");
       await page.waitForFunction(() => document.querySelector("#usageMask")?.getAttribute("aria-pressed") === "true");
       assert.ok(saved.some((b) => b.redactPersonal === true), JSON.stringify(saved));
       // the switch here says so, and turns it off again
       await page.waitForFunction((on) => [...document.querySelectorAll("#setPage-privacy .list .row")].some((r) => r.querySelector(".name")?.textContent === on.hide && r.querySelector(".opt.on")?.textContent === on.on), w);
-      assert.equal(await top(), y0, "a click never scrolls");
+      await page.waitForFunction(() => !document.querySelector("#privacyModelRow.pm-wait"));
+      await page.waitForTimeout(400); // the model row's own answer, if it is still to come
+      // to the pixel: WebKit's scrollTop is a whole number and the layout above it
+      // is not, so the switch can sit a fraction off (#1804)
+      const near = (a, b, msg) => assert(Math.abs(a - b) < 1, `${msg}: ${a} against ${b}`);
+      near(await onBtn(), at0, "the pressed switch stays where it was on the screen");
+      near(await top() - y0, await pm() - pm0, "the page moved by what the row above changed, and by nothing else");
       // since Settings' search box (51042630e) the row sits under the
       // window's foot at this size, and the reader scrolls to it with the
       // wheel. Playwright's own scroll into view is code, which the click

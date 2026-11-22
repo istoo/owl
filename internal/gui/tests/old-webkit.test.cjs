@@ -227,7 +227,7 @@ async function serve(route) {
   if (url.pathname === "/api/state") return json(state);
   if (url.pathname === "/api/usage/quotas") return json([]);
   if (url.pathname === "/api/groups") return json({ groups: [] });
-  if (url.pathname === "/api/providers") return json({ providers: [], presets: [], gateway: { running: true } });
+  if (url.pathname === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, calls: [], groups: [] } });
   if (url.pathname === "/api/gateway/trace") {
     if (url.searchParams.get("wait")) await new Promise((r) => setTimeout(r, 20e3));
     return json({ mine: true, now: new Date().toISOString(), seq: 0, totals: { requests: 0, rerouted: 0, errors: 0 }, routes: [] });
@@ -277,9 +277,17 @@ test("with Safari 15.0's built-ins, the panel and the window draw every page", a
         await page.locator("#save").click();
         assert(await page.locator(".profiles.naming > .chip-input").isVisible(), "Save current opens the name field");
       } else {
-        for (const v of ["providers", "gateway", "routing", "usage", "sessions", "library", "agents"]) {
+        for (const v of ["providers", "routing", "usage", "sessions", "library", "agents"]) {
           await page.locator(`#nav [data-view="${v}"]`).click();
           await page.locator(`#view-${v}`).waitFor();
+          await page.waitForTimeout(200);
+        }
+        // the Gateway and Masking pages are the top of Settings' Network and Privacy tabs now
+        await page.locator("#prefs").click();
+        await page.locator("#view-settings").waitFor();
+        for (const [tab, drawn] of [["network", "#gateway"], ["privacy", "#maskCard"]]) {
+          await page.locator("#setTab-" + tab).click();
+          await page.locator(drawn).waitFor();
           await page.waitForTimeout(200);
         }
       }

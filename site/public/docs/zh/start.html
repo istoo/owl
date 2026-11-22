@@ -411,7 +411,7 @@ IP-CIDR6,::1/128,DIRECT,no-resolve</pre>
     <p>有用户反馈这样可以用。Trae 把自定义模型存在你的 Trae 账号里（在它的服务器上），所以 owl 没法一键帮你配好，而且 Trae 不一定连得到 <code>127.0.0.1</code>。做法是：</p>
     <ol>
       <li>在 owl 里打开 <span class="ui">设置</span> → <span class="ui">网络与共享</span> → <span class="ui">局域网共享</span>，记下它显示的 <span class="ui">地址</span>。</li>
-      <li>准备一个网关密钥（<span class="ui">网关</span> → <span class="ui">网关密钥</span>，或 <code>owl gateway-key add "Trae"</code>）。</li>
+      <li>准备一个网关密钥（<span class="ui">设置</span> → <span class="ui">网络与共享</span> → <span class="ui">网关密钥</span>，或 <code>owl gateway-key add "Trae"</code>）。</li>
       <li>在 Trae 的自定义模型设置里，地址填这个地址，API 密钥填这个网关密钥。</li>
     </ol>
     <p>模型 id 用 owl 的（<code>owl models</code>）。打开共享后，局域网里的其他电脑凭网关密钥也能连入；见 <a href="/docs/zh/remote#share">远程 owl</a>。</p>
