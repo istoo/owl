@@ -5259,7 +5259,13 @@ function routingPage(part) {
   // one group's editor (PAMI on Discord)
   const gNames = el("div", "rt-gnames");
   // the groups go with the routing groups built-in plugin; the pools stay
-  for (const n of [gHead, gFound, gNames, gList]) n.dataset.feature = "groups";
+  // two settings made once, folded under Advanced after the groups so the
+  // templates and the user's groups come first; open when either is not
+  // at its default (drawGroups), so a value the user set is never hidden
+  const gAdv = el("details", "rt-gadv");
+  gAdv.append(el("summary", "", t("Advanced")), gFound, gNames);
+  let advWasSet = false;
+  for (const n of [gHead, gAdv, gList]) n.dataset.feature = "groups";
   // and off (the Essentials preset leaves it off), where they were
   // the page says so and turns it on (bigbenniu on X: past the requests
   // there was nothing, and no word of where New group had gone). The
@@ -5285,7 +5291,7 @@ function routingPage(part) {
   const gOffBox = el("div", "list rt-goffbox");
   gOffBox.append(el("div", "rt-goffwhy", t("Routing groups are off in Plugins › Built-in: the groups owl finds, one model several providers serve, still route, but your own can't be made or changed here.")), gOn);
   gOff.append(el("div", "row-head", el("span", "label", t("Routing groups"))), gOffBox);
-  gsec.append(gHead, gFound, gNames, gList, gOff, pHead, pList);
+  gsec.append(gHead, gList, gAdv, gOff, pHead, pList);
   // after the requests: a request picked in the list plays on the stage,
   // so the list sits right under it
   more.append(gsec);
@@ -5687,6 +5693,11 @@ function routingPage(part) {
     replaceKeeping(gHead, head);
     drawFound();
     drawNames();
+    // opens as a value turns non-default (or the page is drawn with one);
+    // a fold the reader shut again stays shut until the next change
+    const advSet = groups.found === false || (Array.isArray(groups.skip) && groups.skip.length > 0) || suffixMode() !== "on";
+    if (advSet && !advWasSet) gAdv.open = true;
+    advWasSet = advSet;
     const rows = [];
     if (!gSel && !own && !words.length && tpls.length) rows.push(templateCards(tpls));
     if (gSel) rows.push(selectBar(shown));

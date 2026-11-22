@@ -77,8 +77,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal((await line.textContent()).trim(), words[lang]);
 
         // the reader wheels the page down to the line (the click guard puts
-        // back a scroll no reader made)
-        const shown = () => line.locator("button").evaluate((x) => { const r = x.getBoundingClientRect(); return r.top >= 60 && r.bottom <= innerHeight - 20; });
+        // back a scroll no reader made). In sight is within the page's own
+        // box, which ends above the narrow window's bottom bar: a line under
+        // the bar is not in sight, and a click there lands on the bar
+        const shown = () => line.locator("button").evaluate((x) => { const r = x.getBoundingClientRect(), v = document.getElementById("view-routing").getBoundingClientRect(); return r.top >= 60 && r.bottom <= Math.min(innerHeight, v.bottom) - 20; });
         await page.mouse.move(width / 2, 400);
         for (let i = 0; i < 30 && !(await shown()); i++) {
           await page.mouse.wheel(0, 120);

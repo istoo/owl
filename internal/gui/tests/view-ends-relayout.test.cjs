@@ -107,7 +107,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           await page.mouse.move(width / 2, 300);
           const down = await page.evaluate(() => {
             const v = document.querySelector("#view-routing"), g = document.querySelectorAll(".rt-group")[9];
-            return Math.round(g.getBoundingClientRect().top - v.getBoundingClientRect().top - v.clientHeight / 2);
+            // a screen and a little down, where the capsule shows (it shows
+            // past one screen): group 9 centred was a few px short of that
+            // in a language whose page above the groups is shorter
+            return Math.round(Math.max(g.getBoundingClientRect().top - v.getBoundingClientRect().top - v.clientHeight / 2, v.clientHeight + 120) - v.scrollTop);
           });
           await page.mouse.wheel(0, down);
           await page.waitForFunction(() => document.querySelector(".view-ends.on"));

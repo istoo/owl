@@ -138,13 +138,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://owl.test/?view=routing");
       const card = page.locator(".rt-group", { hasText: "Fast" });
       await card.waitFor();
-      // the setting is over the groups, before the first card
+      // the setting is under the groups, in Advanced
+      await page.locator(".rt-gadv > summary").click();
       const set = page.locator(".rt-gnames");
       await set.waitFor();
       assert.equal((await set.locator("b").textContent()).trim(), w.setting);
       assert.deepEqual((await set.locator(".segs .opt").allTextContents()).map((s) => s.trim()), [w.off, w.own, w.on]);
       assert.equal((await set.locator(".opt.on").textContent()).trim(), w.on);
-      assert.ok(await set.evaluate((s) => !!(s.compareDocumentPosition(document.querySelector(".rt-group")) & Node.DOCUMENT_POSITION_FOLLOWING)), "the setting is over the groups");
+      assert.ok(await set.evaluate((s) => !!(s.compareDocumentPosition(document.querySelector(".rt-group")) & Node.DOCUMENT_POSITION_PRECEDING)), "the setting is under the groups");
       await card.locator("button", { hasText: w.edit }).click();
       const ed = page.locator(".rt-gedit");
       const row = ed.locator("label", { hasText: new RegExp(`^${w.label}$`) }).locator("xpath=following-sibling::div[1]");
@@ -155,6 +156,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // the name typed is the name shown
       await ed.locator("input").first().fill("Fast lane");
       assert.equal(await row.locator(".hint").textContent(), w.shows("Fast lane · routing group") + w.above);
+      await set.locator(".opt", { hasText: w.own }).hover(); // brings it into view, as the reader would
+      await page.waitForTimeout(300); // the scroll settles
       const before = await scrolls(page);
       await set.locator(".opt", { hasText: w.own }).click();
       await page.locator(".rt-gnames .opt.on", { hasText: w.own }).waitFor();

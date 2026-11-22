@@ -89,6 +89,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.goto("http://owl.test/?view=routing");
         const card = page.locator(".rt-group", { hasText: "Model M" });
         await card.waitFor();
+        await page.locator(".rt-gadv > summary").click(); // the settings made once are under Advanced
         const pick = page.locator(".rt-gsec .rt-gfound .rt-skip-pick");
         assert.equal((await pick.textContent()).trim(), w.none);
         assert.equal(await pick.getAttribute("aria-haspopup"), "menu");
@@ -140,6 +141,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         };
         await reveal(page.locator(".rt-skip-pick"));
         const before2 = await at();
+        const pickTop = () => page.locator(".rt-skip-pick").evaluate((e) => e.getBoundingClientRect().top);
+        const top2 = await pickTop();
         await page.locator(".rt-skip-pick").click();
         await menu.waitFor();
         await menu.locator(".pm-item", { hasText: "Trae CN" }).click();
@@ -147,7 +150,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.waitForFunction((m) => document.querySelector(".rt-skip-pick")?.textContent.trim() === m, w.none);
         assert.deepEqual(posts, [{ skip: ["b"] }, { skip: [] }]);
         await page.waitForFunction(() => document.querySelector(".rt-group .mem")?.textContent.includes("Trae CN"));
-        assert.equal(await at(), before2, "the clicks moved nothing");
+        // The groups now sit above the pick, so a member line that wraps in a
+        // long language grows the card over it and the browser's scroll
+        // anchoring scrolls by that much to hold the pick: scrollTop is no
+        // longer the measure, the pick's place on screen is (it must not move
+        // by a pixel, sub-pixel layout aside).
+        assert.equal((await at()).split(";").map((s) => s.split(",")[0]).join(), before2.split(";").map((s) => s.split(",")[0]).join(), "the same boxes scroll");
+        assert(Math.abs((await pickTop()) - top2) < 1, `the clicks moved nothing: the pick was at ${top2}, now ${await pickTop()}`);
 
         if (lang !== "en") {
           const missing = await page.evaluate(([l, ks]) => ks.filter((k) => !I18N[l][k]), [lang, keys]);

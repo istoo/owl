@@ -22145,7 +22145,7 @@ function keepInView(v, part) {
   pinOf.set(v, part);
   v.style.overflowAnchor = "none"; // the browser's own would anchor on another part, and fight this
   pinSizes.observe(v);
-  for (const c of v.children) pinSizes.observe(c);
+  for (const c of v.children) if (!c.classList.contains("view-room")) pinSizes.observe(c);
 }
 function readerLeaves(v) {
   readerAt.set(v, v.scrollTop);

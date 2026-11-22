@@ -98,6 +98,11 @@ async function open(t, engine, lang, width) {
 async function press(page, b) {
   await page.mouse.move(Math.min(550, page.viewportSize().width / 2), 600);
   await b.waitFor();
+  // the editor opens on a spring (570ms): its height grows from the head's
+  // and the button is carried down with it. Where the button is read must be
+  // where it stays, or the click lands on the page beside it (the wheel
+  // below gave the spring time only when the button was far enough down)
+  await page.evaluate(() => Promise.allSettled(document.getAnimations().filter((a) => a.effect.getComputedTiming().endTime !== Infinity).map((a) => a.finished)));
   for (let i = 0; i < 10 && (await b.boundingBox()).y > 1400 - 160; i++) {
     await page.mouse.wheel(0, 300);
     await page.waitForTimeout(150);

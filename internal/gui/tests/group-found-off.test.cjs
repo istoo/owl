@@ -83,19 +83,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.goto("http://owl.test/?view=routing");
       const card = (name) => page.locator(".rt-group", { hasText: name });
       await card("Model M").waitFor();
+      assert.equal(await page.locator(".rt-gadv").evaluate((e) => e.open), false, "Advanced starts folded");
+      await page.locator(".rt-gadv > summary").click(); // the settings made once are under Advanced
       const box = page.locator(".rt-gsec .rt-gfound");
       const sw = box.locator("button[role=switch]");
       assert.equal(await sw.getAttribute("aria-label"), w.label);
       assert.equal(await sw.getAttribute("aria-checked"), "true");
       assert((await box.textContent()).includes(w.label));
       assert((await box.textContent()).includes(w.onHint), "it says what found groups are");
-      // by the list: right under the routing groups' head, over the cards
+      // after the groups, in Advanced (the names in agents' lists, for every group, beside it)
       const order = await page.evaluate(() => {
         const s = document.querySelector(".rt-gsec");
         return [...s.children].map((c) => c.className);
       });
       // (the names in agents' lists, for every group, between them)
-      assert.deepEqual(order.slice(0, 4), ["row-head", "rt-gfound", "rt-gnames", "list rt-groups"]);
+      assert.deepEqual(order.slice(0, 4), ["row-head", "list rt-groups", "rt-gadv", "rt-goff"]);
       const border = await sw.evaluate((e) => { const c = getComputedStyle(e); return c.borderLeftWidth !== c.borderRightWidth || c.borderLeftColor !== c.borderRightColor; });
       assert.equal(border, false, "no left-border accent");
 
