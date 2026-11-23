@@ -218,11 +218,19 @@
     const names = [...new Set([...(listings || []).map((l) => l.package), ...(mine?.plugins || []).filter((e) => onNPM(e.spec)).map((e) => name(e.spec))])]
       .filter((n) => !only || !npm[n]);
     if (!names.length) return;
-    try {
-      const r = await api("plugins/npm?names=" + encodeURIComponent(names.join(",")));
-      Object.assign(npm, r.npm || {});
-    } catch {}
-    merge();
+    // the server answers for 100 names at most, and npm's slowest one holds
+    // a request: asked in batches at once, each drawn when it comes, so a
+    // button waits for its own batch and no name past the 100th is left out
+    const batches = [];
+    for (let i = 0; i < names.length; i += 40) batches.push(names.slice(i, i + 40));
+    await Promise.all(batches.map(async (b) => {
+      try {
+        const r = await api("plugins/npm?names=" + encodeURIComponent(b.join(",")));
+        Object.assign(npm, r.npm || {});
+      } catch {}
+      merge();
+      if (batches.length > 1) drawBody();
+    }));
     // one npm said nothing of: unknown (Install), asked again
     let u = 0;
     for (const l of listings || []) if (!l.npm || l.npm.u) u = l.npm = { weekly: 0, u: 1 };
@@ -492,6 +500,7 @@
     const op = busy.get(pkg);
     if (op === "add" || op === "upgrade" || op === "move") {
       b.classList.add("busy");
+      b.setAttribute("aria-busy", "true");
       if (op === "move") b.classList.add("move");
       b.append(el("span", "spin"), el("span", "", op === "move" ? t("Moving…") : op === "upgrade" ? t("Updating…") : mine?.bun ? t("Installing…") : t("Getting Bun…")));
       b.disabled = true;
@@ -504,6 +513,10 @@
       b.classList.add("busy");
       b.append(el("span", "spin"));
       b.disabled = true;
+      // a name for a reader without the spinner: it is asking npm
+      b.setAttribute("aria-label", t("Checking…"));
+      b.setAttribute("aria-busy", "true");
+      b.title = t("Checking…");
       return b;
     }
     if (!e) {
