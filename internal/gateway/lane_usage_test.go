@@ -24,7 +24,10 @@ func TestQueueRefusalIsInTheUsageLedger(t *testing.T) {
 	v, up := slowUp(t)
 	one := 1
 	if err := provider.Save(provider.Provider{ID: "slow", Name: "Slow", Key: "k", Models: []string{"m"}, Chat: up + "/v1", Anthropic: up,
-		MaxConcurrency: &one, QueueLimit: 1, QueueWait: 1}); err != nil {
+		// b waits longer than the test runs: a wait of 1s ran out on a
+		// slow -race runner before the ledger was counted, and b's own
+		// timeout was a second 429 row (upstream #2541)
+		MaxConcurrency: &one, QueueLimit: 1, QueueWait: 60}); err != nil {
 		t.Fatal(err)
 	}
 	g := newLaneRig(t)
@@ -42,8 +45,10 @@ func TestQueueRefusalIsInTheUsageLedger(t *testing.T) {
 	if r.tag != "c" || r.status != 429 {
 		t.Fatalf("c = %+v, want a 429", r)
 	}
-	// the answer is out, so the ledger write is due
-	time.Sleep(500 * time.Millisecond)
+	// the answer is out, so the ledger write is due; then a while for a
+	// second row of the same refusal, which is what this test is about
+	within(t, "c's 429 in the ledger", func() bool { return ledger429s() >= 1 })
+	time.Sleep(lateLedgerWait + 500*time.Millisecond)
 
 	// one entry in Recent calls and one row in the ledger, both saying the
 	// request was turned away: it is one refusal, not two
@@ -56,7 +61,13 @@ func TestQueueRefusalIsInTheUsageLedger(t *testing.T) {
 
 	close(v.gate("a"))
 	g.reply()
+	close(v.gate("b"))
+	g.reply()
 }
+
+// lateLedgerWait stands in for a slow runner between c's answer and the
+// count: 0, but a probe sets it to show the count holds when it is late.
+var lateLedgerWait time.Duration
 
 // recent429s is how many of the recent calls are the 429 the queue gave.
 func recent429s(s *Server) int {
