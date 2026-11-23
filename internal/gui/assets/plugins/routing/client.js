@@ -5931,11 +5931,15 @@ function routingPage(part) {
     smart: ["Hard to strong, easy to cheap", "A hard task goes to the strongest model, an easy one and compaction to a cheap one"],
     thrifty: ["Cheap first", "A cheap model first; the strongest for high reasoning, or when the cheap ones fail"],
     steady: ["Never stuck", "The strongest model of each provider, each behind the other: one down doesn't stop the agent"],
+    plan: ["Plan first", "The strongest model of each provider, those billed by a plan first: the allowance you already paid for is spent before a key"],
+    fast: ["Fastest first", "The strongest model of each provider, the one that has answered fastest lately first"],
+    even: ["Spread evenly", "The strongest model alone, from every provider that serves it, taken in turn over all their keys and accounts"],
   };
   const tplName = (tp) => t(TPL[tp.kind]?.[0] || tp.group.name);
   // what a template that can't be made is missing (provider.Need*)
   const tplNeed = (tp) => tp.need === "providers" ? t("Needs models from two providers: {name} is the only one", { name: tp.of })
     : tp.need === "cheap" ? t("Needs a model cheap beside {name}", { name: tp.of })
+    : tp.need === "plan" ? t("Needs a provider billed by a plan: add a subscription or token plan")
     : tp.need ? t("Add a provider first") : "";
   const tplMembers = (tp) => tp.group.members.map((id) => memberName(id)).join(" → ");
   async function addTemplate(tp) {
