@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"slices"
@@ -513,6 +514,10 @@ func listingIcons(ls []pluginListingJSON, wait time.Duration) {
 	for i, l := range ls {
 		if provider.MarketPicture(l.Icon) {
 			said[i] = l.Icon
+		} else if l.Icon != "" && !bundledIcon(l.Icon) {
+			// a name no bundled icon has: the card's own glyph, not a
+			// request for a file that isn't there (404 on every open)
+			ls[i].Icon = ""
 		}
 		if l.NPM != nil {
 			said[n+i] = l.NPM.Icon
@@ -527,6 +532,20 @@ func listingIcons(ls []pluginListingJSON, wait time.Duration) {
 			ls[i].NPM.Icon = got[n+i]
 		}
 	}
+}
+
+// bundledIcon is whether the page has a picture by that name (icon() in
+// app.js asks for icons/<name>.svg, or .png for the few that are).
+func bundledIcon(name string) bool {
+	if name == "generic" {
+		return true
+	}
+	for _, ext := range []string{".svg", ".png"} {
+		if _, err := fs.Stat(assets, "assets/icons/"+name+ext); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // npmIcons puts the picture each package gives (owl.icon) as the page
