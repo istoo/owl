@@ -43,8 +43,9 @@ func endProbesOnSignal() {
 			handled := s == os.Interrupt && interrupts.Load() > 0
 			proc.EndProbes()
 			if !handled {
-				provider.FlushServed() // a gateway's last answers, noted and not yet written
-				gateway.FlushSticks()  // and who answered which conversation
+				provider.FlushServed()     // a gateway's last answers, noted and not yet written
+				gateway.FlushSticks()      // and who answered which conversation
+				gateway.RemoveKeptImages() // the pictures the Routing card kept, in files
 				// and the session index, or the next start reads every
 				// file a scan read since the last save again
 				savedWithin(sessionsSaved, saveOnSignal)

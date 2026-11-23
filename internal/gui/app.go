@@ -446,6 +446,10 @@ func Run(version string, showMain bool, link string) error {
 		OnShutdown: func() {
 			unhookNoActivate()
 			proc.EndProbes()
+			// the pictures this process kept for the Routing card, in
+			// files; a gateway handed over (below) serves from the new
+			// owl, whose cards never had these
+			gateway.RemoveKeptImages()
 			if handedOver.Load() {
 				return
 			}

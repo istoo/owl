@@ -1,12 +1,14 @@
 package gateway
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,15 +67,32 @@ func keptImagesHeapChild(t *testing.T) {
 	}
 }
 
+// withKeptDir makes dir the folder of kept pictures for a test ("" for
+// none), and puts the state back after, the pictures kept in the test
+// forgotten: their files go with its folder, and another test keeping the
+// same picture must not meet an entry that points there.
+func withKeptDir(t *testing.T, dir string) {
+	t.Helper()
+	st := &keptDirState
+	st.Lock()
+	wasDone, wasDir := st.done, st.dir
+	st.done, st.dir = true, dir
+	st.Unlock()
+	t.Cleanup(func() {
+		st.Lock()
+		st.done, st.dir = wasDone, wasDir
+		st.Unlock()
+		k := &keptImages
+		k.Lock()
+		k.bySum, k.byID, k.lru, k.size = map[[32]byte]*list.Element{}, map[int64]*list.Element{}, list.New(), 0
+		k.Unlock()
+	})
+}
+
 // A picture the disk won't take stays in memory, and one whose base64 is
 // not what its bytes encode to is kept as written: neither is lost.
 func TestKeptImagesFallBackToMemory(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	keptDirOnce.Do(func() {}) // the folder is chosen once: here, none
-	was := keptDir
-	keptDir = ""
-	t.Cleanup(func() { keptDir = was })
+	withKeptDir(t, "")
 	b64 := dsBigPNG(4<<10, "mem")
 	id := keepImage([]byte(b64))
 	if got, ok := keptImageOf(strconv.FormatInt(id, 10)); !ok || got != b64 {
@@ -82,7 +101,7 @@ func TestKeptImagesFallBackToMemory(t *testing.T) {
 	// a folder that works, and base64 with its padding cut: canonical
 	// base64 is spilled, this is not, and comes back as written
 	dir := t.TempDir()
-	keptDir = dir
+	withKeptDir(t, dir)
 	loose := []byte(dsBigPNG(4<<10, "loose"))
 	loose = loose[:len(loose)-2] // padding gone
 	id = keepImage(loose)
@@ -92,7 +111,7 @@ func TestKeptImagesFallBackToMemory(t *testing.T) {
 	if es, _ := os.ReadDir(dir); len(es) != 0 {
 		t.Fatalf("non-canonical base64 was written to disk: %d files", len(es))
 	}
-	// canonical: on disk, 0600, taken out when evicted
+	// canonical: on disk, 0600
 	good := dsBigPNG(4<<10, "disk")
 	id = keepImage([]byte(good))
 	es, _ := os.ReadDir(dir)
@@ -108,5 +127,69 @@ func TestKeptImagesFallBackToMemory(t *testing.T) {
 	os.Remove(filepath.Join(dir, es[0].Name()))
 	if _, ok := keptImageOf(strconv.FormatInt(id, 10)); ok {
 		t.Fatal("a picture whose file is gone was drawn")
+	}
+}
+
+// Two keeps of one picture at once, the older entry of it evicted in
+// between, leave the picture drawn: the eviction takes out its own file,
+// not the one the other keep wrote. The gap between the write and the entry
+// is held open by a hook, so the order is the test's, not the scheduler's.
+func TestKeptImagesSamePictureKeptTwiceThenEvicted(t *testing.T) {
+	dir := t.TempDir()
+	withKeptDir(t, dir)
+	was := keptImagesMax
+	keptImagesMax = 6 << 10 // room for one 4 KiB picture
+	t.Cleanup(func() { keptImagesMax = was })
+	wasGap := keepGap
+	t.Cleanup(func() { keepGap = wasGap })
+	var first atomic.Bool
+	inGap, release := make(chan struct{}), make(chan struct{})
+	keepGap = func() {
+		if first.CompareAndSwap(false, true) { // only the first keep waits here
+			close(inGap)
+			<-release
+		}
+	}
+	x := []byte(dsBigPNG(4<<10, "x"))
+	got := make(chan int64)
+	go func() { got <- keepImage(x) }() // B: written, waiting
+	<-inGap
+	a := keepImage(x)                       // A: the same picture, kept and written
+	keepImage([]byte(dsBigPNG(4<<10, "y"))) // evicts A
+	if _, ok := keptImageOf(strconv.FormatInt(a, 10)); ok {
+		t.Fatal("setup: A was not evicted")
+	}
+	close(release)
+	b := <-got
+	if g, ok := keptImageOf(strconv.FormatInt(b, 10)); !ok || g != string(x) {
+		t.Fatalf("the picture B kept is gone after A's eviction (found %t)", ok)
+	}
+	// one picture fits: B kept, Y pushed out with its file
+	es, _ := os.ReadDir(dir)
+	if len(es) != 1 {
+		t.Fatalf("%d files for the pictures kept", len(es))
+	}
+}
+
+// RemoveKeptImages takes the folder, and what is kept after it stays
+// drawn from memory.
+func TestRemoveKeptImages(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "p-x")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	withKeptDir(t, dir)
+	b64 := dsBigPNG(4<<10, "gone")
+	keepImage([]byte(b64))
+	if es, _ := os.ReadDir(dir); len(es) != 1 {
+		t.Fatalf("%d files before", len(es))
+	}
+	RemoveKeptImages()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("folder still there: %v", err)
+	}
+	id := keepImage([]byte(dsBigPNG(4<<10, "after")))
+	if _, ok := keptImageOf(strconv.FormatInt(id, 10)); !ok {
+		t.Fatal("a picture kept after the folder went was lost")
 	}
 }

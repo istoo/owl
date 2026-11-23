@@ -16,7 +16,6 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,13 +34,19 @@ const (
 	// leanMin is the shortest string swapped: a smaller picture costs
 	// less than its ref's bookkeeping
 	leanMin = 1 << 10
-	// keptImagesMax is what the kept pictures take at most together, the
-	// least recently used going first
-	keptImagesMax = 128 << 20
 )
 
+// keptImagesMax is what the kept pictures take at most together, the
+// least recently used going first; a var for tests.
+var keptImagesMax = 128 << 20
+
+// keepGap runs between a picture's file being written and its entry being
+// made, where another keep of the same picture can come and go; a test
+// widens it.
+var keepGap = func() {}
+
 // keptImage is one picture: its bytes in a file of their own under
-// keptImagesDir (named for the sum, 0600), or, when the file can't be
+// keptImagesDir (a name of its own, 0600), or, when the file can't be
 // written or the base64 isn't canonical, its base64 in memory. A picture
 // never goes missing because the disk said no.
 type keptImage struct {
@@ -61,10 +66,11 @@ var keptImages = struct {
 	next  int64
 }{bySum: map[[32]byte]*list.Element{}, byID: map[int64]*list.Element{}, lru: list.New()}
 
-var (
-	keptDirOnce sync.Once
-	keptDir     string // "" when the cache folder can't be had
-)
+var keptDirState struct {
+	sync.Mutex
+	done bool
+	dir  string // "" when the cache folder can't be had, or owl is ending
+}
 
 // keptImagesDir is this process's folder of kept pictures, made on first
 // use. Folders other processes left (a crash, a kill) older than a day
@@ -73,33 +79,54 @@ var (
 // debt: a folder per process swept by age; a lock file per process would
 // tell a live one from a dead one.
 func keptImagesDir() string {
-	keptDirOnce.Do(func() {
-		root, err := appdir.SystemCache()
-		if err != nil {
-			return
-		}
-		root = filepath.Join(root, "kept-images")
-		if es, err := os.ReadDir(root); err == nil {
-			for _, e := range es {
-				if fi, err := e.Info(); err == nil && e.IsDir() && time.Since(fi.ModTime()) > 24*time.Hour {
-					os.RemoveAll(filepath.Join(root, e.Name()))
-				}
+	st := &keptDirState
+	st.Lock()
+	defer st.Unlock()
+	if st.done {
+		return st.dir
+	}
+	st.done = true
+	root, err := appdir.SystemCache()
+	if err != nil {
+		return ""
+	}
+	root = filepath.Join(root, "kept-images")
+	if es, err := os.ReadDir(root); err == nil {
+		for _, e := range es {
+			if fi, err := e.Info(); err == nil && e.IsDir() && time.Since(fi.ModTime()) > 24*time.Hour {
+				os.RemoveAll(filepath.Join(root, e.Name()))
 			}
 		}
-		if err := os.MkdirAll(root, 0o700); err != nil {
-			return
-		}
-		if d, err := os.MkdirTemp(root, "p-"); err == nil {
-			keptDir = d
-		}
-	})
-	return keptDir
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return ""
+	}
+	if d, err := os.MkdirTemp(root, "p-"); err == nil {
+		st.dir = d
+	}
+	return st.dir
 }
 
-// spillImage writes a picture's decoded bytes to a file named for its sum,
-// through a temp file and a rename; "" when it can't, or when the base64
-// doesn't decode back to itself (then its text is kept as it is).
-func spillImage(b64 []byte, sum [32]byte) string {
+// RemoveKeptImages deletes this process's folder of kept pictures, for
+// owl ending: they were in memory only before, and go with the process.
+// Later keeps stay in memory. A crash leaves the folder to the sweep of
+// the next start.
+func RemoveKeptImages() {
+	st := &keptDirState
+	st.Lock()
+	defer st.Unlock()
+	if st.dir != "" {
+		os.RemoveAll(st.dir)
+	}
+	st.done, st.dir = true, ""
+}
+
+// spillImage writes a picture's decoded bytes to a file of its own, whose
+// name is unique to this write: a keep of the same picture at the same
+// time, or the eviction of an older entry of it, never reaches this file.
+// "" when it can't, or when the base64 doesn't decode back to itself (then
+// its text is kept as it is).
+func spillImage(b64 []byte) string {
 	dir := keptImagesDir()
 	if dir == "" {
 		return ""
@@ -109,7 +136,7 @@ func spillImage(b64 []byte, sum [32]byte) string {
 	if err != nil || base64.StdEncoding.EncodedLen(n) != len(b64) {
 		return ""
 	}
-	f, err := os.CreateTemp(dir, "w-*")
+	f, err := os.CreateTemp(dir, "img-*") // 0600
 	if err != nil {
 		return ""
 	}
@@ -117,12 +144,11 @@ func spillImage(b64 []byte, sum [32]byte) string {
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
-	path := filepath.Join(dir, hex.EncodeToString(sum[:]))
-	if werr != nil || os.Rename(f.Name(), path) != nil {
+	if werr != nil {
 		os.Remove(f.Name())
 		return ""
 	}
-	return path
+	return f.Name()
 }
 
 // keepImage keeps a picture's base64, giving its id; the same picture
@@ -140,11 +166,21 @@ func keepImage(b64 []byte) int64 {
 	k.Unlock()
 	// the disk is written outside the lock: a reader of another ref waits
 	// on nothing slow
-	path := spillImage(b64, sum)
+	path := spillImage(b64)
+	keepGap()
+	var drop []string // files to delete, outside the lock
 	k.Lock()
-	defer k.Unlock()
+	defer func() {
+		k.Unlock()
+		for _, p := range drop {
+			os.Remove(p)
+		}
+	}()
 	if e, ok := k.bySum[sum]; ok { // kept meanwhile by another turn
 		k.lru.MoveToFront(e)
+		if path != "" {
+			drop = append(drop, path)
+		}
 		return e.Value.(*keptImage).id
 	}
 	k.next++
@@ -162,7 +198,7 @@ func keepImage(b64 []byte) int64 {
 		delete(k.byID, old.id)
 		k.size -= old.size
 		if old.path != "" {
-			os.Remove(old.path) // under the lock: a new keep of the same sum writes the same name
+			drop = append(drop, old.path)
 		}
 	}
 	return im.id

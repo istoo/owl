@@ -255,6 +255,7 @@ func Main(v string) {
 	update.GUI = hasGUI
 	err = run(os.Args[1:])
 	proc.EndProbes() // a CLI still being asked something isn't left to init
+	gateway.RemoveKeptImages()
 	sessions.Saved() // the session index kept, for the next run
 	if err != nil {
 		// a command with exit codes of its own (quota wait) says which
