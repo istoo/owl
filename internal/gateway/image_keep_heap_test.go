@@ -193,3 +193,35 @@ func TestRemoveKeptImages(t *testing.T) {
 		t.Fatal("a picture kept after the folder went was lost")
 	}
 }
+
+// A picture whose file went (the cache folder cleaned, or swept by another
+// owl) and is sent again is kept afresh and drawn, and the folder is made
+// again: a ref to the same picture never stays one nothing can draw. Red
+// on ubuntu CI at 6f1860246 as TestFileIDConversationStillShows, whose
+// subtests send the same pictures from homes the last one took away.
+func TestKeptImageAgainAfterItsFileWent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "kept")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	withKeptDir(t, dir)
+	b64 := dsBigPNG(4<<10, "gone")
+	first := keepImage([]byte(b64))
+	if _, ok := keptImageOf(strconv.FormatInt(first, 10)); !ok {
+		t.Fatal("not kept to begin with")
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	again := keepImage([]byte(b64))
+	if got, ok := keptImageOf(strconv.FormatInt(again, 10)); !ok || got != b64 {
+		t.Fatalf("sent again after its file went: drawn %t", ok)
+	}
+	k := &keptImages
+	k.Lock()
+	path := k.byID[again].Value.(*keptImage).path
+	k.Unlock()
+	if path == "" || filepath.Dir(path) != dir {
+		t.Fatalf("kept in memory, not in the folder made again: %q", path)
+	}
+}

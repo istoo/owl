@@ -16,6 +16,8 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -137,6 +139,13 @@ func spillImage(b64 []byte) string {
 		return ""
 	}
 	f, err := os.CreateTemp(dir, "img-*") // 0600
+	if errors.Is(err, fs.ErrNotExist) {
+		// the folder went (the cache cleaned, or another owl's sweep):
+		// made again, as keptImagesDir made it
+		if os.MkdirAll(dir, 0o700) == nil {
+			f, err = os.CreateTemp(dir, "img-*")
+		}
+	}
 	if err != nil {
 		return ""
 	}
@@ -151,6 +160,12 @@ func spillImage(b64 []byte) string {
 	return f.Name()
 }
 
+// fileThere says a kept picture's file is still on disk.
+func fileThere(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // keepImage keeps a picture's base64, giving its id; the same picture
 // keeps one id.
 func keepImage(b64 []byte) int64 {
@@ -159,9 +174,22 @@ func keepImage(b64 []byte) int64 {
 	k.Lock()
 	if e, ok := k.bySum[sum]; ok {
 		k.lru.MoveToFront(e)
-		id := e.Value.(*keptImage).id
+		im := e.Value.(*keptImage)
+		id, path := im.id, im.path
 		k.Unlock()
-		return id
+		if path == "" || fileThere(path) {
+			return id
+		}
+		// its file went (the cache cleaned, or another owl's sweep): the
+		// same picture is here again, so it is kept afresh, not left as a
+		// ref nothing can draw
+		k.Lock()
+		if e, ok := k.bySum[sum]; ok && e.Value.(*keptImage) == im {
+			k.lru.Remove(e)
+			delete(k.bySum, sum)
+			delete(k.byID, id)
+			k.size -= im.size
+		}
 	}
 	k.Unlock()
 	// the disk is written outside the lock: a reader of another ref waits
