@@ -8,15 +8,23 @@ package gateway
 // card's text and pictures, and one over conversationBodyMax its turn.
 // Almost all of such a body is base64, so each view keeps it with every
 // picture swapped for a short ref, and the card reads the picture back
-// from keptImages, in memory only and bounded, as the bodies are.
+// from keptImages, bounded, as the bodies are: the bytes sit in files of
+// owl's cache folder, so they cost no heap.
 
 import (
 	"bytes"
 	"container/list"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/istoo/owl/internal/appdir"
 )
 
 const (
@@ -32,10 +40,16 @@ const (
 	keptImagesMax = 128 << 20
 )
 
+// keptImage is one picture: its bytes in a file of their own under
+// keptImagesDir (named for the sum, 0600), or, when the file can't be
+// written or the base64 isn't canonical, its base64 in memory. A picture
+// never goes missing because the disk said no.
 type keptImage struct {
-	id  int64
-	sum [32]byte
-	b64 string
+	id   int64
+	sum  [32]byte
+	size int    // the base64's length, what keptImagesMax counts
+	b64  string // in memory only when path is empty
+	path string
 }
 
 var keptImages = struct {
@@ -47,34 +61,115 @@ var keptImages = struct {
 	next  int64
 }{bySum: map[[32]byte]*list.Element{}, byID: map[int64]*list.Element{}, lru: list.New()}
 
+var (
+	keptDirOnce sync.Once
+	keptDir     string // "" when the cache folder can't be had
+)
+
+// keptImagesDir is this process's folder of kept pictures, made on first
+// use. Folders other processes left (a crash, a kill) older than a day
+// are taken out then; a live process's folder untouched that long loses
+// its pictures to this, which the card shows as gone, as an evicted one.
+// debt: a folder per process swept by age; a lock file per process would
+// tell a live one from a dead one.
+func keptImagesDir() string {
+	keptDirOnce.Do(func() {
+		root, err := appdir.SystemCache()
+		if err != nil {
+			return
+		}
+		root = filepath.Join(root, "kept-images")
+		if es, err := os.ReadDir(root); err == nil {
+			for _, e := range es {
+				if fi, err := e.Info(); err == nil && e.IsDir() && time.Since(fi.ModTime()) > 24*time.Hour {
+					os.RemoveAll(filepath.Join(root, e.Name()))
+				}
+			}
+		}
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			return
+		}
+		if d, err := os.MkdirTemp(root, "p-"); err == nil {
+			keptDir = d
+		}
+	})
+	return keptDir
+}
+
+// spillImage writes a picture's decoded bytes to a file named for its sum,
+// through a temp file and a rename; "" when it can't, or when the base64
+// doesn't decode back to itself (then its text is kept as it is).
+func spillImage(b64 []byte, sum [32]byte) string {
+	dir := keptImagesDir()
+	if dir == "" {
+		return ""
+	}
+	raw := make([]byte, base64.StdEncoding.DecodedLen(len(b64)))
+	n, err := base64.StdEncoding.Decode(raw, b64)
+	if err != nil || base64.StdEncoding.EncodedLen(n) != len(b64) {
+		return ""
+	}
+	f, err := os.CreateTemp(dir, "w-*")
+	if err != nil {
+		return ""
+	}
+	_, werr := f.Write(raw[:n])
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	path := filepath.Join(dir, hex.EncodeToString(sum[:]))
+	if werr != nil || os.Rename(f.Name(), path) != nil {
+		os.Remove(f.Name())
+		return ""
+	}
+	return path
+}
+
 // keepImage keeps a picture's base64, giving its id; the same picture
 // keeps one id.
 func keepImage(b64 []byte) int64 {
 	sum := sha256.Sum256(b64)
 	k := &keptImages
 	k.Lock()
-	defer k.Unlock()
 	if e, ok := k.bySum[sum]; ok {
+		k.lru.MoveToFront(e)
+		id := e.Value.(*keptImage).id
+		k.Unlock()
+		return id
+	}
+	k.Unlock()
+	// the disk is written outside the lock: a reader of another ref waits
+	// on nothing slow
+	path := spillImage(b64, sum)
+	k.Lock()
+	defer k.Unlock()
+	if e, ok := k.bySum[sum]; ok { // kept meanwhile by another turn
 		k.lru.MoveToFront(e)
 		return e.Value.(*keptImage).id
 	}
 	k.next++
-	im := &keptImage{id: k.next, sum: sum, b64: string(b64)}
+	im := &keptImage{id: k.next, sum: sum, size: len(b64), path: path}
+	if path == "" {
+		im.b64 = string(b64)
+	}
 	e := k.lru.PushFront(im)
 	k.bySum[sum], k.byID[im.id] = e, e
-	k.size += len(im.b64)
+	k.size += im.size
 	for k.size > keptImagesMax && k.lru.Len() > 1 {
 		old := k.lru.Back().Value.(*keptImage)
 		k.lru.Remove(k.lru.Back())
 		delete(k.bySum, old.sum)
 		delete(k.byID, old.id)
-		k.size -= len(old.b64)
+		k.size -= old.size
+		if old.path != "" {
+			os.Remove(old.path) // under the lock: a new keep of the same sum writes the same name
+		}
 	}
 	return im.id
 }
 
 // keptImageOf is the base64 of the picture a ref names; false when it
-// has gone.
+// has gone (evicted, or its file taken away).
 func keptImageOf(ref string) (string, bool) {
 	id, err := strconv.ParseInt(ref, 10, 64)
 	if err != nil {
@@ -82,13 +177,23 @@ func keptImageOf(ref string) (string, bool) {
 	}
 	k := &keptImages
 	k.Lock()
-	defer k.Unlock()
 	e, ok := k.byID[id]
 	if !ok {
+		k.Unlock()
 		return "", false
 	}
 	k.lru.MoveToFront(e)
-	return e.Value.(*keptImage).b64, true
+	im := e.Value.(*keptImage)
+	b64, path := im.b64, im.path
+	k.Unlock()
+	if path == "" {
+		return b64, true
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return base64.StdEncoding.EncodeToString(raw), true
 }
 
 // imageMagic is how a PNG, JPEG, GIF or WebP's base64 starts: an
