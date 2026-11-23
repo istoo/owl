@@ -1438,7 +1438,8 @@ function connectLine(a, kind) {
     else say(t("Not added · {agent} asks to add owl when its link opens", { agent: a.name }));
     return line;
   }
-  if (kind === "empty" && !switchable(a)) { say(t("Add a key or a subscription first; then there are models to connect")); return line; }
+  // no model source at all: the status alone, the Add a provider button is in the guide once (best-in-class P0-3); the reason in the hover
+  if (kind === "empty" && !switchable(a)) { say(t("Not connected · no models yet")); line.title = t("Add a key or a subscription first; then there are models to connect"); return line; }
   if (!a.wired && a.native && a.native.provider !== "disconnected") {
     say(t(a.native.detail), "bad");
     if (a.native.provider === "invalid") line.append(driftFix(a, "Reconnect"));
