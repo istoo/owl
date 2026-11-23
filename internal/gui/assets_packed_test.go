@@ -4,12 +4,18 @@ package gui
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"sort"
 	"testing"
+
+	"github.com/istoo/owl/internal/proc"
 )
 
 // The packed UI must be the tree's: every file, byte for byte, and no other.
@@ -76,5 +82,53 @@ func TestPackedAssetsServe(t *testing.T) {
 	}
 	if lm := get("/app.js", "").Header().Get("Last-Modified"); lm != "" {
 		t.Fatalf("Last-Modified %q: an embedded file has none", lm)
+	}
+}
+
+// The page's files are not kept for the life of the process: after every
+// one has been read and let go, the live heap is where it was (the cache
+// held ~7.7 MB of them), and a file still open keeps its bytes. Run in a
+// child of its own, which measures only this; the bound is the difference
+// between the two states.
+func TestPackedAssetsAreNotKept(t *testing.T) {
+	const child = "OWL_TEST_PACKED_HEAP"
+	if os.Getenv(child) == "" {
+		cmd := proc.CommandContext(context.Background(), os.Args[0], "-test.run=^TestPackedAssetsAreNotKept$", "-test.timeout=4m", "-test.v")
+		cmd.Env = append(os.Environ(), child+"=1")
+		out, err := cmd.CombinedOutput()
+		t.Logf("%s", out)
+		if err != nil {
+			t.Fatalf("unpacked files stayed on the heap: %v", err)
+		}
+		return
+	}
+	live := func() uint64 {
+		runtime.GC()
+		runtime.GC()
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return m.HeapAlloc
+	}
+	open, err := assets.Open("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := live()
+	total := 0
+	fs.WalkDir(assets, "assets", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			b, _ := assets.ReadFile(p)
+			total += len(b)
+		}
+		return nil
+	})
+	after := live()
+	fmt.Printf("read %d bytes of files; live heap grew by %d\n", total, int64(after)-int64(before))
+	if total < 4<<20 || int64(after)-int64(before) > int64(total)/8 {
+		t.Fatalf("read %d bytes; live heap grew by %d", total, int64(after)-int64(before))
+	}
+	b, err := io.ReadAll(open) // the open file still has its bytes after the collections
+	if err != nil || len(b) < 1<<20 {
+		t.Fatalf("an open file lost its bytes: %d, %v", len(b), err)
 	}
 }

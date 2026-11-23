@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"sync"
 	"time"
+	"weak"
 
 	_ "embed"
 )
@@ -17,8 +18,11 @@ import (
 // A release build embeds the UI's files as one zip (build/assetpack, run by
 // the Makefile before it builds): the scripts and styles are a quarter of
 // their size, where the Windows and Linux downloads are the raw binary. A
-// file is unpacked the first time it is asked for and kept, as the page's
-// short list of files is all there is.
+// file is unpacked when it is asked for and shared by the requests that
+// overlap: the cache holds each by a weak pointer, so the ~8 MB of the
+// page's scripts and styles go back to the heap's free list at the next
+// collection after the last reader lets go, instead of staying for the
+// life of the process.
 //
 //go:embed assets.zip
 var assetsZip []byte
@@ -30,7 +34,7 @@ type packedAssets struct {
 	zr    *zip.Reader
 	err   error
 	mu    sync.Mutex
-	files map[string][]byte
+	files map[string]weak.Pointer[[]byte]
 }
 
 func (p *packedAssets) reader() (*zip.Reader, error) {
@@ -38,8 +42,9 @@ func (p *packedAssets) reader() (*zip.Reader, error) {
 	return p.zr, p.err
 }
 
-// load unpacks a file, once; dir is true for a folder.
-func (p *packedAssets) load(name string) (b []byte, st fs.FileInfo, dir bool, err error) {
+// load unpacks a file; dir is true for a folder. The caller keeps the
+// returned pointer for as long as it reads the bytes: the cache does not.
+func (p *packedAssets) load(name string) (b *[]byte, st fs.FileInfo, dir bool, err error) {
 	zr, err := p.reader()
 	if err != nil {
 		return nil, nil, false, err
@@ -53,19 +58,27 @@ func (p *packedAssets) load(name string) (b []byte, st fs.FileInfo, dir bool, er
 		return nil, st, err == nil, err
 	}
 	p.mu.Lock()
-	b, ok := p.files[name]
+	if w, ok := p.files[name]; ok {
+		b = w.Value()
+	}
 	p.mu.Unlock()
-	if ok {
+	if b != nil {
 		return b, st, false, nil
 	}
-	if b, err = io.ReadAll(f); err != nil {
+	raw, err := io.ReadAll(f)
+	if err != nil {
 		return nil, nil, false, err
 	}
+	b = &raw
 	p.mu.Lock()
 	if p.files == nil {
-		p.files = map[string][]byte{}
+		p.files = map[string]weak.Pointer[[]byte]{}
 	}
-	p.files[name] = b
+	if w, ok := p.files[name]; ok && w.Value() != nil { // unpacked meanwhile by another request
+		b = w.Value()
+	} else {
+		p.files[name] = weak.Make(b)
+	}
 	p.mu.Unlock()
 	return b, st, false, nil
 }
@@ -81,7 +94,7 @@ func (p *packedAssets) Open(name string) (fs.File, error) {
 		zr, _ := p.reader()
 		return zr.Open(name)
 	}
-	return &packedFile{Reader: bytes.NewReader(b), info: packedInfo{st, int64(len(b))}}, nil
+	return &packedFile{Reader: bytes.NewReader(*b), hold: b, info: packedInfo{st, int64(len(*b))}}, nil
 }
 
 func (p *packedAssets) ReadFile(name string) ([]byte, error) {
@@ -92,11 +105,12 @@ func (p *packedAssets) ReadFile(name string) ([]byte, error) {
 	if dir {
 		return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("is a directory")}
 	}
-	return bytes.Clone(b), nil
+	return bytes.Clone(*b), nil
 }
 
 type packedFile struct {
 	*bytes.Reader
+	hold *[]byte // keeps the bytes in the cache while the file is open
 	info packedInfo
 }
 
