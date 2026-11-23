@@ -119,6 +119,14 @@ var (
 	npmAll       = 8 * time.Second
 )
 
+// npmSem is the packages Info asks npm of at once, across every call: the
+// Plugins page sends its names in batches that arrive together, and each
+// batch used to bring a limit of its own (4 batches, 4 x npmAtOnce). A
+// package holds a slot for its two requests (the latest version and the
+// week's downloads), so 8 packages x 2 requests is about 16 at npm, the
+// npm CLI's own default for sockets at once (maxsockets, 15). Tests swap it.
+var npmSem = make(chan struct{}, 8)
+
 func npmCacheFile() string { return filepath.Join(filepath.Dir(marketCache()), "plugin-npm.json") }
 
 // npmCached is npmCache, read from disk the first time; npmMu held.
@@ -359,7 +367,7 @@ func infoWithin(ctx context.Context, names []string, age time.Duration) map[stri
 	out := map[string]NPM{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, npmAtOnce)
+	sem := npmSem
 	ctx, cancel := context.WithTimeout(ctx, npmAll)
 	defer cancel()
 	// asked apart from ctx: one that answers after the page stopped

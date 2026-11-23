@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,11 +19,11 @@ func fakeNPM(t *testing.T, h http.HandlerFunc) {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	reg, dl, atOnce, each, all := npmRegistry, npmDownloads, npmAtOnce, npmEach, npmAll
+	reg, dl, atOnce, each, all, sem := npmRegistry, npmDownloads, npmAtOnce, npmEach, npmAll, npmSem
 	npmRegistry, npmDownloads = srv.URL, srv.URL
 	ReloadInfo()
 	t.Cleanup(func() {
-		npmRegistry, npmDownloads, npmAtOnce, npmEach, npmAll = reg, dl, atOnce, each, all
+		npmRegistry, npmDownloads, npmAtOnce, npmEach, npmAll, npmSem = reg, dl, atOnce, each, all, sem
 		ReloadInfo()
 	})
 }
@@ -136,7 +137,7 @@ func TestNPMInfoAtOnce(t *testing.T) {
 		mu.Unlock()
 		npmAnswer(w, r)
 	})
-	npmAtOnce = 3
+	npmSem = make(chan struct{}, 3)
 	names := []string{}
 	for i := range 12 {
 		names = append(names, "pkg-"+string(rune('a'+i)))
@@ -208,5 +209,48 @@ func TestUpdateCheckAsksNPMNow(t *testing.T) {
 	}
 	if got := latestOf(ctx, []string{pkg})[pkg]; got != "1.2.4" {
 		t.Fatalf("the update check: %q, want npm's version now", got)
+	}
+}
+
+// The Plugins page asks in batches that arrive together: whatever the
+// number of calls going at once, npm sees no more packages in flight than
+// npmSem allows (each package is two requests, the latest version and the
+// week's downloads).
+func TestNPMInfoSharedLimitAcrossCalls(t *testing.T) {
+	var mu sync.Mutex
+	now, most := 0, 0
+	fakeNPM(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/downloads/") {
+			npmAnswer(w, r)
+			return
+		}
+		mu.Lock()
+		now++
+		most = max(most, now)
+		mu.Unlock()
+		time.Sleep(40 * time.Millisecond)
+		mu.Lock()
+		now--
+		mu.Unlock()
+		npmAnswer(w, r)
+	})
+	npmSem = make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for b := range 4 {
+		names := []string{}
+		for i := range 10 {
+			names = append(names, fmt.Sprintf("pkg-%d-%d", b, i))
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := Info(context.Background(), names); len(got) != 10 {
+				t.Errorf("%d answered, want 10", len(got))
+			}
+		}()
+	}
+	wg.Wait()
+	if most > 4 || most == 0 {
+		t.Fatalf("%d packages asked at once across 4 calls, want at most 4", most)
 	}
 }
