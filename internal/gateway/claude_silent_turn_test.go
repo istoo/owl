@@ -97,15 +97,14 @@ func manyImages(path string, n int, stream bool) string {
 	}
 }
 
-// A Claude subscription turn Claude Code ends with no message is a
-// failure that says why, in every protocol, streamed or not, by -p and
-// by the interactive mode. steven_4422 sent 18 PNGs to
-// claude/claude-sonnet-5-5 in a Chat request not streamed and was
-// answered 200 with content null and no usage, as if that were the
-// answer; 17 were answered. Claude Code's run had ended the turn with
-// nothing said: the bridge closed the reply with nothing in it.
-func TestClaudeSilentTurnFails(t *testing.T) {
-	pasts := []struct{ name, lines, why string }{
+// silentPast is one way Claude Code's run ends a turn with no message.
+type silentPast struct{ name, lines, why string }
+
+// silentPasts are the ways a run ends a turn with no message: it says its
+// result succeeded with nothing before it, it says words of its own that
+// no model wrote, or it exits, saying why on its stderr only.
+func silentPasts() []silentPast {
+	return []silentPast{
 		// its result says it succeeded, with no message before it
 		{"result", `    echo '{"type":"result","subtype":"success","is_error":false,"result":""}'
 `, "ended the turn without an answer"},
@@ -118,46 +117,86 @@ func TestClaudeSilentTurnFails(t *testing.T) {
     exit 1
 `, "did not take the message"},
 	}
+}
+
+// holdFor sets how long a held stream waits for its turn before its 200
+// and keepalive go out (keepHeldAfter) and how often watch looks at the
+// stream (watchEvery), putting both back when the test ends.
+func holdFor(t *testing.T, after, every time.Duration) {
+	t.Helper()
+	a, w := keepHeldAfter, watchEvery
+	keepHeldAfter, watchEvery = after, every
+	t.Cleanup(func() { keepHeldAfter, watchEvery = a, w })
+}
+
+// claudeSilentServer is a gateway whose Claude subscription is the fake
+// Claude Code of past, run in the interactive mode when tui.
+func claudeSilentServer(t *testing.T, past silentPast, tui bool) *Server {
+	t.Helper()
+	claudeSilentAt(t, past.lines)
+	if tui {
+		claudeTUIRuns = true
+		t.Cleanup(func() { claudeTUIRuns = false })
+		helper := filepath.Join(t.TempDir(), "owl")
+		testenv.Program(t, helper, "#!/bin/sh\n[ \"$1\" = \""+claudetui.Command+"\" ] || exit 9\nshift; claude=$1; shift\nexec \"$claude\" \"$@\"\n")
+		claudeTUIHelper = helper
+		t.Cleanup(func() { claudeTUIHelper = "" })
+	}
+	s := New()
+	t.Cleanup(s.subscription.abortAll)
+	return s
+}
+
+// sendMany sends a request of n images and waits for its reply, failing
+// the test when the turn it waits on has ended.
+func sendMany(t *testing.T, s *Server, path string, n int, stream bool) (int, string) {
+	t.Helper()
+	type answer struct {
+		code int
+		body string
+	}
+	done := make(chan answer, 1)
+	go func() {
+		code, body := sendTo(s, path, manyImages(path, n, stream))
+		done <- answer{code, body}
+	}()
+	select {
+	case a := <-done:
+		return a.code, a.body
+	case <-time.After(20 * time.Second):
+		t.Fatalf("%d images: the reply waited on a turn that had ended", n)
+	}
+	return 0, ""
+}
+
+// A Claude subscription turn Claude Code ends with no message is a
+// failure that says why, in every protocol, streamed or not, by -p and
+// by the interactive mode. steven_4422 sent 18 PNGs to
+// claude/claude-sonnet-5-5 in a Chat request not streamed and was
+// answered 200 with content null and no usage, as if that were the
+// answer; 17 were answered. Claude Code's run had ended the turn with
+// nothing said: the bridge closed the reply with nothing in it.
+func TestClaudeSilentTurnFails(t *testing.T) {
+	// A held stream sends its 200 and a keepalive of its own after
+	// keepHeldAfter (3s) with nothing of the reply yet (watch, keepQuiet),
+	// to keep a client or proxy from timing out on headers. A turn whose
+	// end took longer than that got the 200 first and could only be told
+	// as the stream's error event (#49, a macOS race job); with the
+	// keepalive out of the way, the failure before the reply began is a
+	// status in every protocol, streamed or not.
+	holdFor(t, time.Minute, watchEvery)
 	asks := []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"}
 	for _, tui := range []bool{false, true} {
-		for _, past := range pasts {
+		for _, past := range silentPasts() {
 			for _, path := range asks {
 				for _, stream := range []bool{false, true} {
 					t.Run(fmt.Sprintf("tui=%v/%s%s/stream=%v", tui, past.name, path, stream), func(t *testing.T) {
-						claudeSilentAt(t, past.lines)
-						if tui {
-							claudeTUIRuns = true
-							t.Cleanup(func() { claudeTUIRuns = false })
-							helper := filepath.Join(t.TempDir(), "owl")
-							testenv.Program(t, helper, "#!/bin/sh\n[ \"$1\" = \""+claudetui.Command+"\" ] || exit 9\nshift; claude=$1; shift\nexec \"$claude\" \"$@\"\n")
-							claudeTUIHelper = helper
-							t.Cleanup(func() { claudeTUIHelper = "" })
-						}
-						s := New()
-						t.Cleanup(s.subscription.abortAll)
-						send := func(n int) (int, string) {
-							type answer struct {
-								code int
-								body string
-							}
-							done := make(chan answer, 1)
-							go func() {
-								code, body := sendTo(s, path, manyImages(path, n, stream))
-								done <- answer{code, body}
-							}()
-							select {
-							case a := <-done:
-								return a.code, a.body
-							case <-time.After(20 * time.Second):
-								t.Fatalf("%d images: the reply waited on a turn that had ended", n)
-							}
-							return 0, ""
-						}
+						s := claudeSilentServer(t, past, tui)
 						// 17 reach Claude Code, all of them, and are answered
-						if code, body := send(17); code != 200 || !strings.Contains(body, "saw 17 frames") {
+						if code, body := sendMany(t, s, path, 17, stream); code != 200 || !strings.Contains(body, "saw 17 frames") {
 							t.Fatalf("17 images: status %d: %s", code, body)
 						}
-						code, body := send(18)
+						code, body := sendMany(t, s, path, 18, stream)
 						if code != 502 || !strings.Contains(body, past.why) {
 							t.Fatalf("18 images: status %d, not a 502 saying %q:\n%s", code, past.why, body)
 						}
@@ -166,6 +205,42 @@ func TestClaudeSilentTurnFails(t *testing.T) {
 						}
 					})
 				}
+			}
+		}
+	}
+}
+
+// A silent turn whose stream's 200 went out before it ended — a held
+// stream kept alive after keepHeldAfter, as a slow turn's is — is still a
+// failure: it is told as the stream's error event, saying why, never as
+// an answer of nothing. This is the shape #49 met on a loaded macOS race
+// job, where the 18-image turn outlived the 3s keepalive and the client
+// was answered 200.
+func TestClaudeSilentTurnAfterKeepaliveFails(t *testing.T) {
+	// The 200 and keepalive go out at once, well before any turn this
+	// test runs ends, so the ordering the test is about is the only one
+	// it can see.
+	holdFor(t, time.Millisecond, time.Millisecond)
+	asks := []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"}
+	for _, tui := range []bool{false, true} {
+		for _, past := range silentPasts() {
+			for _, path := range asks {
+				t.Run(fmt.Sprintf("tui=%v/%s%s", tui, past.name, path), func(t *testing.T) {
+					s := claudeSilentServer(t, past, tui)
+					code, body := sendMany(t, s, path, 18, true)
+					if code != 200 {
+						t.Fatalf("18 images: status %d, not the 200 the keepalive should have committed:\n%s", code, body)
+					}
+					if !strings.Contains(body, ": keepalive") {
+						t.Fatalf("18 images: the 200 went out with no keepalive:\n%s", body)
+					}
+					if !strings.Contains(body, past.why) {
+						t.Fatalf("18 images: the stream's error says not %q:\n%s", past.why, body)
+					}
+					if strings.Contains(body, `"content":null`) || strings.Contains(body, "saw 18") {
+						t.Fatalf("18 images: an answer of nothing:\n%s", body)
+					}
+				})
 			}
 		}
 	}
