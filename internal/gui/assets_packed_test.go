@@ -56,7 +56,7 @@ func TestPackedAssetsAreTheTree(t *testing.T) {
 	}
 }
 
-// The page is served as the tree's was: index at /, a range of a video, 404.
+// The page is served as the tree's was: index at /, a range of a file, 404.
 func TestPackedAssetsServe(t *testing.T) {
 	h := http.FileServer(http.FS(staticFS()))
 	get := func(path, rng string) *httptest.ResponseRecorder {
@@ -72,10 +72,25 @@ func TestPackedAssetsServe(t *testing.T) {
 	if w := get("/", ""); w.Code != 200 || !bytes.Equal(w.Body.Bytes(), idx) {
 		t.Fatalf("/ gave %d, %d bytes (index.html is %d)", w.Code, w.Body.Len(), len(idx))
 	}
-	webm, _ := os.ReadFile("assets/plugins/redact/xq_light.webm")
-	w := get("/plugins/redact/xq_light.webm", "bytes=100-199")
-	if w.Code != 206 || !bytes.Equal(w.Body.Bytes(), webm[100:200]) {
-		t.Fatalf("range of the video gave %d, %d bytes", w.Code, w.Body.Len())
+	// a range of the tree's largest file, whatever it is: a video, once, and
+	// the interface's own files have changed under it
+	var big string
+	var bigSize int64
+	fs.WalkDir(os.DirFS("assets"), ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, err := d.Info(); err == nil && fi.Size() > bigSize {
+				big, bigSize = p, fi.Size()
+			}
+		}
+		return nil
+	})
+	if bigSize < 200 {
+		t.Fatalf("the tree's largest file is %d bytes", bigSize)
+	}
+	body, _ := os.ReadFile("assets/" + big)
+	w := get("/"+big, "bytes=100-199")
+	if w.Code != 206 || !bytes.Equal(w.Body.Bytes(), body[100:200]) {
+		t.Fatalf("range of %s gave %d, %d bytes", big, w.Code, w.Body.Len())
 	}
 	if w := get("/nope.js", ""); w.Code != 404 {
 		t.Fatalf("a missing file gave %d", w.Code)
