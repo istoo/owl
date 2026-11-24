@@ -50,10 +50,10 @@ jobs:
       # every later push queued behind it; it takes under a minute.
       - name: Install GTK and WebKitGTK
         if: runner.os == 'Linux'
-        timeout-minutes: 15
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+        # bounded tries within 18 minutes, taking turns with Ubuntu's own archive
+        # (v0.2.36's Release: a slow mirror ran out the 15 minutes)
+        timeout-minutes: 25
+        run: scripts/ci-apt.sh libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Tags
         id: tags
@@ -198,10 +198,10 @@ jobs:
 
       - name: Install GTK and WebKitGTK
         if: runner.os == 'Linux'
-        timeout-minutes: 15
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+        # bounded tries within 18 minutes, taking turns with Ubuntu's own archive
+        # (v0.2.36's Release: a slow mirror ran out the 15 minutes)
+        timeout-minutes: 25
+        run: scripts/ci-apt.sh libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Tags
         id: tags
