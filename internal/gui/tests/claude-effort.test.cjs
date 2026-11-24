@@ -77,6 +77,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, sets));
         await page.goto("http://owl.test/" + (mode ? "?mode=" + mode : ""));
+        if (mode) await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(row("o55")).waitFor();
         return page;
       };
