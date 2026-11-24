@@ -30,6 +30,11 @@ func TestFakeMCPServer(t *testing.T) {
 	if mode == "" {
 		t.Skip("run by the checker's tests")
 	}
+	if d, _ := strconv.Atoi(os.Getenv("OWL_FAKE_MCP_DELAY")); d > 0 {
+		// a server slow to start: the check's timeout can come before it has
+		// written its pid or started its child
+		time.Sleep(time.Duration(d) * time.Millisecond)
+	}
 	if f := os.Getenv("OWL_FAKE_MCP_LOG"); f != "" {
 		l, _ := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		fmt.Fprintf(l, "%d\n", os.Getpid())
@@ -70,10 +75,17 @@ func TestFakeMCPServer(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "Error: GITHUB_TOKEN is not set")
 		os.Exit(3)
 	case "hang":
-		// a child of its own, which the check has to end too
+		// a child of its own, which the check has to end too; only the
+		// server is slow to start, not the child it starts in turn
 		self, _ := os.Executable()
 		c := exec.Command(self, "-test.run=^TestFakeMCPServer$")
-		c.Env = append(os.Environ(), fakeMode+"=sleep")
+		var env []string
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "OWL_FAKE_MCP_DELAY=") {
+				env = append(env, e)
+			}
+		}
+		c.Env = append(env, fakeMode+"=sleep")
 		c.Start()
 		time.Sleep(time.Minute)
 		os.Exit(0)
@@ -157,6 +169,35 @@ func short(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { stdioStep, remoteStep = ws, wr })
 }
 
+// waitPids waits until f holds n pids, and returns the list: the server
+// and the processes it started in turn. A slow start is waited for, not
+// taken out of the timeout; a check that ends first says so instead of
+// waiting on a server it already killed.
+func waitPids(t *testing.T, f string, n int, done <-chan ServerHealth, finished <-chan struct{}) []string {
+	t.Helper()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	end := time.After(30 * time.Second)
+	for {
+		b, _ := os.ReadFile(f)
+		list := strings.Fields(string(b))
+		if len(list) >= n {
+			return list
+		}
+		what := "the server should have started"
+		if n > 1 {
+			what = "the server and its child should both have started"
+		}
+		select {
+		case <-finished:
+			t.Fatalf("pids %q: the check ended (%+v) before %s", list, <-done, what)
+		case <-end:
+			t.Fatalf("pids %q: %s", list, what)
+		case <-tick.C:
+		}
+	}
+}
+
 func TestCheckStdio(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		initFile := filepath.Join(t.TempDir(), "init")
@@ -233,23 +274,49 @@ func TestCheckStdio(t *testing.T) {
 		}
 	})
 	t.Run("timeout ends the tree", func(t *testing.T) {
-		short(t, 1500*time.Millisecond)
+		// The timeout is triggered once the server and the child it starts
+		// have both written their pids. A slow start must not spend the
+		// step's budget before there is a tree to end, or the check passes
+		// without checking its guarantee (macOS CI, #51).
 		pids := filepath.Join(t.TempDir(), "pids")
+		fake := fakeStdio(t, "hang", map[string]string{"OWL_FAKE_MCP_LOG": pids, "OWL_FAKE_MCP_DELAY": "2500"})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan ServerHealth, 1)
+		finished := make(chan struct{})
+		go func() {
+			done <- CheckServer(ctx, fake)
+			close(finished)
+		}()
+		t.Cleanup(func() {
+			// a failed wait below still ends the server and its child
+			cancel()
+			select {
+			case <-finished:
+			case <-time.After(10 * time.Second):
+			}
+		})
+		want := 2
+		if runtime.GOOS == "windows" {
+			// the pids can't be looked at below; the server's is enough
+			want = 1
+		}
+		list := waitPids(t, pids, want, done, finished)
 		start := time.Now()
-		h := CheckServer(context.Background(), fakeStdio(t, "hang", map[string]string{"OWL_FAKE_MCP_LOG": pids}))
+		cancel() // what the step's timer does, now that both are up
+		var h ServerHealth
+		select {
+		case h = <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the check did not end after its timeout")
+		}
 		if h.State != "error" || h.Why != "timeout" {
 			t.Fatalf("got %+v, want timeout", h)
 		}
 		if d := time.Since(start); d > 6*time.Second {
-			t.Errorf("took %s", d)
+			t.Errorf("took %s to end after the timeout", d)
 		}
 		if runtime.GOOS == "windows" {
 			return
-		}
-		b, _ := os.ReadFile(pids)
-		list := strings.Fields(string(b))
-		if len(list) != 2 {
-			t.Fatalf("pids %q: the server and its child should both have started", list)
 		}
 		for _, p := range list {
 			pid, _ := strconv.Atoi(p)
