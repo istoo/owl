@@ -85,10 +85,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const [sq, pick] = await page.evaluate((r) => [".field.launch", ".field.ag-start"].map((s) => document.querySelector(r + " " + s).getBoundingClientRect()), row("agy"));
       assert(sq.right <= pick.left + 1 && pick.left - sq.right <= 12, "the square comes right before the picker");
       assert(Math.abs((sq.top + sq.height / 2) - (pick.top + pick.height / 2)) <= 2, "the square is on the picker's line");
-      // scrolled a little, so a scroll would show
+      // scrolled a little, so a scroll would show; as far as the square needs,
+      // a row's line under its name (agentlive.js) made the rows taller than
+      // the 60px this used to scroll
       const view = page.locator("#view-agents");
       await page.mouse.move(400, 300);
-      for (let i = 0; i < 2; i++) { await page.mouse.wheel(0, 30); await page.waitForTimeout(20); }
+      for (let i = 0; i < 10; i++) {
+        if (await b.evaluate((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })) break;
+        await page.mouse.wheel(0, 30);
+        await page.waitForTimeout(20);
+      }
       await page.waitForTimeout(300);
       const top = await view.evaluate((v) => v.scrollTop);
       assert(top > 0, "the list must be scrolled");
