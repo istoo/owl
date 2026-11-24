@@ -149,6 +149,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await quiet(page);
         assert.deepEqual(await isOpen(page), { open: false, aria: "false" });
 
+        // a draw of the rows under the keyboard — a state answer, or
+        // agentlive.js landing after them — keeps the focus on the same
+        // control; it went back to the page before, and the keyboard
+        // reader had to start over
+        await page.locator(`${codex} > .ag-link`).focus();
+        await page.evaluate(() => renderAgents());
+        assert.equal(await page.evaluate(() => document.activeElement?.matches?.('.row.agent[data-id="codex"] > .ag-link')), true, "a redraw dropped the keyboard's place");
+
         // one not connected has nothing to open
         const g = await page.locator('.row.agent[data-id="gemini"] .name').boundingBox();
         await page.mouse.click(g.x + g.width / 2, g.y + g.height / 2);

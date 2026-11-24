@@ -530,6 +530,10 @@ function renderAgents() {
   page.classList.remove("loading");
   page.removeAttribute("aria-busy");
   const list = $("#agents");
+  // the control the keyboard is on is drawn anew with the rows, and its
+  // focus would go back to the page: a state answer, or agentlive.js
+  // landing after the rows were drawn, redraws them under the reader
+  const focusWas = list.contains(document.activeElement) ? agentFocus(document.activeElement) : null;
   list.replaceChildren();
   homeAgentPrefRows(); // an opened row's, back in the page (ysm119)
   agentsLead(list);
@@ -906,8 +910,28 @@ function renderAgents() {
   paintUpdateAll();
   paintInstalls();
   renderProfiles();
+  // the same control, found again in the row drawn anew (or nothing when
+  // the state took it away); a dialog the draw opened keeps its own focus
+  if (focusWas && document.activeElement === document.body) agentFocusBack(focusWas);
   fit(0, agentsGlide);
   agentsGlide = null;
+}
+
+// agentFocus says which control in the list the keyboard is on: its row
+// (data-id), its data-key, and its classes within that row, so the same
+// one can be found in the row drawn again; agentFocusBack gives it back
+function agentFocus(n) {
+  const row = n.closest?.("#agents .row.agent[data-id]"), root = row || n.closest?.("#agents");
+  if (!root) return null;
+  const sel = n === row ? "" : n.tagName.toLowerCase() + [...n.classList].sort().map((c) => "." + CSS.escape(c)).join("");
+  const same = sel ? [...root.querySelectorAll(sel)] : [];
+  return { id: row?.dataset.id || "", key: n.dataset?.key || "", sel, idx: same.indexOf(n) };
+}
+function agentFocusBack(f) {
+  const row = f.id && document.querySelector(`#agents .row.agent[data-id="${CSS.escape(f.id)}"]`), root = f.id ? row : $("#agents");
+  if (!root) return;
+  const el = !f.sel ? row || root : f.key ? root.querySelector(`[data-key="${CSS.escape(f.key)}"]`) : [...root.querySelectorAll(f.sel)][f.idx] || root.querySelector(f.sel);
+  el?.focus(NO_SCROLL);
 }
 
 // renderProfiles draws the saved profiles as chips, one on its way dimmed.
