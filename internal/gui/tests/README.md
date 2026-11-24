@@ -14,6 +14,14 @@ the sorted list. A bare `node --test --test-concurrency=6 *.test.cjs` at normal
 priority, beside another project's tests, made the owner's machine stall
 (11-16).
 
+The lock, the load gate, the low priority and the clean-up are
+`scripts/heavy.sh`'s, and every other heavy run goes through it too: a whole
+`go test ./...`, a load test, a benchmark, a long measurement
+(`scripts/heavy.sh <command> [args...]`, `HEAVY_NOWAIT`, `HEAVY_MAX_LOAD`,
+`HEAVY_CALM`). On 11-24 a load generator run beside a suite took the load to
+77 on 18 cores, since only suites took the lock. Stop a run with Ctrl-C, or
+`kill -TERM` its pid: a script started in the background has SIGINT ignored.
+
 # Dropdown browser regression
 
 `modal-backdrop.test.cjs` checks the modal's computed backdrop filter using
