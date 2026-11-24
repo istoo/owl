@@ -219,9 +219,13 @@ func TestChatAndMessagesFactsAsTheWholeParse(t *testing.T) {
 }
 
 // The facts a long Chat or Messages conversation is read for leave its
-// history alone: they allocate a small part of what the whole parse does.
-// Each is the least of three runs, as other tests' goroutines allocate
-// meanwhile and only ever add to it.
+// history alone: they allocate under half of what the whole parse does.
+// The whole parse shares the body's bytes (readAdvised, decodeJSONView),
+// so it is smaller than it was when the bound was a third: a 1.3 MB
+// Messages body's whole parse allocated 2,050,040 bytes, its facts
+// 766,528 (37%). A facts parse that read the history would be the whole
+// parse, or more. Each is the least of three runs, as other tests'
+// goroutines allocate meanwhile and only ever add to it.
 func TestChatAndMessagesFactsLeaveTheHistory(t *testing.T) {
 	allocated := func(f func()) uint64 {
 		least := uint64(0)
@@ -245,8 +249,8 @@ func TestChatAndMessagesFactsLeaveTheHistory(t *testing.T) {
 		// Under -race, sync.Pool drops a quarter of what is put in it, and
 		// userSaid's regexps take their backtrackers from one, so a long
 		// conversation's facts make ~2.7 MB more of them (#3956).
-		if !raceOn && facts*3 > parsed {
-			t.Errorf("%s: facts allocated %d bytes, a third or more of the whole parse's %d", proto, facts, parsed)
+		if !raceOn && facts*2 > parsed {
+			t.Errorf("%s: facts allocated %d bytes, half or more of the whole parse's %d", proto, facts, parsed)
 		}
 	}
 }

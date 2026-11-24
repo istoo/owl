@@ -49,7 +49,11 @@ func decodeJSON(data []byte, dst any) error { return decodeJSONIn(data, dst, fal
 // bytes, capped, where decodeJSON copies what isn't a big share of a held
 // body. A body a route has rewritten is held by nobody, so each reader of
 // a rewritten Codex request copied its whole input to look at it: 1.4 of
-// the 16.4 MB a 680 KB request allocated (#3383).
+// the 16.4 MB a 680 KB request allocated (#3383). A reader that does keep
+// what it decodes — a parse whose Request is used for the request — either
+// keeps it no longer than the body (a held request's until its context
+// ends) or copies what it keeps (readAdvised, bridgeNames, a run's
+// results and early results).
 func decodeJSONView(data []byte, dst any) error { return decodeJSONIn(data, dst, true) }
 
 func decodeJSONIn(data []byte, dst any, share bool) error {

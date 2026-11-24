@@ -4283,6 +4283,18 @@ func (r *subscriptionRun) adviseOn(ctx context.Context, req *Request, advice fun
 	r.asker = access.Caller(ctx)
 	if req.Advisor != "" {
 		r.advice, r.adviceReq = advice, req
+		// the conversation the advisor is asked about is the request's,
+		// and its values are that request's body's bytes (readAdvised):
+		// when the request ends, so does what this run keeps of it. A
+		// call that comes after that is answered saying the advisor is
+		// unavailable, never waited on for a conversation that is gone.
+		context.AfterFunc(ctx, func() {
+			r.mu.Lock()
+			if r.adviceReq == req {
+				r.adviceReq = nil
+			}
+			r.mu.Unlock()
+		})
 	}
 }
 
@@ -5634,13 +5646,27 @@ var (
 	bridgeToolNameHashed = lazyre.New(`_[0-9a-f]{12}$`)
 )
 
+// runToolNames is the names of tools as a run keeps them (run.tools): its
+// own strings, not the request body's (readAdvised shares the body's),
+// which end with the request.
+func runToolNames(tools []Tool) map[string]bool {
+	names := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		names[strings.Clone(t.Name)] = true
+	}
+	return names
+}
+
 // bridgeNames is the caller's name of each of tools by the name the MCP
 // helper offers it under, for those that differ (bridgeToolName).
 func bridgeNames(tools []Tool) map[string]string {
 	names := map[string]string{}
 	for _, t := range tools {
 		if b := bridgeToolName(t.Name); b != t.Name {
-			names[b] = t.Name
+			// the names are the request body's bytes (readAdvised shares
+			// them), and a run keeps them for the conversation's next
+			// turns: copied, they keep no body alive
+			names[strings.Clone(b)] = strings.Clone(t.Name)
 		}
 	}
 	return names
@@ -6378,7 +6404,9 @@ func (r *subscriptionRun) continueWith(results []Part, said string, tools []brid
 			if r.early == nil {
 				r.early = map[string]mcpToolResult{}
 			}
-			r.early[p.CallID] = result
+			// kept until its call comes, which may be the conversation's
+			// next turn: its own strings, not the request body's
+			r.early[strings.Clone(p.CallID)] = keptMCPResult(result)
 		}
 		r.mu.Unlock()
 		if waiter == nil {
@@ -6399,7 +6427,9 @@ func (r *subscriptionRun) continueWith(results []Part, said string, tools []brid
 	r.mu.Lock()
 	r.results = r.results[:0]
 	for _, p := range results {
-		r.results = append(r.results, p.CallID)
+		// kept, and told to the lost calls once the run goes, past the
+		// request whose body the id is in
+		r.results = append(r.results, strings.Clone(p.CallID))
 	}
 	r.resent = false // its own client's results came: it is no one's leftover
 	r.mu.Unlock()
@@ -6455,6 +6485,34 @@ func mcpResult(p Part) mcpToolResult {
 		}
 	}
 	return mcpToolResult{Content: content, IsError: p.IsError}
+}
+
+// keptMCPResult is r as a run keeps it for a call that comes later: every
+// value it holds is its own, not the request body's bytes (readAdvised
+// shares the body's), which end with the request.
+func keptMCPResult(r mcpToolResult) mcpToolResult {
+	out := r
+	out.Content = make([]map[string]any, len(r.Content))
+	for i, c := range r.Content {
+		m := make(map[string]any, len(c))
+		for k, v := range c {
+			if s, ok := v.(string); ok {
+				m[k] = strings.Clone(s)
+			} else {
+				m[k] = v
+			}
+		}
+		out.Content[i] = m
+	}
+	if r.Tools != nil {
+		out.Tools = make([]bridgeTool, len(r.Tools))
+		for i, t := range r.Tools {
+			t.Name, t.Description = strings.Clone(t.Name), strings.Clone(t.Description)
+			t.InputSchema = bytes.Clone(t.InputSchema)
+			out.Tools[i] = t
+		}
+	}
+	return out
 }
 
 // imageMediaType is an inline image's type, read from its bytes when the
@@ -6523,6 +6581,15 @@ func (b *subscriptionBridge) mcpCall(w http.ResponseWriter, r *http.Request) {
 		q, n, who := run.adviceReq, run.advised, run.asker
 		said := []Part{{Kind: Text, Text: strings.Join(run.adviceSaid, "")}}
 		run.mu.Unlock()
+		if q == nil {
+			// the request that asked for the advisor ended while its call
+			// was on its way (adviseOn lets the request go with its
+			// context): answered as the call whose advice can't be had
+			ev := Event{Kind: KAdvice, ID: adviceOutID(call.ToolCallID), Code: "unavailable"}
+			run.emit(ev)
+			writeJSON(w, 200, mcpToolResult{Content: []map[string]any{{"type": "text", "text": "The advisor failed: unavailable"}}, IsError: true})
+			return
+		}
 		// within the minute its MCP client waits for a call; asked as the
 		// client's request, held to its key, not as this call from the
 		// run's own Claude Code, which carries none
@@ -7521,7 +7588,9 @@ func (s *Server) serveSubscriptionAs(w http.ResponseWriter, r *http.Request, fro
 		if err == nil && more != nil {
 			run.mu.Lock()
 			for _, t := range req.Tools {
-				run.tools[t.Name] = true
+				// the run keeps the name past this request; the body its
+				// bytes are in (readAdvised) ends with the request
+				run.tools[strings.Clone(t.Name)] = true
 			}
 			if run.names == nil {
 				run.names = map[string]string{}
@@ -7566,10 +7635,7 @@ func (s *Server) serveSubscriptionAs(w http.ResponseWriter, r *http.Request, fro
 		// output reader names a call by it, and Claude Code's first
 		// tool_use could be read before start returned (a deferred tool
 		// handed over cut, on a loaded CI box)
-		tools := map[string]bool{}
-		for _, t := range req.Tools {
-			tools[t.Name] = true
-		}
+		tools := runToolNames(req.Tools)
 		req.runTold = func(run *subscriptionRun) {
 			run.mu.Lock()
 			run.tools = tools

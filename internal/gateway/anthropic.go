@@ -155,11 +155,19 @@ func readAnthropic(body []byte, clientMarks, facts bool) (*Request, error) {
 // owl runs (advisor_serve.go): its calls and results in the
 // conversation are read as the model's tool calls and their results, and
 // its instructions stay as Claude Code wrote them.
+//
+// Every value it reads shares the body's bytes (decodeJSONView): a
+// conversation is hundreds of short messages, each under a sixteenth of
+// the body — the cap that keeps a small value kept past its request from
+// pinning a whole body — so decodeJSON copied every one of them
+// (heldShareMost). The
+// body is read-only from here on, and the Request is used for the
+// request that was read: what something keeps of it past that request is
+// copied — bridgeNames' names, a run's tools, results and early results,
+// a saved session's tools — and a run's adviceReq is let go when the
+// request's context ends (subscriptionRun.adviseOn).
 func readAdvised(body []byte, clientMarks, facts, advised bool) (*Request, error) {
-	decode := decodeJSON
-	if facts {
-		decode = decodeJSONView
-	}
+	decode := decodeJSONView
 	var a aRequest
 	if err := decode(body, &a); err != nil {
 		return nil, fmt.Errorf("invalid request: %v", err)
