@@ -84,6 +84,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("**/*", serve(lang));
         await page.goto("http://owl.test/?view=agents");
         await page.locator(`${codex} .ag-link`).waitFor();
+        // the page slides in as it is drawn (app.css's view-in, 5px over
+        // 240ms): the row's place on the screen is its settled one, not
+        // where that slide had it when the row came in
+        await page.locator("#view-agents").evaluate((v) => Promise.all(v.getAnimations().map((a) => a.finished.catch(() => {}))));
         // the page's head (pagehead.js), which comes as the page is drawn:
         // the rows below it are at their places once it is in
         if (width >= 1024) await page.locator("#view-agents > .ph").waitFor();
