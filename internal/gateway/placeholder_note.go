@@ -116,65 +116,126 @@ func earliest(r gjson.Result) int {
 }
 
 func withNoteAnthropic(body []byte) []byte {
-	s := gjson.GetBytes(body, "system")
-	if holdsPlaceholder(s) || holdsPlaceholder(gjson.GetBytes(body, "tools")) {
+	s, sAt, hasSys := fieldIn(body, "system")
+	tools, _, _ := fieldIn(body, "tools")
+	if redact.HasPlaceholderBytes(s) || redact.HasPlaceholderBytes(tools) {
 		switch {
-		case !s.Exists():
+		case !hasSys:
 			return withTopField(body, "system", noteQuoted(placeholderNote))
-		case s.Type == gjson.Null:
-			return spliced(body, s, noteQuoted(placeholderNote))
-		case s.Type == gjson.String:
-			return spliced(body, s, noteQuoted(withLine(s.String(), placeholderNote)))
-		case s.IsArray():
-			return appended(body, s, textPart("text"))
+		case bytes.Equal(s, jsonNull):
+			return spliceAt(body, sAt, len(s), noteQuoted(placeholderNote))
+		case len(s) > 0 && s[0] == '"':
+			text, ok := unquoteJSON(s)
+			if !ok {
+				return body
+			}
+			return spliceAt(body, sAt, len(s), noteQuoted(withLine(text, placeholderNote)))
+		case len(s) > 0 && s[0] == '[':
+			return appendItemAt(body, sAt, s, textPart("text"))
 		}
 		return body
 	}
-	i := earliest(gjson.GetBytes(body, "messages"))
+	// the messages are scanned where they are, not copied whole for one
+	// asking whether any held a placeholder (gjson.GetBytes did)
+	msgs, msgsAt, hasMsgs := fieldIn(body, "messages")
+	if !hasMsgs {
+		return body
+	}
+	i := earliestIn(msgs)
 	if i < 0 {
 		return body
 	}
-	c := gjson.GetBytes(body, "messages."+strconv.Itoa(i)+".content")
+	s0, e0, ok := nthElementSpan(msgs, i)
+	if !ok {
+		return body
+	}
+	c, cAt, ok := fieldIn(msgs[s0:e0], "content")
+	if !ok {
+		return body
+	}
+	cAt += msgsAt + s0
 	switch {
-	case c.Type == gjson.String:
-		blocks := noteJSON([]any{map[string]any{"type": "text", "text": c.String()}, map[string]any{"type": "text", "text": noteBlock}})
-		return spliced(body, c, blocks)
-	case c.IsArray():
-		return appended(body, c, textPart("text"))
+	case len(c) > 0 && c[0] == '"':
+		text, ok := unquoteJSON(c)
+		if !ok {
+			return body
+		}
+		blocks := noteJSON([]any{map[string]any{"type": "text", "text": text}, map[string]any{"type": "text", "text": noteBlock}})
+		return spliceAt(body, cAt, len(c), blocks)
+	case len(c) > 0 && c[0] == '[':
+		return appendItemAt(body, cAt, c, textPart("text"))
 	}
 	return body
 }
 
 func withNoteChat(body []byte) []byte {
-	msgs := gjson.GetBytes(body, "messages")
-	if !msgs.IsArray() {
+	msgs, msgsAt, has := fieldIn(body, "messages")
+	if !has || len(msgs) == 0 || msgs[0] != '[' {
 		return body
 	}
-	i := earliest(msgs)
-	if holdsPlaceholder(gjson.GetBytes(body, "tools")) || i >= 0 && isSystemRole(msgs.Array()[i]) {
-		// the instructions: the first system message, or one of their own
-		i = -1
-		for j, m := range msgs.Array() {
-			if isSystemRole(m) {
-				i = j
-				break
+	i := earliestIn(msgs)
+	tools, _, _ := fieldIn(body, "tools")
+	firstInstructions := func() int {
+		at, found := 0, -1
+		eachElementAt(msgs, func(s, e int) bool {
+			if isSystemElement(msgs[s:e]) {
+				found = at
+				return false
 			}
-		}
+			at++
+			return true
+		})
+		return found
+	}
+	if redact.HasPlaceholderBytes(tools) || i >= 0 && isSystemElement(spanOf(msgs, i)) {
+		// the instructions: the first system message, or one of their own
+		i = firstInstructions()
 		if i < 0 {
-			return prepended(body, msgs, noteJSON(map[string]any{"role": "system", "content": placeholderNote}))
+			return prependItemAt(body, msgsAt, msgs, noteJSON(map[string]any{"role": "system", "content": placeholderNote}))
 		}
 	}
 	if i < 0 {
 		return body
 	}
-	c := gjson.GetBytes(body, "messages."+strconv.Itoa(i)+".content")
+	s0, e0, ok := nthElementSpan(msgs, i)
+	if !ok {
+		return body
+	}
+	c, cAt, ok := fieldIn(msgs[s0:e0], "content")
+	if !ok {
+		return body
+	}
+	cAt += msgsAt + s0
 	switch {
-	case c.Type == gjson.String:
-		return spliced(body, c, noteQuoted(withLine(c.String(), placeholderNote)))
-	case c.IsArray():
-		return appended(body, c, textPart("text"))
+	case len(c) > 0 && c[0] == '"':
+		text, ok := unquoteJSON(c)
+		if !ok {
+			return body
+		}
+		return spliceAt(body, cAt, len(c), noteQuoted(withLine(text, placeholderNote)))
+	case len(c) > 0 && c[0] == '[':
+		return appendItemAt(body, cAt, c, textPart("text"))
 	}
 	return body
+}
+
+// spanOf is the nth element of arr, a JSON array, where it is; nil when
+// there is none.
+func spanOf(arr []byte, nth int) []byte {
+	s, e, ok := nthElementSpan(arr, nth)
+	if !ok {
+		return nil
+	}
+	return arr[s:e]
+}
+
+func isSystemElement(el []byte) bool {
+	v, _, ok := fieldIn(el, "role")
+	if !ok {
+		return false
+	}
+	role, _ := unquoteJSON(v)
+	return role == "system" || role == "developer"
 }
 
 func isSystemRole(m gjson.Result) bool {
@@ -183,32 +244,87 @@ func isSystemRole(m gjson.Result) bool {
 }
 
 func withNoteResponses(body []byte) []byte {
-	in := gjson.GetBytes(body, "input")
+	// the input is read where it is: gjson.GetBytes made a copy of it, the
+	// whole of a turn's items, for one that asked whether any held a
+	// placeholder
+	in, inAt, hasIn := fieldIn(body, "input")
 	dev := noteJSON(map[string]any{"type": "message", "role": "developer", "content": []any{map[string]any{"type": "input_text", "text": placeholderNote}}})
-	if in.Type == gjson.String {
-		user := noteJSON(map[string]any{"role": "user", "content": in.String()})
-		return spliced(body, in, []byte("["+string(dev)+","+string(user)+"]"))
+	if hasIn && len(in) > 0 && in[0] == '"' {
+		s, ok := unquoteJSON(in)
+		if !ok {
+			return body
+		}
+		user := noteJSON(map[string]any{"role": "user", "content": s})
+		return spliceAt(body, inAt, len(in), []byte("["+string(dev)+","+string(user)+"]"))
 	}
-	if !in.IsArray() {
+	if !hasIn || len(in) == 0 || in[0] != '[' {
 		return body
 	}
-	if holdsPlaceholder(gjson.GetBytes(body, "instructions")) || holdsPlaceholder(gjson.GetBytes(body, "tools")) {
-		return prepended(body, in, dev)
+	instructions, _, _ := fieldIn(body, "instructions")
+	tools, _, _ := fieldIn(body, "tools")
+	if redact.HasPlaceholderBytes(instructions) || redact.HasPlaceholderBytes(tools) {
+		return prependItemAt(body, inAt, in, dev)
 	}
-	items := in.Array()
-	i := earliest(in)
+	i := earliestIn(in)
 	if i < 0 {
 		return body
 	}
 	// after the outputs beside it: a call's run of outputs stays whole
-	for i+1 < len(items) && strings.HasSuffix(items[i+1].Get("type").String(), "_call_output") {
+	for {
+		s, e, ok := nthElementSpan(in, i+1)
+		if !ok || !strings.HasSuffix(typeOf(in[s:e]), "_call_output") {
+			break
+		}
 		i++
 	}
-	last := gjson.GetBytes(body, "input."+strconv.Itoa(i))
-	if !at(body, last) {
+	_, lastEnd, ok := nthElementSpan(in, i)
+	if !ok {
 		return body
 	}
-	return insertAt(body, last.Index+len(last.Raw), ","+string(dev))
+	return insertAt(body, inAt+lastEnd, ","+string(dev))
+}
+
+// earliestIn is the index of the first element of arr, a JSON array, with
+// a placeholder, -1 for none.
+func earliestIn(arr []byte) int {
+	i, found := 0, -1
+	eachElementAt(arr, func(s, e int) bool {
+		if redact.HasPlaceholderBytes(arr[s:e]) {
+			found = i
+			return false
+		}
+		i++
+		return true
+	})
+	return found
+}
+
+// spliceAt is body with n bytes at at replaced by v.
+func spliceAt(body []byte, at, n int, v []byte) []byte {
+	out := make([]byte, 0, len(body)-n+len(v))
+	out = append(out, body[:at]...)
+	out = append(out, v...)
+	return append(out, body[at+n:]...)
+}
+
+// appendItemAt is body with item added at the end of arr, the array of
+// len(arr) bytes starting at at in body.
+func appendItemAt(body []byte, at int, arr, item []byte) []byte {
+	sep := ","
+	if skipJSONSpace(arr, 1) < len(arr) && arr[skipJSONSpace(arr, 1)] == ']' {
+		sep = ""
+	}
+	return insertAt(body, at+len(arr)-1, sep+string(item))
+}
+
+// prependItemAt is body with item put first in arr, the array of len(arr)
+// bytes starting at at in body.
+func prependItemAt(body []byte, at int, arr, item []byte) []byte {
+	sep := ","
+	if skipJSONSpace(arr, 1) < len(arr) && arr[skipJSONSpace(arr, 1)] == ']' {
+		sep = ""
+	}
+	return insertAt(body, at+1, string(item)+sep)
 }
 
 func withNoteGemini(body []byte) []byte {
@@ -305,7 +421,7 @@ func withTopField(body []byte, key string, v []byte) []byte {
 		return body
 	}
 	sep := ","
-	if len(gjson.ParseBytes(body).Map()) == 0 {
+	if j := skipJSONSpace(body, i+1); j < len(body) && body[j] == '}' {
 		sep = ""
 	}
 	return insertAt(body, i+1, string(noteQuoted(key))+":"+string(v)+sep)

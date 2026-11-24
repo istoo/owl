@@ -172,6 +172,37 @@ func TestReadersDoNotCopyEachMessage(t *testing.T) {
 	})
 }
 
+// withPlaceholderNote reads the messages where they are: a body whose
+// earliest placeholder is in a message is told with one new copy of the
+// body, not the messages copied once to find it and the body once more to
+// write the note.
+func TestPlaceholderNoteCopiesTheBodyOnce(t *testing.T) {
+	const ph = "{{EMAIL_abcdefgh}}"
+	var b strings.Builder
+	b.WriteString(`{"model":"m","system":"S","messages":[`)
+	for i := range 200 {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		text := strings.Repeat("z", 1024)
+		if i == 150 {
+			text += " mail " + ph
+		}
+		fmt.Fprintf(&b, `{"role":"user","content":%q}`, text)
+	}
+	b.WriteString(`]}`)
+	body := []byte(b.String())
+	out := withPlaceholderNote(provider.Anthropic, body)
+	if !bytes.Contains(out, []byte(placeholderNote)) {
+		t.Fatal("the note was not placed")
+	}
+	per := allocBytes(func() { withPlaceholderNote(provider.Anthropic, body) }, 3)
+	t.Logf("%d-byte body: %d allocated", len(body), per)
+	if per > uint64(len(body))+64<<10 {
+		t.Errorf("told a %d-byte body with %d allocated, want about the one new body", len(body), per)
+	}
+}
+
 // What the readers share they also leave as it was: each returns what it
 // built, and the body it read is unchanged (guardHeldBodies checks the
 // same across every route's held bodies).
