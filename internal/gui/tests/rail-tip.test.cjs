@@ -51,6 +51,14 @@ const where = (page, name) => page.evaluate((name) => {
     title: document.querySelector(`#pickerRail .rail-item[aria-label="${name}"]`).title, contrast: getComputedStyle(tip).color !== getComputedStyle(tip).backgroundColor };
 }, name);
 
+// The picker grows in (app.css's pop-in), its rail riding with it until it
+// is still. A hover caught in that motion lands on the icon where it is
+// then; as the pop finishes growing the icon slides from under the still
+// pointer, pointerleave drops the tip's 450ms timer, and the first hover
+// names nothing (chromium, a loaded box). Wait for the entrance to end, not
+// a stretch of time.
+const settled = (page) => page.evaluate(() => Promise.all(document.querySelector("#pop").getAnimations().map((a) => a.finished.catch(() => {}))));
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const [lang, theme] of [["en", "light"], ["zh", "dark"]]) {
     test(`${engine} ${lang} ${theme}: a rail icon's name sits beside it`, async () => {
@@ -66,6 +74,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.locator("#agents .ag-link").first().click();
         await page.locator('#agents [data-key="model"]').first().click();
         await page.locator("#pickerRail .rail-item").first().waitFor();
+        await settled(page);
         const item = (n) => page.locator(`#pickerRail .rail-item[aria-label="${n}"]`);
 
         await item("Devin").hover();
@@ -110,6 +119,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.mouse.move(900, 650);
         await page.locator('#agents [data-key="model"]').first().click();
         await item("Devin").waitFor();
+        await settled(page);
         await page.keyboard.press("Shift"); // the last input is a key, so focus is shown
         await item("Devin").focus();
         await page.waitForTimeout(150);
