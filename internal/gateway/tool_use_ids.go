@@ -56,12 +56,15 @@ func clientToolUseIDs(body []byte) map[string]bool {
 	if !bodyHasBytes(body, toolUseType) {
 		return nil
 	}
+	// what is kept is the ids, strings of their own (unquoteJSON), not any
+	// of the values decoded here: decodeJSONView shares the body's bytes,
+	// so a body no hold covers — one a masker built — is not copied
 	var q struct {
 		Messages []struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
-	if decodeJSON(body, &q) != nil {
+	if decodeJSONView(body, &q) != nil {
 		return nil
 	}
 	var seen map[string]bool
@@ -93,22 +96,24 @@ func saltedCallIDsBack(body []byte) []byte {
 	if !bodyHas(body, `"`+anthropicIDMark) {
 		return body
 	}
+	// every value is read here and marshalled into the body returned,
+	// none kept: decodeJSONView shares this body's bytes (fillJSONIn)
 	var reply map[string]json.RawMessage
-	if decodeJSON(body, &reply) != nil || reply == nil {
+	if decodeJSONView(body, &reply) != nil || reply == nil {
 		return body
 	}
 	var msgs []json.RawMessage
-	if decodeJSON(reply["messages"], &msgs) != nil {
+	if decodeJSONView(reply["messages"], &msgs) != nil {
 		return body
 	}
 	changed := false
 	for i, m := range msgs {
 		var one map[string]json.RawMessage
-		if decodeJSON(m, &one) != nil || one == nil {
+		if decodeJSONView(m, &one) != nil || one == nil {
 			continue
 		}
 		var blocks []map[string]json.RawMessage
-		if decodeJSON(one["content"], &blocks) != nil {
+		if decodeJSONView(one["content"], &blocks) != nil {
 			continue
 		}
 		mended := false
@@ -228,12 +233,13 @@ func (t *toolUseIDs) whole(b []byte) []byte {
 	if !bodyHasBytes(b, toolUseType) {
 		return b
 	}
+	// as saltedCallIDsBack: read here and marshalled into what is returned
 	var reply map[string]json.RawMessage
-	if decodeJSON(b, &reply) != nil || reply == nil {
+	if decodeJSONView(b, &reply) != nil || reply == nil {
 		return b
 	}
 	var blocks []map[string]json.RawMessage
-	if decodeJSON(reply["content"], &blocks) != nil {
+	if decodeJSONView(reply["content"], &blocks) != nil {
 		return b
 	}
 	changed := false

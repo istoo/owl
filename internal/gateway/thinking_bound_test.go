@@ -218,11 +218,11 @@ func TestOtherRefusalKeepsThinking(t *testing.T) {
 // a body with nothing to leave out byte for byte.
 func TestWithoutThinkingBlocks(t *testing.T) {
 	body := []byte(`{"model":"m","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"redacted_thinking","data":"x"}]},{"role":"user","content":"go"}]}`)
-	got := withoutThinkingBlocks(body, func(int, int, gjson.Result) bool { return true })
+	got := withoutThinkingBlocks(body, func(int, int, []byte) bool { return true })
 	if r := gjson.GetBytes(got, "messages.#.role").Raw; r != `["user","user"]` {
 		t.Errorf("roles %s, want the empty assistant message gone", r)
 	}
-	if got := withoutThinkingBlocks(body, func(int, int, gjson.Result) bool { return false }); string(got) != string(body) {
+	if got := withoutThinkingBlocks(body, func(int, int, []byte) bool { return false }); string(got) != string(body) {
 		t.Errorf("changed with nothing to leave out: %s", got)
 	}
 }

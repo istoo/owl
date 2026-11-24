@@ -108,37 +108,75 @@ func (s *Server) withoutRefusedThinking(p provider.Provider, body []byte) []byte
 	if none {
 		return body
 	}
-	return withoutThinkingBlocks(body, func(_, _ int, b gjson.Result) bool {
-		return s.thinkingRefused(owner, thinkingKey(b))
+	return withoutThinkingBlocks(body, func(_, _ int, b []byte) bool {
+		return s.thinkingRefused(owner, thinkingKeyBytes(b))
 	})
+}
+
+// thinkingKeyBytes is thinkingKey of a block read where it is: reading it
+// as a gjson.Result copied the block, and a conversation's every message
+// was read again for nothing (fillJSONIn).
+func thinkingKeyBytes(b []byte) string {
+	key := func(name string) string {
+		v, _, ok := fieldIn(b, name)
+		if !ok {
+			return ""
+		}
+		s, _ := unquoteJSON(v)
+		return s
+	}
+	k := key("signature")
+	if k == "" {
+		k = key("data")
+	}
+	if k == "" {
+		k = key("thinking")
+	}
+	h := sha256.Sum256([]byte(typeOf(b) + "\x00" + k))
+	return hex.EncodeToString(h[:16])
+}
+
+// isThinkingBlockBytes is isThinkingBlock of a block read where it is.
+func isThinkingBlockBytes(b []byte) bool {
+	t := typeOf(b)
+	return t == "thinking" || t == "redacted_thinking"
 }
 
 // withoutThinkingBlocks leaves out of a Messages body each thinking or
 // redacted_thinking block drop says to, at message m, block i, and an
 // assistant message that had only those.
-func withoutThinkingBlocks(body []byte, drop func(m, i int, b gjson.Result) bool) []byte {
-	var q map[string]json.RawMessage
-	var msgs []json.RawMessage
-	if decodeJSON(body, &q) != nil || decodeJSON(q["messages"], &msgs) != nil {
+//
+// Every value it decodes is read here and marshalled into the body it
+// returns, none kept, and the messages and their blocks are read where
+// they are: gjson.GetBytes and decodeJSON each copied a value under a
+// sixteenth of the body, so a conversation of many short messages was
+// copied whole for every message (fillJSONIn, eachMemberIn).
+func withoutThinkingBlocks(body []byte, drop func(m, i int, b []byte) bool) []byte {
+	msgs, _, has := fieldIn(body, "messages")
+	if !has || len(msgs) == 0 || msgs[0] != '[' {
 		return body
 	}
-	out := make([]json.RawMessage, 0, len(msgs))
+	elems := elementsOf(msgs)
+	out := make([]json.RawMessage, 0, len(elems))
 	changed := false
-	for mi, raw := range msgs {
-		content := gjson.GetBytes(raw, "content")
-		if !content.IsArray() {
+	for mi, raw := range elems {
+		content, _, ok := fieldIn(raw, "content")
+		if !ok || len(content) == 0 || content[0] != '[' {
 			out = append(out, raw)
 			continue
 		}
 		var kept []json.RawMessage
 		gone := false
-		for bi, b := range content.Array() {
-			if isThinkingBlock(b) && drop(mi, bi, b) {
+		bi := 0
+		eachElement(content, func(b []byte) bool {
+			if isThinkingBlockBytes(b) && drop(mi, bi, b) {
 				gone = true
-				continue
+			} else {
+				kept = append(kept, json.RawMessage(b))
 			}
-			kept = append(kept, json.RawMessage(b.Raw))
-		}
+			bi++
+			return true
+		})
 		if !gone {
 			out = append(out, raw)
 			continue
@@ -148,7 +186,7 @@ func withoutThinkingBlocks(body []byte, drop func(m, i int, b gjson.Result) bool
 			continue
 		}
 		var m map[string]json.RawMessage
-		if decodeJSON(raw, &m) != nil {
+		if decodeJSONView(raw, &m) != nil {
 			out = append(out, raw)
 			continue
 		}
@@ -160,6 +198,10 @@ func withoutThinkingBlocks(body []byte, drop func(m, i int, b gjson.Result) bool
 		out = append(out, nb)
 	}
 	if !changed {
+		return body
+	}
+	var q map[string]json.RawMessage
+	if decodeJSONView(body, &q) != nil {
 		return body
 	}
 	q["messages"], _ = json.Marshal(out)
@@ -257,11 +299,14 @@ func withoutForeignThinking(p provider.Provider, body []byte) []byte {
 	if anthropicReplaysThinking(p.VendorHost(), model) || p.VendorHost() != "api.anthropic.com" && !anthropicModel.MatchString(model) {
 		return body
 	}
-	return withoutThinkingBlocks(body, func(_, _ int, b gjson.Result) bool {
-		if b.Get("type").String() != "thinking" {
+	return withoutThinkingBlocks(body, func(_, _ int, b []byte) bool {
+		if typeOf(b) != "thinking" {
 			return false
 		}
-		sig := b.Get("signature").String()
+		sig := ""
+		if v, _, ok := fieldIn(b, "signature"); ok {
+			sig, _ = unquoteJSON(v)
+		}
 		return strings.TrimSpace(sig) == "" || deepseekSignature.MatchString(sig)
 	})
 }

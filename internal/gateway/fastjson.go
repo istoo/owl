@@ -571,6 +571,11 @@ func eachMemberAt(obj []byte, f func(k0, k1, v0, v1 int) bool) {
 // eachElement calls f with each element of arr, a valid JSON array, until
 // f returns false.
 func eachElement(arr []byte, f func(el []byte) bool) {
+	eachElementAt(arr, func(s, e int) bool { return f(arr[s:e:e]) })
+}
+
+// eachElementAt is eachElement by offsets: the element at [s, e).
+func eachElementAt(arr []byte, f func(s, e int) bool) {
 	i := skipJSONSpace(arr, 1)
 	if arr[i] == ']' {
 		return
@@ -578,7 +583,7 @@ func eachElement(arr []byte, f func(el []byte) bool) {
 	for {
 		s := i
 		i = skipJSONValue(arr, i)
-		if !f(arr[s:i:i]) {
+		if !f(s, i) {
 			return
 		}
 		i = skipJSONSpace(arr, i)
@@ -587,6 +592,51 @@ func eachElement(arr []byte, f func(el []byte) bool) {
 		}
 		i = skipJSONSpace(arr, i+1)
 	}
+}
+
+// fieldIn is the value of key in obj, a JSON object, in place, and where
+// it starts in obj. gjson.GetBytes made a copy of the value it found —
+// the whole of a conversation's messages for one asking whether any held
+// a placeholder — where this reads it where it is.
+func fieldIn(obj []byte, key string) (val []byte, start int, ok bool) {
+	s := skipJSONSpace(obj, 0)
+	if s >= len(obj) || obj[s] != '{' {
+		return nil, 0, false
+	}
+	eachMemberAt(obj[s:], func(k0, k1, v0, v1 int) bool {
+		if jsonStringIs(obj[s+k0:s+k1], key) {
+			val, start, ok = obj[s+v0:s+v1:s+v1], s+v0, true
+			return false
+		}
+		return true
+	})
+	return val, start, ok
+}
+
+// typeOf is the type member of item, a JSON object, "" for none.
+func typeOf(item []byte) string {
+	v, _, ok := fieldIn(item, "type")
+	if !ok {
+		return ""
+	}
+	s, _ := unquoteJSON(v)
+	return s
+}
+
+// nthElementSpan is where nth element of arr, a JSON array, is.
+func nthElementSpan(arr []byte, nth int) (s, e int, ok bool) {
+	if nth < 0 {
+		return 0, 0, false
+	}
+	eachElementAt(arr, func(s0, e0 int) bool {
+		if nth == 0 {
+			s, e, ok = s0, e0, true
+			return false
+		}
+		nth--
+		return true
+	})
+	return s, e, ok
 }
 
 // elementsOf is the elements of raw, a valid JSON value, when it is an array
