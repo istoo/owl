@@ -76,6 +76,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", f.route);
         await page.goto(`http://owl.test/?view=agents&mode=${mode}`);
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator("#agents > .row.agent").nth(2).waitFor();
         await page.mouse.move(1, 1);
 

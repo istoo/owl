@@ -70,6 +70,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (e) => errors.push(e.message));
         await page.route("**/*", serve(lang, move, calls));
         await page.goto("http://owl.test/" + (mode ? "?mode=" + mode : ""));
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         await page.locator(`${row}.drifted .ag-fix`).waitFor();
         return page;
       };

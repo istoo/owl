@@ -72,6 +72,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const calls = [];
         await page.route("**/*", serve(lang, calls));
         await page.goto("http://owl.test/" + (mode ? "?mode=" + mode : "?view=agents"));
+        if (mode === "panel") await page.locator('#pHome [data-open="agents"]').click();
         const go = page.locator(`${row("workbuddy")} .ag-restart`);
         await go.waitFor();
         assert.equal(await go.getAttribute("aria-label"), lang === "en" ? "Restart WorkBuddy" : await go.getAttribute("aria-label"));
