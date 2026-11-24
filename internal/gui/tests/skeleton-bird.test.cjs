@@ -90,7 +90,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     const { page, errors } = await open(browser, false, () => held);
     await page.locator("#view-plugins .pm-card.ghost").first().waitFor();
     await page.locator(".sk-bird.roam").waitFor({ state: "attached", timeout: 3000 });
-    await page.waitForFunction(() => seen.places.size > 30 && seen.dips > 0, null, { timeout: 4000 });
+    // the bird hops a frame at a time: a loaded renderer draws fewer of them
+    // in a second, so the hops are waited for, and this only a deadline
+    await page.waitForFunction(() => seen.places.size > 30 && seen.dips > 0, null, { timeout: 15000 });
     const feet = await page.evaluate(() => {
       const r = document.querySelector(".sk-bird.roam svg").getBoundingClientRect();
       return { w: r.width, h: r.height };
@@ -136,9 +138,16 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     await page.locator("#view-plugins .pm-card.ghost").first().waitFor();
     await page.locator(".sk-bird.roam").waitFor({ state: "attached", timeout: 3000 });
     // reads the page makes as the bird drops and lands, none of them the
-    // one the skeletons wait for
-    await page.evaluate(() => { for (const ms of [0, 100, 250, 400]) setTimeout(() => api("/api/state"), ms); });
-    await page.waitForTimeout(2500);
+    // one the skeletons wait for; each is counted as it answers, so the
+    // check below is of all of them, not of a clock
+    await page.evaluate(() => {
+      window.readsDone = 0;
+      for (const ms of [0, 100, 250, 400]) setTimeout(() => api("/api/state").then(() => window.readsDone++, () => window.readsDone++), ms);
+    });
+    // the bird hops a frame at a time: a loaded renderer draws fewer of them
+    // in a second, so its hops and those reads are waited for (15s is only a
+    // deadline), and it is still the one bird on the skeletons after them
+    await page.waitForFunction(() => window.readsDone === 4 && seen.places.size > 30 && seen.dips > 0, null, { timeout: 15000 });
     assert.equal(await page.evaluate(() => seen.birds), 1, "one bird, still on the skeletons");
     assert.ok(await page.locator(".sk-bird.roam").count(), "it is still there");
     assert.ok(await page.evaluate(() => seen.places.size > 30 && seen.dips > 0), "it hops bar to bar");
