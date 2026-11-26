@@ -150,6 +150,9 @@ func readBehind(fs []file) {
 		defer storeMu.RUnlock()
 		mu.Lock()
 		defer mu.Unlock()
+		// the databases this read opens stay open until it is done, as in
+		// every other refresh entry (useDBs counts it with mu held)
+		defer useDBs()()
 		loadCache()
 		refresh(fs, nil)
 		for _, f := range fs {

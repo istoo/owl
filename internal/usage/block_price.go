@@ -14,7 +14,7 @@ import (
 const swapKnown = 64
 
 // pricedAs is what a gateway call is priced as, the same for every call of
-// one provider, model, served model and effort.
+// one provider, model, served model, effort, key and service tier.
 type pricedAs struct {
 	provider string
 	flags    uint16
@@ -32,7 +32,7 @@ type blockPricer struct {
 	renames provider.Renames
 	wires   map[string]string
 	price   func(Record) *catalog.Price
-	by      map[[4]string]pricedAs
+	by      map[[7]string]pricedAs
 	agents  map[string][2]string
 	// meta names what prices and names a call (requestState.meta): the
 	// blocks priced of it are shared with the other queries reading now
@@ -154,14 +154,17 @@ func (b *blockPricer) release() {
 }
 
 func newBlockPricer(renames provider.Renames, wires map[string]string, price func(Record) *catalog.Price) *blockPricer {
-	return &blockPricer{renames: renames, wires: wires, price: price, by: map[[4]string]pricedAs{}, agents: map[string][2]string{}}
+	return &blockPricer{renames: renames, wires: wires, price: price, by: map[[7]string]pricedAs{}, agents: map[string][2]string{}}
 }
 
 // as is priceRow's answer for a gateway call of these names, prov the
 // id the provider has now without a merge (Renames.Own): what it is
-// shown under does not change what it cost.
-func (b *blockPricer) as(prov, model, served, effort string) pricedAs {
-	k := [4]string{prov, model, served, effort}
+// shown under does not change what it cost. key is the call's provider
+// key (its own rate may price it, provider.KeyPriceRates) and the tiers
+// the service levels it was sent at and ran at (billedTier): all four
+// price a call apart, as Pricer reads them.
+func (b *blockPricer) as(prov, model, served, effort, key, tierSent, tierServed string) pricedAs {
+	k := [7]string{prov, model, served, effort, key, tierSent, tierServed}
 	if a, ok := b.by[k]; ok {
 		return a
 	}
@@ -173,7 +176,7 @@ func (b *blockPricer) as(prov, model, served, effort string) pricedAs {
 	if GroupRouted(sent, served) {
 		a.flags |= 32
 	}
-	a.price = b.price(Record{Provider: prov, Model: model, Served: served, Effort: effort})
+	a.price = b.price(Record{Provider: prov, Model: model, Served: served, Effort: effort, ProviderKeyID: key, TierSent: tierSent, TierServed: tierServed})
 	a.windows = provider.RateWindowsOf(prov)
 	b.by[k] = a
 	return a
@@ -275,7 +278,7 @@ func (b *blockPricer) priceBlock(packed *rowChunk) (*rowChunk, *[]packedRow) {
 		price   *catalog.Price
 		windows []provider.RateWindow
 	}
-	names := map[[6]uint32]ids{}
+	names := map[[9]uint32]ids{}
 	agents := map[uint32][2]uint32{}
 	shapes := map[[3]uint32]ids{}
 	// the provider each shape names, as it is now: one an id was given
@@ -307,10 +310,10 @@ func (b *blockPricer) priceBlock(packed *rowChunk) (*rowChunk, *[]packedRow) {
 		got, ok := shapes[sk]
 		if !ok {
 			t := c.Shapes[p.Shape]
-			k := [6]uint32{t[1], t[5], t[7], t[8], to.to, to.own}
+			k := [9]uint32{t[1], t[5], t[7], t[8], to.to, to.own, t[rowProviderKeyID], t[rowTierSent], t[rowTierServed]}
 			named, ok := names[k]
 			if !ok {
-				a := b.as(c.Strings[k[5]], c.Strings[k[1]], c.Strings[k[2]], c.Strings[k[3]])
+				a := b.as(c.Strings[k[5]], c.Strings[k[1]], c.Strings[k[2]], c.Strings[k[3]], c.Strings[k[6]], c.Strings[k[7]], c.Strings[k[8]])
 				named = ids{k[4], a.flags, a.price, a.windows}
 				names[k] = named
 			}
@@ -328,13 +331,15 @@ func (b *blockPricer) priceBlock(packed *rowChunk) (*rowChunk, *[]packedRow) {
 		p.Flags = p.Flags&^(1|2|32) | got.flags
 		if p.Flags&rowOwnCost != 0 {
 			// a reported call that said what it cost costs that (#1874)
-			if p.Tokens[0]+p.Tokens[1] > 0 {
+			if p.Tokens[0]+p.Tokens[1]+p.Tokens[2]+p.Tokens[3] > 0 {
 				p.Flags |= 1
 			}
 			continue
 		}
 		p.Cost = 0
-		if got.price != nil && p.Tokens[0]+p.Tokens[1] > 0 {
+		// a call whose prompt was all cache, or that wrote cache and read
+		// it back, costs too: its cache tokens are what it is billed on
+		if got.price != nil && p.Tokens[0]+p.Tokens[1]+p.Tokens[2]+p.Tokens[3] > 0 {
 			p.Flags |= 1
 			p.Cost = atWindow(got.price, got.windows, p.Time()).In(p.Time()).CostSplit(int(p.Tokens[0]), int(p.Tokens[1]), int(p.Tokens[2]), int(p.Tokens[3]), int(p.Tokens[5]))
 		}

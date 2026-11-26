@@ -34,6 +34,12 @@ const otelQueueBytes = 128 << 20
 // POST at most, so a batch of whole bodies stays inside a collector's limit.
 const otelBodiesBatchBytes = 16 << 20
 
+// otelCooloffMax bounds how long a collector's 429/5xx keeps the exporter
+// from trying it again: its Retry-After can name minutes, and waiting that
+// out once per sub-batch and again per flush held the queue behind a
+// collector that was down, dropping the calls arriving meanwhile (#62).
+const otelCooloffMax = 30 * time.Second
+
 // Record is a usage row as the exporter sends it.
 type Record = usage.Record
 
@@ -64,9 +70,14 @@ type otelExporter struct {
 	// send: its transport is its own, not a dispatch, and pools an HTTPS
 	// collector's HTTP/2 connection by the collector alone, so a switch
 	// left the batches after it on the old proxy's connection (#4824)
-	moved      func() bool
-	salt       [8]byte
-	last       time.Time
+	moved func() bool
+	salt  [8]byte
+	last  time.Time
+	// coolUntil holds off the collector until then: set when a 429/5xx
+	// spends a whole send's retries, so the rest of the flush, and the
+	// flushes that follow it, don't spend the same backoff again (#62).
+	// Only the run goroutine (or a test calling flush) writes it.
+	coolUntil  time.Time
 	dropped    atomic.Uint64
 	bytes      atomic.Int64 // the queued records' bodies, in bytes
 	sessions   atomic.Pointer[sessionAvailability]
@@ -288,6 +299,11 @@ func (e *otelExporter) flush(batch []otelItem) {
 	if len(records) == 0 {
 		return
 	}
+	// the collector asked for a backoff it is still in: send none of this,
+	// rather than block the queue on the same wait again
+	if !e.coolUntil.IsZero() && time.Now().Before(e.coolUntil) {
+		return
+	}
 	now := time.Now()
 	// spans carrying bodies (up to 256 KiB each way, whole when asked for)
 	// go a few at a time, so one request stays well inside a collector's
@@ -297,6 +313,11 @@ func (e *otelExporter) flush(batch []otelItem) {
 		step = otelBodiesBatch
 	}
 	for i := 0; i < len(records); {
+		// the first sub-batch's retries may have found the collector
+		// backing off: the rest would only spend the same wait again
+		if !e.coolUntil.IsZero() && time.Now().Before(e.coolUntil) {
+			break
+		}
 		j := min(i+step, len(records))
 		if config.Bodies {
 			bytes := 0
@@ -317,7 +338,7 @@ func (e *otelExporter) flush(batch []otelItem) {
 				ledger = append(ledger, it.record)
 			}
 		}
-		if len(ledger) > 0 {
+		if len(ledger) > 0 && (e.coolUntil.IsZero() || !time.Now().Before(e.coolUntil)) {
 			e.send(config, "metrics", otelMetrics(ledger, e.last, now))
 		}
 	}
@@ -374,6 +395,12 @@ func (e *otelExporter) send(config settings.OTel, signal string, payload any) {
 		if !retry || attempt == 2 {
 			if e.ctx.Err() == nil {
 				log.Printf("otel: %s export failed; batch dropped", signal)
+				if retry {
+					// the collector could not take this and asked for a
+					// wait: hold the rest of this flush and the next
+					// ones off it, bounded so the queue keeps moving
+					e.coolUntil = time.Now().Add(min(max(delay, time.Second), otelCooloffMax))
+				}
 			}
 			return
 		}

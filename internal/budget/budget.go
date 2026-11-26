@@ -75,6 +75,9 @@ type sums struct {
 	input, output, cacheRead, cacheWrite int64
 	cost                                 float64
 	unpriced                             int
+	// ver is usage.PriceVersion of when it was read: a sum read at prices
+	// that have changed since costs again rather than keep the old total
+	ver string
 }
 
 func (s *sums) add(r usage.Record, cost float64, priced bool) {
@@ -168,10 +171,11 @@ func counts(r usage.Record) bool {
 func sumsFor(keyID string, ls []*access.Limit, starts []time.Time) []*sums {
 	k := slot(keyID)
 	kept := state.sums[k]
+	ver := usage.PriceVersion()
 	out := make([]*sums, len(starts))
 	var next []*sums
 	at := func(ss []*sums, start time.Time, scope string) int {
-		return slices.IndexFunc(ss, func(s *sums) bool { return s.start.Equal(start) && s.scope == scope })
+		return slices.IndexFunc(ss, func(s *sums) bool { return s.start.Equal(start) && s.scope == scope && s.ver == ver })
 	}
 	for i, start := range starts {
 		scope := ls[i].Scope()
@@ -183,6 +187,7 @@ func sumsFor(keyID string, ls []*access.Limit, starts []time.Time) []*sums {
 			out[i] = kept[j]
 		} else {
 			out[i] = read(keyID, start, ls[i])
+			out[i].ver = ver
 		}
 		next = append(next, out[i])
 	}
@@ -364,6 +369,10 @@ func AllOf(keys []access.Key, now time.Time) [][]Status {
 		total  *sums // and the rows after them
 	}
 	out := make([][]Status, len(keys))
+	// what prices or names were in force when it is read: a kept window's
+	// cost is another price's once the user edits a model's price or a
+	// key's rate, or the catalog or a rename changes (#56)
+	ver := usage.PriceVersion()
 	wants := make([][]*want, len(keys))
 	resets := make([][]time.Time, len(keys))
 	byKey := map[string][]*want{} // by the key a call is recorded under, or issued under
@@ -385,7 +394,7 @@ func AllOf(keys []access.Key, now time.Time) [][]Status {
 				// window keys a start by its second: what was kept is
 				// another limit's when that one started in the same
 				// second (a 10-day limit made a 5-hour one at once)
-				if e, ok := kept.of[w]; ok && e.prefix.start.Equal(start) {
+				if e, ok := kept.of[w]; ok && e.ver == ver && e.prefix.start.Equal(start) {
 					x.prefix, x.cur = e.prefix, e.cur
 				}
 				kept.Unlock()
@@ -471,7 +480,7 @@ func AllOf(keys []access.Key, now time.Time) [][]Status {
 				if len(kept.of) > 1024 {
 					clear(kept.of)
 				}
-				kept.of[x.w] = keptSums{prefix: x.prefix, cur: next}
+				kept.of[x.w] = keptSums{ver: ver, prefix: x.prefix, cur: next}
 				kept.Unlock()
 			}
 		}
@@ -496,6 +505,10 @@ var kept = struct {
 type keptSums struct {
 	prefix sums
 	cur    usage.Cursor
+	// ver is usage.PriceVersion the prefix was counted at: a kept prefix
+	// from another price is counted again, not read back with the new
+	// price's cursor
+	ver string
 }
 
 // Binding is the one of a key's statuses that holds it most: of those

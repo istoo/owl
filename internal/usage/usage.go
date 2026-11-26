@@ -950,7 +950,10 @@ func (t *Totals) addFrom(row Row, price *catalog.Price) {
 			t.DecodeN++
 		}
 	}
-	if r.Input+r.Output == 0 {
+	// a call whose prompt was all cache, or that only wrote cache, is
+	// billed on those tokens too: only a call with no tokens at all costs
+	// nothing (a cached prompt hit has Input and Output at 0)
+	if r.Input+r.Output+r.CacheRead+r.CacheWrite == 0 {
 		return
 	}
 	if price == nil {
@@ -1068,7 +1071,7 @@ func (g *Group) addOwn(r Record, price *catalog.Price) {
 		g.Own.Calls++
 	}
 	g.Own.Tokens += r.Input + r.Output
-	if price != nil && r.Input+r.Output > 0 {
+	if price != nil && r.Input+r.Output+r.CacheRead+r.CacheWrite > 0 {
 		g.Own.Cost += r.CostAt(*price)
 	}
 }

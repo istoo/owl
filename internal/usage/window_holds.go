@@ -223,7 +223,7 @@ func windowHolds(qs []provider.SubscriptionQuota, now, first time.Time, priceOf 
 	paidOtherwise := map[runKey]bool{} // the vendor answered a call after a reading of none left
 	inRun := map[slot][]runKey{}       // the dry runs a counted call fell in
 	read(func(r Record) {
-		if r.IsRejected() || r.IsReported() || r.Input+r.Output == 0 {
+		if r.IsRejected() || r.IsReported() || r.Input+r.Output+r.CacheRead+r.CacheWrite == 0 {
 			return
 		}
 		// who answered, not who a merge shows it under (Renames.Own)

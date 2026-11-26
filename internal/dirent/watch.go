@@ -188,7 +188,11 @@ func add(dir string) bool {
 	watched.active = false
 	watched.Unlock()
 	if p.dir == "" {
-		d, err := os.MkdirTemp("", "owl-watch-")
+		// a probe folder left by an owl that is gone goes first, so a
+		// start neither inherits nor adds to a pile of them; this one's
+		// carries its process's pid, so another owl's sweep keeps it
+		sweepWatchDirs()
+		d, err := os.MkdirTemp("", "owl-watch-p"+strconv.Itoa(os.Getpid())+"-")
 		if err != nil {
 			return false
 		}
@@ -211,6 +215,67 @@ func add(dir string) bool {
 	watched.since, watched.all = watched.seq, watched.seq
 	watched.roots, watched.active, watched.probe = roots, on, p
 	return true
+}
+
+// watchStale is how long a probe folder whose name carries no process's
+// pid (one an owl before the pid naming made) is kept before it is taken
+// for a killed owl's.
+const watchStale = 24 * time.Hour
+
+// watchPID is the pid a probe folder's name carries, when it is one made
+// with its process's pid in it ("owl-watch-p1234-..."): a folder an older
+// owl made ("owl-watch-...") names none, and is left to watchStale.
+func watchPID(name string) (int, bool) {
+	const prefix = "owl-watch-p"
+	if !strings.HasPrefix(name, prefix) {
+		return 0, false
+	}
+	rest := name[len(prefix):]
+	i := strings.IndexByte(rest, '-')
+	if i <= 0 {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(rest[:i])
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	return pid, true
+}
+
+// sweepWatchDirs removes the probe folders of owls that are gone: one
+// named for a pid no process has now, or, for a name an older owl made
+// with no pid in it, one untouched for watchStale. A folder a running owl
+// holds is kept: it writes its probe's word there.
+func sweepWatchDirs() {
+	dirs, _ := filepath.Glob(filepath.Join(os.TempDir(), "owl-watch-*"))
+	for _, d := range dirs {
+		fi, err := os.Stat(d)
+		if err != nil || !fi.IsDir() {
+			continue
+		}
+		if pid, ok := watchPID(filepath.Base(d)); ok {
+			if !watchAlive(pid) {
+				os.RemoveAll(d)
+			}
+			continue
+		}
+		if time.Since(fi.ModTime()) > watchStale {
+			os.RemoveAll(d)
+		}
+	}
+}
+
+// cleanProbe removes the probe folder this owl made, for a test's cleanup
+// or a shutdown that knows no watch will run again. A wait on it gives up
+// on its own.
+func cleanProbe() {
+	watched.Lock()
+	p := watched.probe
+	watched.probe = probe{}
+	watched.Unlock()
+	if p.dir != "" {
+		os.RemoveAll(p.dir)
+	}
 }
 
 // sync1 writes in the probe's folder and waits for the write to be heard,

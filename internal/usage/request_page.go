@@ -295,6 +295,13 @@ const (
 	// rowClient is the Text of the client's own name, when the user counts
 	// it as another agent (Row.Client, #1958)
 	rowClient = 33
+	// rowProviderKeyID, rowTierSent and rowTierServed are the Text slots a
+	// call is priced apart by: its key's own rate (provider.KeyPriceRates)
+	// and the service tier it was sent at or ran at (billedTier, #1784).
+	// The block pricer must keep them in what it prices by, as Pricer does.
+	rowProviderKeyID = 18
+	rowTierSent      = 31
+	rowTierServed    = 32
 	// rowTexts is how many strings a row has: rowText's and the message id
 	rowTexts = 37
 )
@@ -3012,7 +3019,7 @@ func sessionRowPricer(cfg settings.Settings) func(Record, string) Row {
 			}
 			row.Swapped = s
 		}
-		if pr := price(r); pr != nil && r.Input+r.Output > 0 {
+		if pr := price(r); pr != nil && r.Input+r.Output+r.CacheRead+r.CacheWrite > 0 {
 			row.Priced = true
 			row.Cost = r.CostAt(*pr)
 		}

@@ -336,13 +336,16 @@ func (s *ocTraceState) user(db *sql.DB, table string, m ocTraceMessage, bodies b
 		if db.QueryRow("SELECT id,"+doc+" FROM "+table+" WHERE id=?", m.ParentID).Scan(&id, &raw) != nil {
 			return ocTraceMessage{}
 		}
-	} else {
-		role := `json_extract(data,'$.role')`
-		if table == "session_message" {
-			role = "type"
+	} else if table == "session_message" {
+		// V2 has no parentID and keeps a message's order in seq: the
+		// nearest user before this message in the same session is its
+		// prompt, exact even when two messages share a millisecond.
+		if db.QueryRow("SELECT id,"+doc+" FROM session_message WHERE session_id=(SELECT session_id FROM session_message WHERE id=?) AND type='user' AND seq<(SELECT seq FROM session_message WHERE id=?) ORDER BY seq DESC LIMIT 1", m.ID, m.ID).Scan(&id, &raw) != nil {
+			return ocTraceMessage{}
 		}
-		// V2 has no parentID; pick the preceding user in this session only.
-		if db.QueryRow("SELECT id,"+doc+" FROM "+table+" WHERE session_id=(SELECT session_id FROM "+table+" WHERE id=?) AND "+role+"='user' AND time_created<=? ORDER BY time_created DESC,id DESC LIMIT 1", m.ID, m.Time.Created).Scan(&id, &raw) != nil {
+	} else {
+		// V1 has no seq: the preceding user by its own time.
+		if db.QueryRow("SELECT id,"+doc+" FROM "+table+" WHERE session_id=(SELECT session_id FROM "+table+" WHERE id=?) AND json_extract(data,'$.role')='user' AND time_created<=? ORDER BY time_created DESC,id DESC LIMIT 1", m.ID, m.Time.Created).Scan(&id, &raw) != nil {
 			return ocTraceMessage{}
 		}
 	}

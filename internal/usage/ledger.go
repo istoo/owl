@@ -497,7 +497,9 @@ func ledgerMatched(since, until time.Time, f Filter, recs []Record, logs []sessi
 		if !f.keepsRow(&row) {
 			return
 		}
-		if pr != nil && r.Input+r.Output > 0 {
+		// cache tokens bill too: a prompt that was all a cache hit has no
+		// input or output of its own
+		if pr != nil && r.Input+r.Output+r.CacheRead+r.CacheWrite > 0 {
 			row.Cost, row.Priced = r.CostAt(*pr), true
 		}
 		row.Agent, row.Client = reportedAs(r.Agent)
@@ -849,7 +851,11 @@ func timeline(p Period, now, first time.Time) (since time.Time, bucket string, p
 				pts = append(pts, Point{Label: hourLabel(t), Time: t})
 			}
 		} else {
-			n = int(d.Hours())/24 + 1
+			// a bucket a calendar day, as bucketIndex reads them: a
+			// window of 49h from 00:30 the day before yesterday reaches
+			// into a fourth day, which the hours alone would leave out
+			// and drop its calls
+			n = calendarDays(since, now) + 1
 			for i := 0; i < n; i++ {
 				t := since.AddDate(0, 0, i)
 				pts = append(pts, Point{Label: t.Format("Jan 2"), Time: t})
@@ -972,7 +978,7 @@ func (t *Totals) addRow(r Row) {
 	switch {
 	case r.Priced:
 		t.Cost += r.Cost
-	case r.Input+r.Output > 0:
+	case r.Input+r.Output+r.CacheRead+r.CacheWrite > 0:
 		t.Unpriced++
 	}
 }

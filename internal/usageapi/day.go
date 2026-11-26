@@ -105,8 +105,12 @@ const SpanAll = "all"
 // today is an error, as is a from after date.
 func SpanOf(from, date string, zone *time.Location) (Day, error) {
 	span := from
-	if zone == nil {
-		zone = time.Local
+	// this computer's days are the ledger's, which with a day that starts
+	// after midnight (Settings' dayStart) begin at that hour (usage.Zone):
+	// cutting them at midnight here put "today" on tomorrow's date between
+	// midnight and that hour, and the day asked for read empty (#59)
+	if zone == nil || zone == time.Local {
+		zone = usage.Zone("")
 	}
 	today := usage.Clock().In(zone).Format(time.DateOnly)
 	if date == "" {
