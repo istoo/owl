@@ -2032,6 +2032,10 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// quota left goes to the back (provider.Provider.Sink); a
 			// save that leaves it out keeps it
 			Sink *bool `json:"sink"`
+			// Billing, for save: whether its calls are on a plan or paid
+			// as they go (provider.Provider.Billing); a save that leaves
+			// it out keeps it, as the editor before it had the field does
+			Billing *string `json:"billing"`
 			// NativeCompaction, for save: Codex's compaction asked of it
 			// as Codex sent it (provider.Provider.NativeCompaction); a save
 			// that leaves it out keeps it
@@ -2130,6 +2134,9 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			return
 		}
 		in := req.Provider
+		if req.Billing != nil {
+			in.Billing = *req.Billing
+		}
 		if !provider.BillingOK(in.Billing) {
 			fail(rw, fmt.Errorf("billing is plan, payg or empty, not %q", in.Billing))
 			return
@@ -2643,6 +2650,9 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 					}
 					if req.Sink == nil {
 						in.Sink = old.Sink
+					}
+					if req.Billing == nil {
+						in.Billing = old.Billing
 					}
 					if req.NativeCompaction == nil {
 						in.NativeCompaction = old.NativeCompaction

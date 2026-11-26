@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/istoo/owl/internal/appdir"
@@ -140,6 +141,18 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 		var err error
 		switch r.PathValue("action") {
 		case "set": // only what was sent: the rest stays as the user set it
+			// a folder typed here has to be writable, as one picked is; ""
+			// is the default folder again (#76)
+			var dir *string
+			if in.Dir != nil {
+				d := strings.TrimSpace(*in.Dir)
+				if d != "" {
+					if err = writable(d); err != nil {
+						break
+					}
+				}
+				dir = &d
+			}
 			err = set(func(c *backup.AutoConfig) {
 				if in.On != nil {
 					c.Off = !*in.On
@@ -150,8 +163,8 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 				if in.Keep != nil {
 					c.Keep = *in.Keep
 				}
-				if in.Dir != nil && *in.Dir == "" {
-					c.Dir = ""
+				if dir != nil {
+					c.Dir = *dir
 				}
 				if in.Passphrase != "" {
 					c.Passphrase = in.Passphrase
@@ -205,7 +218,32 @@ func backupRoutes(mux *http.ServeMux, w Windows) {
 		switch r.PathValue("action") {
 		case "save": // and sync at once, so a wrong address or password shows now
 			var c davsync.Config
-			if err = json.NewDecoder(r.Body).Decode(&c); err == nil {
+			var raw []byte
+			if raw, err = io.ReadAll(r.Body); err == nil {
+				err = json.Unmarshal(raw, &c)
+			}
+			if err == nil {
+				// a form that doesn't carry the parts' own switches leaves
+				// them as they are: what it doesn't send is not "no" (#66)
+				var sent map[string]json.RawMessage
+				_ = json.Unmarshal(raw, &sent)
+				if old, ok := davsync.Load(); ok {
+					if _, has := sent["providers"]; !has {
+						c.Providers = old.Providers
+					}
+					if _, has := sent["settings"]; !has {
+						c.Settings = old.Settings
+					}
+					if _, has := sent["profiles"]; !has {
+						c.Profiles = old.Profiles
+					}
+					if _, has := sent["memory"]; !has {
+						c.Memory = old.Memory
+					}
+					if _, has := sent["signInsExcept"]; !has {
+						c.SignInsExcept = old.SignInsExcept
+					}
+				}
 				err = davsync.Configure(c)
 			}
 			if err != nil { // said in the form, what was typed in it kept

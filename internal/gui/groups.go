@@ -1,9 +1,11 @@
 package gui
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -16,6 +18,30 @@ import (
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/settings"
 )
+
+// keepGroupFields fills in what a save's body didn't carry from the group
+// as it was: a form built before these fields existed sends none of them,
+// and saving the group's routing would otherwise clear them all (#67).
+func keepGroupFields(in *provider.Group, was provider.Group, sent map[string]json.RawMessage) {
+	if _, ok := sent["note"]; !ok {
+		in.Note = was.Note
+	}
+	if _, ok := sent["noSink"]; !ok {
+		in.NoSink = was.NoSink
+	}
+	if _, ok := sent["intentSure"]; !ok {
+		in.IntentSure = was.IntentSure
+	}
+	if _, ok := sent["compact"]; !ok {
+		in.Compact = was.Compact
+	}
+	if _, ok := sent["ultra"]; !ok {
+		in.Ultra = was.Ultra
+	}
+	if _, ok := sent["effortMaps"]; !ok {
+		in.EffortMaps = was.EffortMaps
+	}
+}
 
 // groupsJSON is what the Routing view manages: the routing groups, the
 // models they can be made of, and each provider with several keys or
@@ -579,12 +605,19 @@ func groupRoutes(mux *http.ServeMux) {
 			// replaces that group (provider.ImportGroupOver)
 			Replace bool `json:"replace"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			fail(rw, err)
 			return
 		}
+		if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&body); err != nil {
+			fail(rw, err)
+			return
+		}
+		// which fields the form sent, so one it doesn't carry is kept (#67)
+		var sent map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &sent)
 		in := body.Group
-		var err error
 		var moved []agent.Move
 		var shared string
 		var imported *provider.Imported
@@ -599,6 +632,18 @@ func groupRoutes(mux *http.ServeMux) {
 			// its model from one provider, as turning found groups off does
 			moved, err = agent.Reseat(func() error { return provider.SetAutoGroupSkip(body.Skip) })
 		case "save":
+			// a form that doesn't carry these leaves them as they are: what
+			// it doesn't send is not "clear" (#67)
+			oldID := strings.ToLower(strings.TrimSpace(in.ID))
+			if body.From != "" && body.From != oldID {
+				oldID = body.From
+			}
+			for _, was := range provider.Groups() {
+				if was.ID == oldID {
+					keepGroupFields(&in, was, sent)
+					break
+				}
+			}
 			to := strings.ToLower(strings.TrimSpace(in.ID))
 			if body.From == "" || body.From == to {
 				err = provider.SaveGroup(in)

@@ -64,12 +64,29 @@ func githubLatest(ctx context.Context, lang string) (*Release, error) {
 		return nil, err
 	}
 	base := fmt.Sprintf("%s/%s/releases/download/%s/", githubWeb, releaseRepo, tag)
+	// owl's own releases don't carry SHA256SUMS.sig yet (signed.go's
+	// signingOn): they describe themselves in latest.json, as the feed's
+	// site copy does, so that is read here (#71)
+	var fileErr error
+	if !signingOn {
+		rel, err := githubLatestFile(ctx, base, page, lang, files)
+		if err == nil {
+			return rel, nil
+		}
+		fileErr = err
+	}
 	sums, err := githubFile(ctx, base+"SHA256SUMS", files["SHA256SUMS"].api)
 	if err != nil {
+		if fileErr != nil {
+			return nil, fileErr
+		}
 		return nil, err
 	}
 	sig, err := githubFile(ctx, base+"SHA256SUMS.sig", files["SHA256SUMS.sig"].api)
 	if err != nil {
+		if fileErr != nil {
+			return nil, fileErr
+		}
 		return nil, fmt.Errorf("%s has no signature: %w", tag, err)
 	}
 	rel := &Release{
@@ -97,9 +114,51 @@ func githubLatest(ctx context.Context, lang string) (*Release, error) {
 		rel.Assets[name] = Asset{URL: u, GitHub: u, API: files[name].api, Size: files[name].size}
 	}
 	if err := rel.verify(); err != nil {
+		if fileErr != nil {
+			return nil, fileErr
+		}
 		return nil, err
 	}
 	return rel, nil
+}
+
+// githubLatestFile reads the latest.json owl's own releases carry in place
+// of a SHA256SUMS.sig (signed.go's signingOn is false until owl's release
+// workflow signs), and reads it as the feed's Release.
+func githubLatestFile(ctx context.Context, base, page, lang string, files map[string]ghFile) (*Release, error) {
+	b, err := githubFile(ctx, base+feedAsset, files[feedAsset].api)
+	if err != nil {
+		return nil, fmt.Errorf("the release has no %s: %w", feedAsset, err)
+	}
+	var rel Release
+	if err := json.Unmarshal([]byte(b), &rel); err != nil {
+		return nil, fmt.Errorf("the release's %s: %w", feedAsset, err)
+	}
+	if parse(rel.Version) == nil {
+		return nil, fmt.Errorf("the release's %s names no version", feedAsset)
+	}
+	if rel.URL == "" {
+		rel.URL = page
+	}
+	if err := rel.verify(); err != nil {
+		return nil, err
+	}
+	rel.Notes = InLang(rel.Notes, lang)
+	rel.githubAddresses()
+	// the API route and size GitHub's own list gives each file, for a
+	// download that goes on through it
+	for name, a := range rel.Assets {
+		if f, ok := files[name]; ok {
+			if a.API == "" {
+				a.API = f.api
+			}
+			if a.Size == 0 {
+				a.Size = f.size
+			}
+			rel.Assets[name] = a
+		}
+	}
+	return &rel, nil
 }
 
 type ghFile struct {

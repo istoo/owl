@@ -247,13 +247,38 @@ func libraryInUse() bool {
 // folder but it goes.
 func Data(r *Report) {
 	remove, keep := Folders()
+	// a folder `owl data move` moved is a symlink to the choice's disk: what
+	// is owl's is over there, and deleting the link alone would leave every
+	// file behind (#79)
+	place := appdir.Where()
 	for _, p := range remove {
 		d := Done{What: p}
+		at := p
+		switch {
+		case samePath(p, place.Config) && place.ConfigAt != "":
+			at = place.ConfigAt
+		case samePath(p, place.Cache) && place.CacheAt != "":
+			at = place.CacheAt
+		}
 		var err error
 		if keep != "" && within(keep, p) {
-			err = removeAllBut(p, keep)
+			keepAt := keep
+			if at != p {
+				if rel, rerr := filepath.Rel(p, keep); rerr == nil {
+					keepAt = filepath.Join(at, rel)
+				}
+			}
+			// the target's files go, the Library's stay, and so does the
+			// link: a skill or server an agent reads is still there
+			err = removeAllBut(at, keepAt)
 		} else {
-			err = os.RemoveAll(p)
+			// the disk's folder first, then the link that named it
+			err = os.RemoveAll(at)
+			if err == nil && at != p {
+				if rerr := os.Remove(p); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+					err = rerr
+				}
+			}
 		}
 		if err != nil {
 			d.Err = err.Error()

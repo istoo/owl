@@ -116,31 +116,34 @@ func handleProxySave(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, err)
 		return
 	}
-	s := settings.Load()
-	p := in.named(s.Proxies)
-	found := false
-	if p.ID == "" {
-		p.ID = settings.NewProxyID()
-		if in.Pass == nil {
-			p.Pass = ""
+	var id string
+	if _, err := settings.Update(func(s *settings.Settings) error {
+		p := in.named(s.Proxies)
+		found := false
+		if p.ID == "" {
+			p.ID = settings.NewProxyID()
+			if in.Pass == nil {
+				p.Pass = ""
+			}
 		}
-	}
-	for i := range s.Proxies {
-		if s.Proxies[i].ID == p.ID {
-			s.Proxies[i], found = p, true
+		for i := range s.Proxies {
+			if s.Proxies[i].ID == p.ID {
+				s.Proxies[i], found = p, true
+			}
 		}
-	}
-	if !found {
-		s.Proxies = append(s.Proxies, p)
-	}
-	if err := settings.Save(s); err != nil {
+		if !found {
+			s.Proxies = append(s.Proxies, p)
+		}
+		id = p.ID
+		return nil
+	}); err != nil {
 		fail(rw, err)
 		return
 	}
 	provider.ProxyEdited() // Claude Code's env holds an address, not the name
 	// what it was checked as no longer says anything about it
 	proxyTestsMu.Lock()
-	delete(proxyTests, p.ID)
+	delete(proxyTests, id)
 	proxyTestsMu.Unlock()
 	writeJSON(rw, settingsState())
 }
@@ -172,8 +175,16 @@ func handleProxyDelete(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.Proxies = keep
-	if err := settings.Save(s); err != nil {
+	if _, err := settings.Update(func(s *settings.Settings) error {
+		var kept []settings.NamedProxy
+		for _, p := range s.Proxies {
+			if p.ID != in.ID {
+				kept = append(kept, p)
+			}
+		}
+		s.Proxies = kept
+		return nil
+	}); err != nil {
 		fail(rw, err)
 		return
 	}

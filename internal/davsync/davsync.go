@@ -1209,6 +1209,17 @@ func changed(part string, keys bool) time.Time {
 func bring(b backup.Bundle, part string) error {
 	switch part {
 	case "providers":
+		// the proxies kept by name first: a provider naming one as "@px…"
+		// reaches nothing until it is here (they travel with the providers)
+		if b.Proxies != nil {
+			keys := b.Keys // the part's own marker, as backup.scopedKeys reads it
+			if b.ProvidersKeys != nil {
+				keys = *b.ProvidersKeys
+			}
+			if err := settings.RestoreProxies(*b.Proxies, keys); err != nil {
+				return err
+			}
+		}
 		for name, data := range b.Icons {
 			if f := provider.IconFile(name); f != "" && len(data) <= provider.MaxIcon {
 				if _, err := os.Stat(f); err != nil {

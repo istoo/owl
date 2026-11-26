@@ -15080,7 +15080,10 @@ function fmtCost(t) {
   // not $0 and not a throw that stops the page drawing (#3406)
   if (typeof t.cost !== "number" || (!t.cost && t.unpriced)) return "";
   let c = t.cost, sign = "$";
-  if (currency === "cny" && fx.rate > 0) { c = c * fx.rate; sign = "¥"; }
+  // "provider" shows one that sells in yuan in ¥, and the rest in $ (#73);
+  // a total of several follows the dollars it is summed in
+  const yuan = currency === "provider" ? (fx.yuan || []).includes(t.provider || t.id) : currency === "cny";
+  if (yuan && fx.rate > 0) { c = c * fx.rate; sign = "¥"; }
   const s = c >= 100 ? c.toFixed(0) : c >= 1 ? c.toFixed(2) : c.toFixed(3);
   return sign + s + (t.unpriced ? "+" : "");
 }
@@ -19930,7 +19933,12 @@ let proxyCustom = false; // Custom picked, not saved yet
 // The login has fields of its own; the setting stays one address with it as
 // userinfo, split as Go's url.Parse does (last @, then first :).
 function proxyFields(value) {
-  const [, scheme = "", auth, rest] = /^([a-z][\w+.-]*:\/\/)?([^/?#]*)(.*)$/is.exec((value || "").trim());
+  // a named proxy ("@px…") is a reference, not an address: its "@" is no
+  // login to split off, or the field would show it without and save it
+  // changed on blur (#74)
+  const v = (value || "").trim();
+  if (v.startsWith("@")) return { address: v, username: "", password: "" };
+  const [, scheme = "", auth, rest] = /^([a-z][\w+.-]*:\/\/)?([^/?#]*)(.*)$/is.exec(v);
   const at = auth.lastIndexOf("@"), info = at < 0 ? "" : auth.slice(0, at), c = info.indexOf(":");
   const eu = c < 0 ? info : info.slice(0, c), ep = c < 0 ? "" : info.slice(c + 1);
   // non-UTF-8 escapes are kept as saved until edited

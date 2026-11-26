@@ -77,9 +77,10 @@ func gatewayModeRoutes(mux *http.ServeMux) {
 			fail(rw, fmt.Errorf("gateway mode is on, off or \"\" (automatic), not %q", in.Mode))
 			return
 		}
-		s := settings.Load()
-		s.GatewayMode = in.Mode
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.GatewayMode = in.Mode
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}

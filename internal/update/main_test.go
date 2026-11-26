@@ -13,5 +13,9 @@ import (
 func TestMain(m *testing.M) {
 	attestAPI = "http://127.0.0.1:1"
 	attestSite = "http://127.0.0.1:1"
+	// the same for GitHub's own addresses unless a test serves its own: a
+	// failed feed falls back to githubLatest, which now reads a release's
+	// latest.json and would find the real one (#71)
+	githubWeb, githubAPI = "http://127.0.0.1:1", "http://127.0.0.1:1"
 	testenv.Main(m)
 }

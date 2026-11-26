@@ -166,9 +166,6 @@ func Run(ready func()) error {
 	if ready != nil {
 		ready()
 	}
-	if len(m.agents) == 0 {
-		return fmt.Errorf("%s", tr("no supported agents found on this machine"))
-	}
 	ctx, stop := context.WithCancel(context.Background())
 	wait := serveGateway(ctx)
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
@@ -195,6 +192,10 @@ func newModel() model {
 	s := settings.Load()
 	shown, hidden := settings.Arrange(s, set, func(a *agent.Agent) string { return a.ID })
 	m := model{agents: append(shown, hidden...), hidden: len(shown), period: usage.Week, srange: 1, qleft: s.QuotaLeft}
+	// no agent on this machine: the Providers page, not an empty Agents one
+	if len(m.agents) == 0 {
+		m.page = pageProviders
+	}
 	// no model catalog yet: Init syncs it. Set here, as Init's receiver is
 	// a copy the program never sees.
 	m.syncing = catalog.Source() == ""
@@ -461,16 +462,23 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		return m, tea.Quit
 	case "j", "down":
-		m.row = (m.row + 1) % len(m.agents)
-		m.col = 0
+		if n := len(m.agents); n > 0 {
+			m.row = (m.row + 1) % n
+			m.col = 0
+		}
 	case "k", "up":
-		m.row = (m.row + len(m.agents) - 1) % len(m.agents)
-		m.col = 0
+		if n := len(m.agents); n > 0 {
+			m.row = (m.row + n - 1) % n
+			m.col = 0
+		}
 	case "l", "right", "tab":
-		m.col = (m.col + 1) % len(m.agents[m.row].Fields)
+		if n := m.fields(); n > 0 {
+			m.col = (m.col + 1) % n
+		}
 	case "h", "left", "shift+tab":
-		n := len(m.agents[m.row].Fields)
-		m.col = (m.col + n - 1) % n
+		if n := m.fields(); n > 0 {
+			m.col = (m.col + n - 1) % n
+		}
 	case "enter", " ":
 		m.openFieldPicker()
 	case "r":
@@ -490,7 +498,19 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// fields is how many fields the agent at the cursor has: none when there
+// is no agent, or row is past them, so a key never divides by zero (#78).
+func (m model) fields() int {
+	if m.row < 0 || m.row >= len(m.agents) {
+		return 0
+	}
+	return len(m.agents[m.row].Fields)
+}
+
 func (m *model) openFieldPicker() {
+	if m.fields() == 0 {
+		return
+	}
 	a := m.agents[m.row]
 	f := a.Fields[m.col]
 	cur := m.values[m.row][f.Key]

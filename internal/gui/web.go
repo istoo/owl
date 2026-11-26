@@ -254,7 +254,9 @@ func webGuard(cookie, key string, keep time.Duration, box boxSignIn, next http.H
 			q.Del("k")
 			u := *r.URL
 			u.RawQuery = q.Encode()
-			signIn(rw, r, u.RequestURI())
+			// localPath, as the form's back is: ?k= with no path ("//evil.com/")
+			// is another site, not where to come back to (#77)
+			signIn(rw, r, localPath(u.RequestURI()))
 			return
 		}
 		// what a phone's home screen reads to add the page as an app
@@ -326,7 +328,11 @@ const webSignInPath = "/_owl/sign-in"
 // return address never leads to another site, nor to the form's own.
 func localPath(back string) string {
 	u, err := url.Parse(back)
-	if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(back, "/") || strings.HasPrefix(back, "//") || strings.HasPrefix(back, "/\\") || u.Path == webSignInPath {
+	// u.Path is the decoded one: %2F and %5C are the slash and backslash
+	// a browser reads them as, so "//evil.com/" and "/\evil.com/" are
+	// caught whichever way they are spelled
+	if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(back, "/") || strings.HasPrefix(back, "//") ||
+		strings.HasPrefix(u.Path, "//") || strings.HasPrefix(u.Path, "/\\") || u.Path == webSignInPath {
 		return "/"
 	}
 	return back

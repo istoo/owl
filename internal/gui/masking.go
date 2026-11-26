@@ -103,14 +103,11 @@ func maskingRoutes(mux *http.ServeMux) {
 		}
 		// a settings file that can't be read is unknown, not empty: the
 		// list it holds is never written over with this one value
-		s, err := settings.LoadChecked()
-		if err != nil {
-			fail(rw, err)
-			return
-		}
 		// Save trims the list and keeps each value once, whatever its case
-		s.RedactAllow = append(s.RedactAllow, v)
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.RedactAllow = append(s.RedactAllow, v)
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}

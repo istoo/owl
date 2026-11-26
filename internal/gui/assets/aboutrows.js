@@ -56,7 +56,7 @@ export function aboutRows(ctx) {
   row(t("Update channel"), s.updateChannel === "stable"
     ? t("One version a week, out for three days first, and urgent fixes at once. What's new lists every change since yours")
     : t("Every version as soon as it is out"), "",
-    segs([["every", t("Every version")], ["stable", t("Stable")]], s.updateChannel === "stable" ? "stable" : "every",
+    segs([["every", t("Every version")], ["stable", t("Stable")]], s.updateChannel || "every",
       (v) => savePrefs({ ...keep, updateChannel: v === "stable" ? "stable" : "" }))).classList.add("update-channel-row");
   // whether a newer version found is downloaded at once, or only said to
   // be out and downloaded on a click (#2296): a metered network or a

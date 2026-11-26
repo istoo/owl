@@ -1854,10 +1854,12 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		changed := s.QuotaLeft != in.On
-		s.QuotaLeft = in.On
-		if err := settings.Save(s); err != nil {
+		changed := false
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			changed = s.QuotaLeft != in.On
+			s.QuotaLeft = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1876,9 +1878,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.QuotaReads = in.Reads
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.QuotaReads = in.Reads
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1894,9 +1897,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.SearchAll = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.SearchAll = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1911,13 +1915,12 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		if s.SearchCount != in.N {
+		if _, err := settings.Update(func(s *settings.Settings) error {
 			s.SearchCount = in.N
-			if err := settings.Save(s); err != nil {
-				fail(rw, err)
-				return
-			}
+			return nil
+		}); err != nil {
+			fail(rw, err)
+			return
 		}
 		writeJSON(rw, settingsState())
 	})
@@ -1956,9 +1959,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.NoAccountDiscovery = in.Off
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.NoAccountDiscovery = in.Off
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -1975,14 +1979,16 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.UpdateSkip = strings.TrimSpace(in.Version)
-		if s.UpdateSkip != "" {
+		skip := strings.TrimSpace(in.Version)
+		if skip != "" {
 			updates.quietAgain() // a dismissal holds for the quiet, not only the next release
 		} else {
 			updates.unhush() // Show again
 		}
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.UpdateSkip = skip
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2034,13 +2040,12 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		if s.BusyLoad != in.At {
+		if _, err := settings.Update(func(s *settings.Settings) error {
 			s.BusyLoad = in.At
-			if err := settings.Save(s); err != nil {
-				fail(rw, err)
-				return
-			}
+			return nil
+		}); err != nil {
+			fail(rw, err)
+			return
 		}
 		writeJSON(rw, settingsState())
 	})
@@ -2065,9 +2070,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.GuideHidden = in.Hidden
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.GuideHidden = in.Hidden
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2081,10 +2087,12 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		was := s.DesktopLongest
-		s.DesktopLongest = in.On
-		if err := settings.Save(s); err != nil {
+		was := false
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			was = s.DesktopLongest
+			s.DesktopLongest = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2257,9 +2265,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 				return
 			}
 		}
-		s := settings.Load()
-		s.CodexDescriptions = v
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.CodexDescriptions = v
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2280,9 +2289,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 				return
 			}
 		}
-		s := settings.Load()
-		s.CodexPredictions = v
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.CodexPredictions = v
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2344,9 +2354,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 				return
 			}
 		}
-		s := settings.Load()
-		s.CodexTitles = v
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.CodexTitles = v
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2366,9 +2377,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, fmt.Errorf("%s can't take requests unmasked: pick a model on this computer or your network whose provider is set to Send requests unmasked, with no fallback elsewhere", v))
 			return
 		}
-		s := settings.Load()
-		s.RedactRouteTo = v
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.RedactRouteTo = v
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2571,9 +2583,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.WorkBuddyCheckin = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.WorkBuddyCheckin = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2586,9 +2599,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.TraeCheckin = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.TraeCheckin = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2601,9 +2615,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.MiniMaxCheckin = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.MiniMaxCheckin = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2616,9 +2631,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.QoderCheckin = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.QoderCheckin = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2638,13 +2654,14 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, errors.New("no provider"))
 			return
 		}
-		s := settings.Load()
-		s.PluginCheckins = maps.Clone(s.PluginCheckins)
-		if s.PluginCheckins == nil {
-			s.PluginCheckins = map[string]bool{}
-		}
-		s.PluginCheckins[in.Provider] = in.On
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.PluginCheckins = maps.Clone(s.PluginCheckins)
+			if s.PluginCheckins == nil {
+				s.PluginCheckins = map[string]bool{}
+			}
+			s.PluginCheckins[in.Provider] = in.On
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2666,18 +2683,19 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, errors.New("no provider or no such option"))
 			return
 		}
-		s := settings.Load()
-		s.PluginOptions = maps.Clone(s.PluginOptions)
-		if s.PluginOptions == nil {
-			s.PluginOptions = map[string]map[string]bool{}
-		}
-		own := maps.Clone(s.PluginOptions[in.Provider])
-		if own == nil {
-			own = map[string]bool{}
-		}
-		own[in.Key] = in.On
-		s.PluginOptions[in.Provider] = own
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.PluginOptions = maps.Clone(s.PluginOptions)
+			if s.PluginOptions == nil {
+				s.PluginOptions = map[string]map[string]bool{}
+			}
+			own := maps.Clone(s.PluginOptions[in.Provider])
+			if own == nil {
+				own = map[string]bool{}
+			}
+			own[in.Key] = in.On
+			s.PluginOptions[in.Provider] = own
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2702,16 +2720,17 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, errors.New("no account"))
 			return
 		}
-		s := settings.Load()
-		off := slices.DeleteFunc(slices.Clone(s.CheckinOff), func(k string) bool { return k == in.Key })
-		if !in.On {
-			off = append(off, in.Key)
-		}
-		if len(off) == 0 {
-			off = nil
-		}
-		s.CheckinOff = off
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			off := slices.DeleteFunc(slices.Clone(s.CheckinOff), func(k string) bool { return k == in.Key })
+			if !in.On {
+				off = append(off, in.Key)
+			}
+			if len(off) == 0 {
+				off = nil
+			}
+			s.CheckinOff = off
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2726,9 +2745,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.TextSize = in.Size
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.TextSize = in.Size
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2750,7 +2770,6 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
 		if key != "" && !panelKeysState().Can {
 			fail(rw, errors.New("This desktop doesn't let apps take a shortcut"))
 			return
@@ -2761,9 +2780,12 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 				return
 			}
 		}
-		was := s.PanelShortcut
-		s.PanelShortcut = key
-		if err := settings.Save(s); err != nil {
+		was := ""
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			was = s.PanelShortcut
+			s.PanelShortcut = key
+			return nil
+		}); err != nil {
 			if onPanelShortcut != nil {
 				_ = onPanelShortcut(was) // the saved one bound again
 			}
@@ -2779,9 +2801,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.AgentOrder, s.AgentsHidden, s.AgentsShown = in.Order, in.Hidden, in.Shown
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.AgentOrder, s.AgentsHidden, s.AgentsShown = in.Order, in.Hidden, in.Shown
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2802,16 +2825,13 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, errors.New("no agent"))
 			return
 		}
-		s, err := settings.LoadChecked()
-		if err != nil {
-			fail(rw, err)
-			return
-		}
-		s.AgentsHere = slices.DeleteFunc(s.AgentsHere, func(x string) bool { return x == in.Agent })
-		if in.On {
-			s.AgentsHere = append(s.AgentsHere, in.Agent)
-		}
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.AgentsHere = slices.DeleteFunc(s.AgentsHere, func(x string) bool { return x == in.Agent })
+			if in.On {
+				s.AgentsHere = append(s.AgentsHere, in.Agent)
+			}
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2836,31 +2856,31 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		if in.Count != nil {
-			m, err := countClient(s.ClientAgents, in.Count.Client, in.Count.As)
-			if err != nil {
-				fail(rw, err)
-				return
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			if in.Count != nil {
+				m, err := countClient(s.ClientAgents, in.Count.Client, in.Count.As)
+				if err != nil {
+					return err
+				}
+				s.ClientAgents = m
 			}
-			s.ClientAgents = m
-		}
-		if in.Order != nil {
-			s.UsageOrder = *in.Order
-		}
-		if in.PanelHidden != nil {
-			s.PanelUsageHidden = *in.PanelHidden
-		}
-		if in.AgentsHidden != nil {
-			s.UsageAgentsHidden = *in.AgentsHidden
-		}
-		if in.CardsHidden != nil {
-			s.UsageCardsHidden = *in.CardsHidden
-		}
-		if in.WindowsHidden != nil {
-			s.UsageWindowsHidden = *in.WindowsHidden
-		}
-		if err := settings.Save(s); err != nil {
+			if in.Order != nil {
+				s.UsageOrder = *in.Order
+			}
+			if in.PanelHidden != nil {
+				s.PanelUsageHidden = *in.PanelHidden
+			}
+			if in.AgentsHidden != nil {
+				s.UsageAgentsHidden = *in.AgentsHidden
+			}
+			if in.CardsHidden != nil {
+				s.UsageCardsHidden = *in.CardsHidden
+			}
+			if in.WindowsHidden != nil {
+				s.UsageWindowsHidden = *in.WindowsHidden
+			}
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2923,9 +2943,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.CORSOrigins = origins
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.CORSOrigins = origins
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2955,13 +2976,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, fmt.Errorf("that allow list would shut out %s, the address this page is open from: add it first", addr))
 			return
 		}
-		s, err := settings.LoadChecked()
-		if err != nil {
-			fail(rw, err)
-			return
-		}
-		s.AllowIPs = list
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.AllowIPs = list
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -2990,9 +3008,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.RedactRules = in.Rules
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.RedactRules = in.Rules
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3011,14 +3030,14 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		next, err := editRedactRule(s.RedactRules, in.At, in.Was, in.Rule)
-		if err != nil {
-			fail(rw, err)
-			return
-		}
-		s.RedactRules = next
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			next, err := editRedactRule(s.RedactRules, in.At, in.Was, in.Rule)
+			if err != nil {
+				return err
+			}
+			s.RedactRules = next
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3034,9 +3053,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.RedactActions = in.Actions
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.RedactActions = in.Actions
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3051,9 +3071,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		s.RedactAllow = in.Allow
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.RedactAllow = in.Allow
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3074,9 +3095,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, fmt.Errorf("a GitHub token is one word, without spaces"))
 			return
 		}
-		s := settings.Load()
-		s.GitHubToken = tok
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.GitHubToken = tok
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3095,21 +3117,18 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 			fail(rw, err)
 			return
 		}
-		s := settings.Load()
-		if in.Server != nil {
-			s.BarkServer = *in.Server
-		}
-		if in.Key != nil {
-			s.BarkKey = *in.Key
-		}
-		if in.Daily != nil {
-			s.BarkDaily = *in.Daily
-		}
-		if err := settings.CheckBark(s.BarkServer, s.BarkKey, s.BarkDaily); err != nil {
-			fail(rw, err)
-			return
-		}
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			if in.Server != nil {
+				s.BarkServer = *in.Server
+			}
+			if in.Key != nil {
+				s.BarkKey = *in.Key
+			}
+			if in.Daily != nil {
+				s.BarkDaily = *in.Daily
+			}
+			return settings.CheckBark(s.BarkServer, s.BarkKey, s.BarkDaily)
+		}); err != nil {
 			fail(rw, err)
 			return
 		}
@@ -3150,9 +3169,10 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 				return
 			}
 		}
-		s := settings.Load()
-		s.UpdateMirror = m
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.UpdateMirror = m
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}

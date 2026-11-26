@@ -503,13 +503,10 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			fail(rw, err)
 			return
 		}
-		s, err := settings.LoadChecked()
-		if err != nil {
-			fail(rw, err)
-			return
-		}
-		s.PluginPageOrder = in.Order
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.PluginPageOrder = in.Order
+			return nil
+		}); err != nil {
 			fail(rw, err)
 			return
 		}

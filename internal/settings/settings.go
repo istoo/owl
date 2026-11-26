@@ -2268,6 +2268,26 @@ func Save(s Settings) error {
 	return save(s, false)
 }
 
+// Update changes the settings as they are stored now, under the file's own
+// lock: fn is given what the file holds as this is called, not a copy a
+// request read before, and what it changes is saved. Two routes changing
+// one field each at once therefore both stand: neither writes over the
+// other's change with a snapshot read before it (a lost update).
+func Update(fn func(*Settings) error) (Settings, error) {
+	defer lockFile()()
+	s, err := loadChecked()
+	if err != nil {
+		return Settings{}, err
+	}
+	if err := fn(&s); err != nil {
+		return Settings{}, err
+	}
+	if err := save(s, false); err != nil {
+		return Settings{}, err
+	}
+	return load(), nil
+}
+
 // SessionReads is the user's answer to which agents' session files owl
 // reads. Before it is asked (Asked false) no agent's are read. Then an
 // agent named in Agents is read as it says, and any other as All says:

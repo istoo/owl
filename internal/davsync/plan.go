@@ -110,8 +110,10 @@ func PreviewWith(ctx context.Context, c Config) (Plan, error) {
 	var p Plan
 	err := locked(func() error {
 		if old, ok := Load(); ok {
-			if c.Password == "" && c.URL == old.URL && c.User == old.User && c.Endpoint == old.Endpoint {
-				c.Password = old.Password
+			// the same account as Configure keeps a saved password for: the
+			// same server and user (or repository, or S3 key), never another
+			if kept, _ := password(old.saved(c), c); kept {
+				c.Password = old.saved(c).Password
 			}
 			if c.Passphrase == "" {
 				c.Passphrase = old.Passphrase

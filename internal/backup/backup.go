@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -308,6 +309,16 @@ func withoutKeys(p provider.Provider) provider.Provider {
 	p.Key, p.KeyName, p.Keys, p.KeyProtocol, p.KeyWeight, p.KeyPlan = "", "", nil, "", 0, ""
 	p.BalanceToken = ""
 	p.AccessKeyID, p.SecretAccessKey = "", ""
+	// a proxy typed with its login (socks5://user:pass@host:port) carries a
+	// password too, in the provider's own address and each account's
+	p.Proxy = stripProxyCreds(p.Proxy)
+	if len(p.AccountProxies) > 0 {
+		ap := make(map[string]string, len(p.AccountProxies))
+		for k, v := range p.AccountProxies {
+			ap[k] = stripProxyCreds(v)
+		}
+		p.AccountProxies = ap
+	}
 	if len(p.Headers) > 0 {
 		h := map[string]string{}
 		for k, v := range p.Headers {
@@ -318,6 +329,29 @@ func withoutKeys(p provider.Provider) provider.Provider {
 		p.Headers = h
 	}
 	return p
+}
+
+// stripProxyCreds takes a proxy address's inline login out: a backup
+// without keys carries no password, and one typed as
+// socks5://user:pass@host:port has it. A named proxy ("@px…") is a
+// reference, not an address, and stays as it is.
+func stripProxyCreds(raw string) string {
+	if raw == "" || strings.HasPrefix(raw, "@") {
+		return raw
+	}
+	// an address with no scheme is http, as settings.CheckProxy reads it:
+	// "host:port" and a bare "user:pass@host:port" too
+	added := ""
+	p := raw
+	if !strings.Contains(p, "://") {
+		added, p = "http://", "http://"+p
+	}
+	u, err := url.Parse(p)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = nil
+	return strings.TrimPrefix(u.String(), added)
 }
 
 // Seal encrypts the bundle under the passphrase.

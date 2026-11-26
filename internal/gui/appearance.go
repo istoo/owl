@@ -390,13 +390,11 @@ func setWallpaper(b []byte, remove bool) error {
 			return err
 		}
 	}
-	s, err := settings.LoadChecked()
-	if err != nil {
-		return err
-	}
 	if remove {
-		s.Wallpaper = 0
-		if err := settings.Save(s); err != nil {
+		if _, err := settings.Update(func(s *settings.Settings) error {
+			s.Wallpaper = 0
+			return nil
+		}); err != nil {
 			return err
 		}
 		if err := os.Remove(settings.WallpaperPath()); err != nil && !os.IsNotExist(err) {
@@ -411,6 +409,9 @@ func setWallpaper(b []byte, remove bool) error {
 		return err
 	}
 	// a new stamp, so the page asks for the new picture, not its cached one
-	s.Wallpaper = max(time.Now().UnixMilli(), s.Wallpaper+1)
-	return settings.Save(s)
+	_, err := settings.Update(func(s *settings.Settings) error {
+		s.Wallpaper = max(time.Now().UnixMilli(), s.Wallpaper+1)
+		return nil
+	})
+	return err
 }
