@@ -178,6 +178,15 @@ func Set(on bool) error {
 		return nil
 	}
 	dl.stop()
+	// a read in flight would write vectors.bin into the folder about to be
+	// deleted: stop it and wait for it to leave before deleting (#48)
+	idx.cmu.Lock()
+	if idx.cancel != nil {
+		idx.cancel()
+	}
+	idx.cmu.Unlock()
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 	unload()
 	store.mu.Lock()
 	store.v = nil
@@ -344,7 +353,12 @@ func key(m *memory.Memory) [32]byte { return sha256.Sum256([]byte(passage(m))) }
 var reading atomic.Bool
 
 var idx struct {
-	mu     sync.Mutex // one read at a time
+	mu sync.Mutex // one read at a time
+	// cmu guards cancel and busy, so Set can stop a read without waiting
+	// on mu, which a read holds for its whole run (#48)
+	cmu    sync.Mutex
+	cancel context.CancelFunc
+	busy   bool
 	failed string
 }
 
@@ -385,8 +399,31 @@ func Keep(ctx context.Context, tick time.Duration) {
 // text yet, keeps the vectors (dropping those of texts gone) and says how
 // many it read. One goes at a time, in this owl and across them.
 func Index(ctx context.Context) (int, error) {
+	idx.cmu.Lock()
+	if idx.busy {
+		idx.cmu.Unlock()
+		return 0, nil
+	}
+	idx.busy = true
+	// Set takes this cancel before it waits on mu, so a read in flight ends
+	// before the folder it would write to is deleted (#48)
+	ctx, cancel := context.WithCancel(ctx)
+	idx.cancel = cancel
+	idx.cmu.Unlock()
+
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	defer func() {
+		cancel()
+		idx.cmu.Lock()
+		idx.cancel, idx.busy = nil, false
+		idx.cmu.Unlock()
+	}()
+
+	stopped := func() bool { return ctx.Err() != nil || !On() }
+	if stopped() {
+		return 0, nil
+	}
 	unlock, held := filelock.Lock(filepath.Join(dir(), "vectors.lock"), 0)
 	if !held {
 		return 0, nil
@@ -410,6 +447,9 @@ func Index(ctx context.Context) (int, error) {
 		}
 	}
 	if len(todo) == 0 {
+		if stopped() {
+			return 0, nil
+		}
 		if vs.prune(keep) {
 			return 0, vs.save()
 		}
@@ -430,17 +470,25 @@ func Index(ctx context.Context) (int, error) {
 		vs.put(key(m), e.Embed(passage(m)))
 		n++
 		if n%50 == 0 {
+			// the search was switched off while this ran: don't write the
+			// folder Set is deleting back
+			if stopped() {
+				return n, nil
+			}
 			if err := vs.save(); err != nil {
 				return n, err
 			}
 		}
+	}
+	if stopped() {
+		return n, nil
 	}
 	vs.prune(keep)
 	if err := vs.save(); err != nil {
 		return n, err
 	}
 	idx.failed = ""
-	return n, ctx.Err()
+	return n, nil
 }
 
 // similar is memory.Semantic: each memory of pool with a vector, and its

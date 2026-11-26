@@ -152,11 +152,22 @@ func pathsOf(v any) []string {
 }
 
 // inside resolves a path a manifest names against the plugin's folder: one
-// that leaves it is refused.
+// that leaves it is refused. A path that is, or goes through, a symlink out
+// of the folder is refused too: a plugin must not read the user's files
+// through a link its manifest names (#46).
 func inside(dir, p string) (string, bool) {
 	p = filepath.Join(dir, filepath.FromSlash(strings.TrimPrefix(p, "./")))
 	rel, err := filepath.Rel(dir, p)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	root := realDir(dir)
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		// p may not be there yet: judge the nearest folder above it that is
+		real = realBelow(p)
+	}
+	if !within(real, root) {
 		return "", false
 	}
 	return p, true

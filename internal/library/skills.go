@@ -344,7 +344,11 @@ func copyIn(p, name string) error {
 	// then removed: removing it in place can fail part-way (a file held open
 	// on Windows), which would leave the agent a copy with no SKILL.md and no
 	// marker that owl no longer knows for its own.
-	old := oldPath(p, name)
+	old, err := oldPath(p, name)
+	if err != nil {
+		os.RemoveAll(next)
+		return err
+	}
 	if err := os.Rename(p, old); err != nil {
 		os.RemoveAll(next)
 		return err
@@ -366,19 +370,31 @@ func copyIn(p, name string) error {
 // the new one is put in its place.
 func oldPrefix(name string) string { return "." + name + ".owl-old" }
 
-// oldPath is a free name beside p to move the old copy of a skill aside to.
-func oldPath(p, name string) string {
+// oldPath is a free name beside p to move the old copy of a skill aside
+// to. It stops at an error other than "not there" (a name under a path
+// that is a file, EACCES, ENAMETOOLONG) rather than trying every number
+// forever, which held library.mu (#40).
+func oldPath(p, name string) (string, error) {
 	dir := filepath.Dir(p)
-	for i := 0; ; i++ {
+	for i := 0; i < oldTries; i++ {
 		o := filepath.Join(dir, oldPrefix(name))
 		if i > 0 {
 			o += "-" + strconv.Itoa(i)
 		}
-		if _, err := os.Lstat(o); errors.Is(err, fs.ErrNotExist) {
-			return o
+		_, err := os.Lstat(o)
+		if err == nil {
+			continue
 		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return o, nil
+		}
+		return "", err
 	}
+	return "", fmt.Errorf("couldn't find a free name for the old copy of %s", name)
 }
+
+// oldTries bounds the names tried beside a skill before giving up.
+const oldTries = 10000
 
 // dropOld removes, best effort, the old copies of a skill earlier swaps
 // moved aside beside p but couldn't remove.
@@ -2753,6 +2769,7 @@ func copyDir(from, to string) error {
 	if src, dst := realDir(from), realBelow(to); src == dst || within(dst, src) {
 		return fmt.Errorf("can't copy %s into itself", from)
 	}
+	root := realDir(from)
 	return filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -2766,10 +2783,26 @@ func copyDir(from, to string) error {
 			return os.MkdirAll(dst, 0o755)
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
-			if t, err := os.Readlink(p); err == nil {
-				return os.Symlink(t, dst)
+			t, err := os.Readlink(p)
+			if err != nil {
+				return nil
 			}
-			return nil
+			// a link that leads out of what is copied is left out: the copy
+			// would read the user's files through it (#46)
+			target := t
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			target = filepath.Clean(target)
+			if real, err := filepath.EvalSymlinks(target); err == nil {
+				target = real
+			} else {
+				target = realBelow(target)
+			}
+			if !within(target, root) {
+				return nil
+			}
+			return os.Symlink(t, dst)
 		}
 		if !d.Type().IsRegular() {
 			return nil
@@ -2820,11 +2853,23 @@ func (e *leftBehind) Unwrap() error { return e.err }
 // way, into a backup of its own: nothing of the user's is just deleted.
 func setAside(agent, p string) (string, error) {
 	dst := filepath.Join(BackupDir(), time.Now().Format("2006-01-02_15-04-05.000"), fileName(agent), "skills", filepath.Base(p))
-	for i := 2; ; i++ {
-		if _, err := os.Lstat(dst); errors.Is(err, fs.ErrNotExist) {
+	free := false
+	for i := 2; i < oldTries; i++ {
+		_, err := os.Lstat(dst)
+		if errors.Is(err, fs.ErrNotExist) {
+			free = true
 			break
 		}
+		if err != nil {
+			// a name under a path that is a file, EACCES and the like: it
+			// never says "not there", so trying the next number forever
+			// would hold library.mu (#40)
+			return "", err
+		}
 		dst = filepath.Join(filepath.Dir(dst), fmt.Sprintf("%s-%d", filepath.Base(p), i))
+	}
+	if !free {
+		return "", fmt.Errorf("couldn't find a free name to set %s aside to", filepath.Base(p))
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", err

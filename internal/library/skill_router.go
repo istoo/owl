@@ -231,7 +231,8 @@ func routerRules(t *Target, routed map[string]bool) []string {
 	if t.Agent == nil || t.Agent.Plugin != "" || t.Settings == "" {
 		return nil
 	}
-	if id, _, _ := strings.Cut(t.Agent.ID, "@"); id != "claude" {
+	id, _, _ := strings.Cut(t.Agent.ID, "@")
+	if id, _, _ = strings.Cut(id, "#"); id != "claude" {
 		return nil
 	}
 	rule := func(dir string) string { return "Read(/" + claudePath(dir) + "/**)" }

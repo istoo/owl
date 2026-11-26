@@ -29,6 +29,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -41,6 +42,7 @@ import (
 	"github.com/istoo/owl/internal/edit"
 	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/lastgood"
+	"github.com/istoo/owl/internal/netguard"
 	"github.com/istoo/owl/internal/netproxy"
 	"github.com/istoo/owl/internal/redact"
 	"github.com/istoo/owl/internal/settings"
@@ -587,6 +589,15 @@ func (e *tokenError) Error() string {
 
 // tokenRequest posts form to the record's token endpoint, as its client.
 func tokenRequest(ctx context.Context, r Record, form url.Values) (tokens, error) {
+	tu, err := url.Parse(r.TokenURL)
+	if err != nil {
+		return tokens{}, fmt.Errorf("the sign-in's token endpoint isn't a URL (%q)", r.TokenURL)
+	}
+	if r.URL != "" {
+		if err := targetAllowed(ctx, r.URL, tu); err != nil {
+			return tokens{}, err
+		}
+	}
 	if r.AuthMethod != "client_secret_basic" {
 		form.Set("client_id", r.ClientID)
 	}
@@ -602,7 +613,7 @@ func tokenRequest(ctx context.Context, r Record, form url.Values) (tokens, error
 	if r.AuthMethod == "client_secret_basic" {
 		req.SetBasicAuth(url.QueryEscape(r.ClientID), url.QueryEscape(r.Secret))
 	}
-	resp, err := Client.Do(req)
+	resp, err := clientFor(ctx, r.URL).Do(req)
 	if err != nil {
 		return tokens{}, err
 	}
@@ -637,6 +648,9 @@ func tokenRequest(ctx context.Context, r Record, form url.Values) (tokens, error
 
 // meta is what discovery found: where the sign-in goes.
 type meta struct {
+	// Server is the MCP server's URL, the one the sign-in is for: it
+	// decides whether the endpoints below may be on this network.
+	Server       string
 	Resource     string
 	Issuer       string
 	AuthorizeURL string
@@ -657,6 +671,99 @@ func WebURL(u *url.URL) bool {
 	}
 	s := strings.ToLower(u.Scheme)
 	return s == "https" || s == "http"
+}
+
+// serverLocal says the server at serverURL is on this machine or the user's
+// own network, where its sign-in may name loopback and private addresses
+// too (a local MCP server, and every test's httptest server). A server on
+// the open internet may not: its metadata, registration and token endpoints
+// must be public, or a hostile server would make owl probe 127.0.0.1, the
+// user's LAN or a cloud metadata endpoint for it. A variable for tests.
+var serverLocal = func(ctx context.Context, serverURL string) bool {
+	u, err := url.Parse(serverURL)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	return hostLocal(ctx, u.Hostname())
+}
+
+// hostLocal says every address host resolves to is off the open internet.
+func hostLocal(ctx context.Context, host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		return !netguard.Public(a)
+	}
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		if netguard.Public(a) || netguard.FakeIP(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// targetAllowed is whether u may be fetched as part of signing in to the
+// server at serverURL: a web address, and, for a server on the open
+// internet, one that resolves only to public addresses. A fake-IP
+// resolver's answer (netguard.FakeIP) is public: Clash's TUN mode and
+// Loon answer every name with one.
+func targetAllowed(ctx context.Context, serverURL string, u *url.URL) error {
+	if !WebURL(u) {
+		return fmt.Errorf("the server's sign-in names %q, which isn't a web address", u.String())
+	}
+	if serverLocal(ctx, serverURL) {
+		return nil
+	}
+	host := u.Hostname()
+	if a, err := netip.ParseAddr(host); err == nil {
+		if !netguard.Public(a) && !netguard.FakeIP(a) {
+			return privateTarget(serverURL, u)
+		}
+		return nil
+	}
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return fmt.Errorf("couldn't check where the sign-in's %s is: %w", host, err)
+	}
+	for _, a := range addrs {
+		if !netguard.Public(a) && !netguard.FakeIP(a) {
+			return privateTarget(serverURL, u)
+		}
+	}
+	return nil
+}
+
+func privateTarget(serverURL string, u *url.URL) error {
+	host := serverURL
+	if su, err := url.Parse(serverURL); err == nil && su.Host != "" {
+		host = su.Host
+	}
+	return fmt.Errorf("the sign-in to %s names %s, which is on a private network, not the open internet", host, u.Host)
+}
+
+// clientFor is Client as a sign-in to serverURL: a redirect is followed
+// only to an address targetAllowed allows.
+func clientFor(ctx context.Context, serverURL string) *http.Client {
+	c := *Client
+	prev := Client.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := targetAllowed(ctx, serverURL, req.URL); err != nil {
+			return err
+		}
+		if prev != nil {
+			return prev(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &c
 }
 
 // challenge is the server's 401: its resource metadata and the scope it
@@ -712,14 +819,18 @@ func authParams(s string) map[string]string {
 	return out
 }
 
-func getJSON(ctx context.Context, u string, v any) bool {
+func getJSON(ctx context.Context, serverURL, u string, v any) bool {
+	uu, err := url.Parse(u)
+	if err != nil || targetAllowed(ctx, serverURL, uu) != nil {
+		return false
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return false
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("MCP-Protocol-Version", protocolVersion)
-	resp, err := Client.Do(req)
+	resp, err := clientFor(ctx, serverURL).Do(req)
 	if err != nil {
 		return false
 	}
@@ -747,7 +858,7 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", protocolVersion)
-	resp, err := Client.Do(req)
+	resp, err := clientFor(ctx, serverURL).Do(req)
 	if err != nil {
 		return meta{}, fmt.Errorf("couldn't reach %s: %w", su.Host, err)
 	}
@@ -757,6 +868,18 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 		return meta{}, ErrNoSignIn
 	}
 	metadataURL, scope := challenge(resp.Header)
+	if metadataURL != "" {
+		// the 401 names it, and a server on the open internet must not name
+		// one on this machine or a private network: that would make owl probe
+		// it for the server's account
+		mu, err := url.Parse(metadataURL)
+		if err != nil {
+			return meta{}, fmt.Errorf("the server names a resource metadata that isn't a URL (%q)", metadataURL)
+		}
+		if err := targetAllowed(ctx, serverURL, mu); err != nil {
+			return meta{}, err
+		}
+	}
 
 	var prm struct {
 		Resource             string   `json:"resource"`
@@ -773,12 +896,12 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 	tries = append(tries, origin(su)+"/.well-known/oauth-protected-resource")
 	found := false
 	for _, u := range tries {
-		if getJSON(ctx, u, &prm) && len(prm.AuthorizationServers) > 0 {
+		if getJSON(ctx, serverURL, u, &prm) && len(prm.AuthorizationServers) > 0 {
 			found = true
 			break
 		}
 	}
-	m := meta{Resource: serverURL, Scope: scope}
+	m := meta{Server: serverURL, Resource: serverURL, Scope: scope}
 	issuer := origin(su)
 	if found {
 		issuer = strings.TrimRight(prm.AuthorizationServers[0], "/")
@@ -802,6 +925,9 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 	if err != nil || iu.Host == "" {
 		return meta{}, fmt.Errorf("the server names an authorization server that isn't a URL (%q)", issuer)
 	}
+	if err := targetAllowed(ctx, serverURL, iu); err != nil {
+		return meta{}, err
+	}
 	var asTries []string
 	if p := strings.TrimRight(iu.Path, "/"); p != "" {
 		asTries = []string{origin(iu) + "/.well-known/oauth-authorization-server" + p,
@@ -811,7 +937,7 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 	}
 	got := false
 	for _, u := range asTries {
-		if getJSON(ctx, u, &as) && as.Authorize != "" && as.Token != "" {
+		if getJSON(ctx, serverURL, u, &as) && as.Authorize != "" && as.Token != "" {
 			got = true
 			break
 		}
@@ -820,6 +946,27 @@ func discover(ctx context.Context, serverURL string) (meta, error) {
 	case got:
 		if len(as.Challenges) > 0 && !contains(as.Challenges, "S256") {
 			return meta{}, errors.New("the server's sign-in doesn't offer PKCE (S256), which owl needs")
+		}
+		// every endpoint owl is sent to must be safe for a server on the
+		// open internet: not on this machine or a private network
+		for _, e := range []struct{ name, url string }{
+			{"authorization", as.Authorize}, {"token", as.Token}, {"registration", as.Register},
+		} {
+			if e.url == "" {
+				continue
+			}
+			eu, err := url.Parse(e.url)
+			if err != nil {
+				return meta{}, fmt.Errorf("the server's %s endpoint isn't a URL (%q)", e.name, e.url)
+			}
+			if e.name == "authorization" && !WebURL(eu) {
+				// Start refuses a page that isn't on the web with its own
+				// message, which the GUI has in every language
+				continue
+			}
+			if err := targetAllowed(ctx, serverURL, eu); err != nil {
+				return meta{}, err
+			}
 		}
 		m.Issuer, m.AuthorizeURL, m.TokenURL, m.RegisterURL, m.AuthMethods = as.Issuer, as.Authorize, as.Token, as.Register, as.AuthMethods
 		m.Scope = withOffline(m.Scope, as.ScopesSupport)
@@ -878,6 +1025,13 @@ func register(ctx context.Context, m meta, redirect string) (id, secret, method 
 	if m.RegisterURL == "" {
 		return "", "", "", ErrNoRegistration
 	}
+	ru, err := url.Parse(m.RegisterURL)
+	if err != nil {
+		return "", "", "", fmt.Errorf("the sign-in's registration endpoint isn't a URL (%q)", m.RegisterURL)
+	}
+	if err := targetAllowed(ctx, m.Server, ru); err != nil {
+		return "", "", "", err
+	}
 	method = "none"
 	if len(m.AuthMethods) > 0 && !contains(m.AuthMethods, "none") {
 		// the metadata's order is no preference: one listing private_key_jwt
@@ -909,7 +1063,7 @@ func register(ctx context.Context, m meta, redirect string) (id, secret, method 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	resp, err := Client.Do(req)
+	resp, err := clientFor(ctx, m.Server).Do(req)
 	if err != nil {
 		return "", "", "", err
 	}

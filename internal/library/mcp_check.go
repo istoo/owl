@@ -885,6 +885,9 @@ type httpSession struct {
 
 	mu  sync.Mutex
 	hdr http.Header
+	// renewMu holds one renewal at a time: two requests that meet the
+	// same stale token's 401 must not both renew it (#36)
+	renewMu sync.Mutex
 	// tok is owl's own token, when it is signed in: one the server
 	// refuses is renewed once and asked again with, as the gateway's
 	// relay does, and one refused just after it was renewed is a sign-in
@@ -908,16 +911,16 @@ func newHTTPSession(ctx context.Context, s *Server) (*httpSession, *ServerHealth
 	return c, nil
 }
 
-func (c *httpSession) post(ctx context.Context, body []byte) (*http.Response, error) {
+func (c *httpSession) post(ctx context.Context, body []byte) (*http.Response, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.s.URL, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	c.mu.Lock()
 	for k, v := range c.hdr {
 		req.Header[k] = slices.Clone(v)
 	}
-	session, version := c.session, c.version
+	session, version, tok := c.session, c.version, c.tok
 	c.mu.Unlock()
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -925,36 +928,75 @@ func (c *httpSession) post(ctx context.Context, body []byte) (*http.Response, er
 		req.Header.Set("Mcp-Session-Id", session)
 		req.Header.Set("MCP-Protocol-Version", version)
 	}
-	return checkClient.Do(req)
+	res, err := checkClient.Do(req)
+	return res, tok, err
 }
 
 // call posts a request and reads its reply, as JSON or from an event
 // stream.
 func (c *httpSession) call(ctx context.Context, id int, body []byte) (*rpcMsg, *ServerHealth) {
-	res, err := c.post(ctx, body)
+	return c.callOnce(ctx, id, body, false)
+}
+
+// callOnce is call, retried saying it already asked again with the token
+// this session held then. A 401 is judged by the token the refused request
+// actually carried: a request that met the same stale token after another
+// request renewed it asks again with the new one, and never marks the new
+// token dead (#36).
+func (c *httpSession) callOnce(ctx context.Context, id int, body []byte, retried bool) (*rpcMsg, *ServerHealth) {
+	res, sentTok, err := c.post(ctx, body)
 	if err != nil {
 		h := netHealth(ctx, err)
 		return nil, &h
 	}
 	defer res.Body.Close()
-	c.mu.Lock()
-	tok, renewed := c.tok, c.renewed
-	c.mu.Unlock()
-	if res.StatusCode == 401 && tok != "" {
-		if renewed {
-			mcpauth.Rejected(c.s.Name, tok)
-		} else {
-			io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
-			fresh, err := mcpauth.Renew(ctx, c.s.Name, tok)
-			if err != nil {
-				return nil, &ServerHealth{State: "auth", Code: 401, OAuth: true, Detail: err.Error()}
+	if res.StatusCode == 401 && sentTok != "" {
+		c.mu.Lock()
+		cur, renewed := c.tok, c.renewed
+		c.mu.Unlock()
+		switch {
+		case cur != sentTok:
+			// another request renewed the token meanwhile: ask again with
+			// the new one. This is the one renewal of this session, so the
+			// retry can't loop.
+			if retried {
+				h := refused(res)
+				return nil, &h
 			}
-			c.mu.Lock()
-			c.renewed, c.tok = true, fresh
-			c.hdr.Set("Authorization", "Bearer "+fresh)
-			c.mu.Unlock()
-			return c.call(ctx, id, body)
+			io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+			return c.callOnce(ctx, id, body, true)
+		case renewed:
+			// what was sent is the token renewal made, and the server
+			// refuses it: the sign-in has run out
+			mcpauth.Rejected(c.s.Name, sentTok)
+			h := refused(res)
+			return nil, &h
+		case retried:
+			h := refused(res)
+			return nil, &h
 		}
+		io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+		// one renewal at a time: a request that met the same 401 waits here
+		// and then asks again with the token the first made
+		c.renewMu.Lock()
+		c.mu.Lock()
+		cur, renewed = c.tok, c.renewed
+		c.mu.Unlock()
+		if cur != sentTok || renewed {
+			c.renewMu.Unlock()
+			return c.callOnce(ctx, id, body, true)
+		}
+		fresh, err := mcpauth.Renew(ctx, c.s.Name, sentTok)
+		if err != nil {
+			c.renewMu.Unlock()
+			return nil, &ServerHealth{State: "auth", Code: 401, OAuth: true, Detail: err.Error()}
+		}
+		c.mu.Lock()
+		c.renewed, c.tok = true, fresh
+		c.hdr.Set("Authorization", "Bearer "+fresh)
+		c.mu.Unlock()
+		c.renewMu.Unlock()
+		return c.callOnce(ctx, id, body, true)
 	}
 	if res.StatusCode == 401 || res.StatusCode == 403 {
 		h := refused(res)
@@ -1000,7 +1042,7 @@ func (c *httpSession) initialize(ctx context.Context, init []byte) *ServerHealth
 	}
 	c.mu.Unlock()
 	stepTo(ctx, "notifications/initialized")
-	if res, err := c.post(ctx, initializedNote); err == nil {
+	if res, _, err := c.post(ctx, initializedNote); err == nil {
 		io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
 		res.Body.Close()
 	} else if ctx.Err() != nil {
@@ -1122,6 +1164,43 @@ func sseEvents(r io.Reader, done <-chan struct{}) <-chan sseEvent {
 	return out
 }
 
+// sseEndpoint is the address an older SSE server's endpoint event names,
+// resolved against the stream's own URL. It must be that same server (same
+// scheme, host and port): the POSTs that follow carry every header the
+// stream's GET carried, owl's sign-in among them, so an endpoint on
+// another host would leak them and let a hostile server aim owl at this
+// machine (127.0.0.1, a private network) (#37).
+func sseEndpoint(base *url.URL, data string) (*url.URL, error) {
+	u, err := base.Parse(strings.TrimSpace(data))
+	if err != nil {
+		return nil, err
+	}
+	if !sameOrigin(base, u) {
+		return nil, fmt.Errorf("its endpoint is another server's address (%s)", u)
+	}
+	return u, nil
+}
+
+// sameOrigin is whether a and b are the same scheme, host and port, with a
+// default port for the scheme counted as that port.
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) && portOf(a) == portOf(b)
+}
+
+func portOf(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+	return ""
+}
+
 // checkSSE checks a server on the older SSE transport: its stream names
 // where to post, and the replies come back on the stream.
 func checkSSE(ctx context.Context, s *Server) ServerHealth {
@@ -1174,7 +1253,7 @@ func checkSSE(ctx context.Context, s *Server) ServerHealth {
 		}
 		if e.name == "endpoint" {
 			base, _ := url.Parse(s.URL)
-			endpoint, err = base.Parse(strings.TrimSpace(e.data))
+			endpoint, err = sseEndpoint(base, e.data)
 			if err != nil {
 				return failed("protocol", "endpoint: "+err.Error())
 			}

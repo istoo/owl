@@ -97,8 +97,10 @@ func relink(agent, p, name string) (bool, error) {
 		return false, nil
 	}
 	if current {
-		old := oldPath(p, name)
-		if err = os.Rename(p, old); err == nil {
+		old, oerr := oldPath(p, name)
+		if oerr != nil {
+			err = oerr
+		} else if err = os.Rename(p, old); err == nil {
 			// best effort: what's left is tried again on the next sync
 			defer os.RemoveAll(old)
 		}

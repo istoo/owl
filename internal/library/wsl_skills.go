@@ -110,7 +110,10 @@ func (l *Library) wslRelink(t *Target) func(id, p, name string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		old := oldPath(p, name)
+		old, oerr := oldPath(p, name)
+		if oerr != nil {
+			return false, oerr
+		}
 		if err := os.Rename(p, old); err != nil {
 			return false, err
 		}

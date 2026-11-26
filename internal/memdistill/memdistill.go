@@ -635,13 +635,20 @@ func Keep(ctx context.Context, first, interval time.Duration, auto func() string
 		// switched off (the default): nothing to read, nor a model to
 		// ask. auto picks one from every provider's models, and that
 		// loaded the whole catalog (3.6 MB) for a run that read nothing
-		if st, err := Load(); err == nil && !st.On {
+		st, lerr := Load()
+		on := lerr != nil || st.On // a state that can't be read is read as before
+		dream := lerr == nil && Dreams(st, now())
+		if !on && !dream {
 			continue
 		}
-		if _, err := Run(ctx, auto(), complete); err != nil && !errors.Is(err, ErrRunning) {
-			log.Println("memory: reading conversations:", err) // and in the Memory tab
+		// the nightly tidy is switched on apart from distilling: it runs
+		// whether distilling is on or not (#42)
+		if on {
+			if _, err := Run(ctx, auto(), complete); err != nil && !errors.Is(err, ErrRunning) {
+				log.Println("memory: reading conversations:", err) // and in the Memory tab
+			}
 		}
-		if st, err := Load(); err == nil && Dreams(st, now()) {
+		if dream {
 			if _, err := Dream(ctx, auto(), complete); err != nil && !errors.Is(err, ErrRunning) {
 				log.Println("memory: tidying:", err)
 			}

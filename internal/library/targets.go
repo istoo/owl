@@ -164,6 +164,7 @@ func targetOf(a *agent.Agent) *Target {
 		// default ~/.claude's are in ~/.claude.json beside it
 		t.Instructions = filepath.Join(a.Dir, "CLAUDE.md")
 		t.Skills = filepath.Join(a.Dir, "skills")
+		t.Settings = filepath.Join(a.Dir, "settings.json")
 		mcp := filepath.Join(a.Dir, ".claude.json")
 		if filepath.Clean(a.Dir) == filepath.Join(h, ".claude") {
 			mcp = filepath.Join(h, ".claude.json")

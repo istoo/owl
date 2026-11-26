@@ -72,9 +72,15 @@ func specOf(s *Server) (runSpec, bool) {
 	return runSpec{Command: cmd, Args: slices.Clone(args), Env: env}, true
 }
 
+// runKey is a session as the server it belongs to and its Mcp-Session-Id:
+// two servers given the same id by their client keep separate sessions, so
+// one's session is never overwritten by the other's, nor ended by a DELETE
+// aimed at the other (#39).
+type runKey struct{ name, sid string }
+
 var runs struct {
 	sync.Mutex
-	sessions map[string]*runSession
+	sessions map[runKey]*runSession
 	// given are the servers the last sync gave Codex this way, by name
 	given map[string]runSpec
 	// wired is, by agent, whether the last sync gave it servers this way
@@ -214,16 +220,17 @@ func newSessionID() string {
 // session is the session sid of name, made with init when there is none:
 // one owl was restarted under is taken up as it is.
 func session(sid, name string, spec runSpec, init json.RawMessage) *runSession {
+	k := runKey{name: name, sid: sid}
 	runs.Lock()
 	defer runs.Unlock()
-	if s := runs.sessions[sid]; s != nil && s.name == name {
+	if s := runs.sessions[k]; s != nil {
 		return s
 	}
 	if runs.sessions == nil {
-		runs.sessions = map[string]*runSession{}
+		runs.sessions = map[runKey]*runSession{}
 	}
 	s := &runSession{id: sid, name: name, spec: spec, init: init, last: time.Now()}
-	runs.sessions[sid] = s
+	runs.sessions[k] = s
 	runs.janitor.Do(func() { go runJanitor() })
 	return s
 }
@@ -306,20 +313,23 @@ func (s *runSession) ensure() (*runChild, json.RawMessage, error) {
 // newest stream open; a request with none open is refused, as it would
 // wait for an answer that never comes.
 func (s *runSession) deliver(c *runChild, line []byte, id json.RawMessage, method string) {
-	switch method {
-	case "notifications/tools/list_changed":
-		forget(s.spec, "tools/list")
-	case "notifications/prompts/list_changed":
-		forget(s.spec, "prompts/list")
-	case "notifications/resources/list_changed":
-		forget(s.spec, "resources/list", "resources/templates/list")
-	}
+	// the spec and the streams are read under the same lock session() and
+	// runGiven() write them under (#39)
 	s.mu.Lock()
+	spec := s.spec
 	var to chan []byte
 	if n := len(s.streams); n > 0 {
 		to = s.streams[n-1]
 	}
 	s.mu.Unlock()
+	switch method {
+	case "notifications/tools/list_changed":
+		forget(spec, "tools/list")
+	case "notifications/prompts/list_changed":
+		forget(spec, "prompts/list")
+	case "notifications/resources/list_changed":
+		forget(spec, "resources/list", "resources/templates/list")
+	}
 	if to != nil {
 		select {
 		case to <- line:
@@ -580,8 +590,9 @@ func ServeRun(w http.ResponseWriter, r *http.Request, name string) {
 	switch r.Method {
 	case http.MethodDelete:
 		runs.Lock()
-		s := runs.sessions[sid]
-		delete(runs.sessions, sid)
+		k := runKey{name: name, sid: sid}
+		s := runs.sessions[k]
+		delete(runs.sessions, k)
 		runs.Unlock()
 		if s != nil {
 			s.stop()

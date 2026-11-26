@@ -59,7 +59,8 @@ type claudeCredentials struct {
 // settings.json (in its config folder, a WSL distro's for one there); ""
 // for any other agent.
 func claudeCredentialsOf(t *Target) string {
-	if id, _, _ := strings.Cut(t.Agent.ID, "@"); id != "claude" || t.Settings == "" {
+	id, _, _ := strings.Cut(t.Agent.ID, "@")
+	if id, _, _ = strings.Cut(id, "#"); id != "claude" || t.Settings == "" {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(t.Settings), ".credentials.json")

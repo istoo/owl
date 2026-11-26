@@ -237,8 +237,16 @@ func Promote(ids []string) (*Memory, error) {
 	}
 	var kept *Memory
 	err := change(func(f *file) error {
+		// an id named twice would merge a memory into itself: it would be
+		// marked superseded by its own id and its Uses doubled, and it
+		// would vanish (#41)
 		var ms []*Memory
+		seen := map[string]bool{}
 		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
 			m := find(f, id)
 			if m == nil || m.Status != Active || projectOfScope(m.Scope) == "" {
 				return ErrNotSuggested
@@ -258,6 +266,9 @@ func Promote(ids []string) (*Memory, error) {
 		k := ms[0]
 		k.Scope = Global
 		for _, o := range ms[1:] {
+			if o == k {
+				continue
+			}
 			for _, tg := range o.Tags {
 				if !slices.Contains(k.Tags, tg) {
 					k.Tags = append(k.Tags, tg)

@@ -210,7 +210,7 @@ func TestRunIdleEnds(t *testing.T) {
 	_, a := call(t, srv, "", fmt.Sprintf(runInit, "thread-a"))
 	first, _ := call(t, srv, a, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo"}}`)
 	runs.Lock()
-	s := runs.sessions[a]
+	s := runs.sessions[runKey{name: "fake", sid: a}]
 	runs.Unlock()
 	c := s.running()
 	if c == nil {
@@ -305,7 +305,7 @@ func TestRunGivenChanged(t *testing.T) {
 	_, a := call(t, srv, "", fmt.Sprintf(runInit, "a"))
 	call(t, srv, a, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo"}}`)
 	runs.Lock()
-	s := runs.sessions[a]
+	s := runs.sessions[runKey{name: "fake", sid: a}]
 	runs.Unlock()
 	c := s.running()
 	runGiven(map[string]runSpec{"fake": spec}) // the same: kept

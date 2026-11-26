@@ -1003,7 +1003,7 @@ func dialSSE(ctx context.Context, s *Server, changed func()) (*streamConn, error
 		}
 		if e.name == "endpoint" {
 			base, _ := url.Parse(s.URL)
-			if endpoint, err = base.Parse(strings.TrimSpace(e.data)); err != nil {
+			if endpoint, err = sseEndpoint(base, e.data); err != nil {
 				res.Body.Close()
 				cancel()
 				return nil, errors.New("endpoint: " + err.Error())

@@ -48,7 +48,7 @@ func TestRunServerAsksOnCallStreamBeforeSendReturns(t *testing.T) {
 	srv, _, _ := runFixture(t)
 	_, sid := call(t, srv, "", fmt.Sprintf(runInit, "thread-a"))
 	runs.Lock()
-	s := runs.sessions[sid]
+	s := runs.sessions[runKey{name: "fake", sid: sid}]
 	runs.Unlock()
 	child := s.running()
 	fallback := s.open()
