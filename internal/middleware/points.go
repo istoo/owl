@@ -261,7 +261,13 @@ func (m *mw) order(h moejs.Hook, pool string, seats []routes.Seat) ([]int, error
 	if err != nil {
 		return nil, err
 	}
-	v, err := p.in.call(h, strategyLimit-time.Since(start), poolV, seatsV, optsV)
+	// what is left of the strategy's time here: asking for a turn with a
+	// run that is already over would fire its timer at once
+	left := strategyLimit - time.Since(start)
+	if left <= 0 {
+		return nil, errTimeout
+	}
+	v, err := p.in.call(h, left, poolV, seatsV, optsV)
 	m.orders.Add(1)
 	if err != nil {
 		return nil, err

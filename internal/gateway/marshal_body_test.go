@@ -130,3 +130,28 @@ func TestMarshalBodyLetsSpentGo(t *testing.T) {
 		t.Errorf("a list not spent was changed: %q", other)
 	}
 }
+
+// A list past bodyKept keeps the items before a later one jsonSize can't
+// measure: a map key encoding/json writes escaped is measured by writing
+// it, not by falling back to json.Marshal after the items before it were
+// let go, which wrote them as null.
+func TestMarshalBodyKeepsItemsBeforeAnUnmeasuredOne(t *testing.T) {
+	big := strings.Repeat("x", 1<<20)
+	list := make([]any, 0, 6)
+	for range 5 {
+		list = append(list, map[string]any{"content": big})
+	}
+	list = append(list, map[string]any{"中文": 1})
+	body := map[string]any{"model": "m", "input": list}
+	want, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := marshalBody(body, "input")
+	if err != nil {
+		t.Fatalf("marshalBody: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("marshalBody %d bytes, json.Marshal %d; got %.80s…", len(got), len(want), got)
+	}
+}

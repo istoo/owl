@@ -55,7 +55,7 @@ func keyLimited(next http.Handler) http.Handler {
 			return
 		}
 		scoped := slices.ContainsFunc(limits, (*access.Limit).Scoped)
-		if strings.HasSuffix(r.URL.Path, "/count_tokens") {
+		if strings.HasSuffix(r.URL.Path, "/count_tokens") || strings.HasSuffix(r.URL.Path, ":countTokens") {
 			if scoped {
 				r = withSpent(r, who, limitClock())
 			}
@@ -81,6 +81,10 @@ func keyLimited(next http.Handler) http.Handler {
 			}
 			r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(b)), int64(len(b))
 			size, model = int64(len(b)), budget.ModelOf(b)
+		}
+		// a Gemini call keeps its model in the path, not the body
+		if model == "" {
+			model = geminiURLModel(r.URL.Path)
 		}
 		now := limitClock()
 		if scoped {
@@ -111,6 +115,19 @@ func keyLimited(next http.Handler) http.Handler {
 		defer release()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// geminiURLModel is the model of a Gemini API path,
+// /v1beta/models/{model}:{method}, "" for another path or none.
+func geminiURLModel(path string) string {
+	call, ok := strings.CutPrefix(path, "/v1beta/models/")
+	if !ok {
+		return ""
+	}
+	if i := strings.LastIndex(call, ":"); i > 0 {
+		return strings.TrimSpace(call[:i])
+	}
+	return ""
 }
 
 // withSpent is r with its caller's spent limits of some models on it

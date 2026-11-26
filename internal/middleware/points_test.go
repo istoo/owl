@@ -386,3 +386,25 @@ func TestRoutingFromFileName(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// A strategy asked with no time left of strategyLimit (the seats' JSON and
+// the runtime's start took it all) isn't given a timer of none or less: it
+// fails open as one that timed out, and the runtime serves the next.
+func TestStrategyWithNoTimeLeftFailsOpen(t *testing.T) {
+	e := file(t, `export const strategies = { first: (p, s) => s.map((_, i) => i).reverse() };`)
+	use(t, e)
+	serve(t)
+	was := strategyLimit
+	strategyLimit = -time.Second // no time left, however quickly the seats go
+	t.Cleanup(func() { strategyLimit = was })
+	if got := order(t, "x/first", 3); !slices.Equal(got, []int{0, 1, 2}) {
+		t.Fatalf("with no time left: %v", got)
+	}
+	if st := States()[e.Spec]; st.Failures != 1 || !strings.Contains(st.Last, "took too long") {
+		t.Fatalf("state %+v", st)
+	}
+	strategyLimit = was
+	if got := order(t, "x/first", 3); !slices.Equal(got, []int{2, 1, 0}) {
+		t.Fatalf("with time again: %v", got)
+	}
+}

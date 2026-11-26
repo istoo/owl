@@ -223,20 +223,12 @@ type inst struct {
 	mu    sync.Mutex
 	armed bool // a call is running, which the timer may stop
 	fired bool
-	run   *Run // the request it serves
+	gen   uint64 // the call arm began, told apart from a timer that outlived it
+	run   *Run   // the request it serves
 }
 
 func (m *mw) newInst() (*inst, error) {
 	in := &inst{m: m, rt: moejs.NewRuntime(moejs.Options{})}
-	in.timer = time.AfterFunc(time.Hour, func() {
-		in.mu.Lock()
-		if in.armed {
-			in.fired = true
-			in.rt.Interrupt(errTimeout)
-		}
-		in.mu.Unlock()
-	})
-	in.timer.Stop()
 	if err := in.rt.SetGlobal("console", in.console()); err != nil {
 		return nil, err
 	}
@@ -266,9 +258,27 @@ func (m *mw) put(in *inst) {
 
 func (in *inst) arm(d time.Duration) {
 	in.mu.Lock()
+	if in.timer != nil {
+		in.timer.Stop()
+	}
+	in.gen++
+	gen := in.gen
 	in.armed, in.fired = true, false
+	// the timer is the call's own: one from a call that has ended may
+	// already be running, and must not stop the call that took its place
+	in.timer = time.AfterFunc(d, func() { in.expire(gen) })
 	in.mu.Unlock()
-	in.timer.Reset(d)
+}
+
+// expire is the timer of the call arm began with gen: when it is still the
+// call running, it is stopped and errTimeout kept.
+func (in *inst) expire(gen uint64) {
+	in.mu.Lock()
+	if in.armed && in.gen == gen {
+		in.fired = true
+		in.rt.Interrupt(errTimeout)
+	}
+	in.mu.Unlock()
 }
 
 // disarm ends what arm began, and says whether the timer stopped it.
@@ -276,8 +286,12 @@ func (in *inst) disarm() bool {
 	in.mu.Lock()
 	in.armed = false
 	fired := in.fired
+	t := in.timer
+	in.timer = nil
 	in.mu.Unlock()
-	in.timer.Stop()
+	if t != nil {
+		t.Stop()
+	}
 	if fired {
 		in.rt.ClearInterrupt()
 	}

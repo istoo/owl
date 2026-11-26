@@ -484,7 +484,11 @@ type realtimeMask struct {
 
 // out is a client's frame masked, or the error to hold it back for.
 func (rm *realtimeMask) out(b []byte) ([]byte, error) {
-	got, err := gwmw.Safely(func() []byte {
+	type out struct {
+		b    []byte
+		hits maskHits
+	}
+	o, err := gwmw.Safely(func() out {
 		var hits []gwmw.Hit
 		switch t := rm.m.(type) {
 		case gwmw.ContextTeller:
@@ -493,14 +497,20 @@ func (rm *realtimeMask) out(b []byte) ([]byte, error) {
 			b, hits = t.JSONHits(b)
 		default:
 			b, _ = rm.m.JSON(b)
-			return b
+			return out{b: b}
 		}
-		if err := blocked(hitsOf(hits)); err != nil {
-			panic(err)
-		}
-		return b
+		return out{b: b, hits: hitsOf(hits)}
 	})
-	return got, err
+	if err != nil {
+		return o.b, err
+	}
+	// outside Safely, as the HTTP path does: a frame held back is a
+	// maskBlocked of its own, 400 and a reason of its own, not a masker
+	// that failed (503, "masking failed")
+	if err := blocked(o.hits); err != nil {
+		return o.b, err
+	}
+	return o.b, nil
 }
 
 // in is a vendor's frame with the masked values back.

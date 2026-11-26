@@ -485,6 +485,11 @@ func foldModels(child, issuer []string) []string {
 // provider the issuer names accounts of, the child's own of them that the
 // issuer has, else the issuer's; the child's of other providers as given.
 // An account either keeps out stays out (LeiWang_2000 on X).
+//
+// A provider the child names to use but no account of it is left of is
+// held to none of it: an issuer's kept-out entry (or a whitelist sharing
+// nothing with the child's) must not turn the child's list into "every
+// account but", which would let it use accounts it never named.
 func foldAccounts(child, issuer []string) []string {
 	if len(issuer) == 0 {
 		return child
@@ -501,9 +506,25 @@ func foldAccounts(child, issuer []string) []string {
 	}
 	cu, co := split(child)
 	pu, po := split(issuer)
-	out := foldUsed(cu, pu)
+	// a copy: an issuer that names no account to use leaves foldUsed
+	// returning cu itself, and deleting from it would empty cu under the
+	// loop below (which names each of the child's providers once)
+	out := slices.Clone(foldUsed(cu, pu))
 	if len(po) > 0 {
 		out = slices.DeleteFunc(out, func(a string) bool { return !(Identity{Accounts: po}).allowsEntry(a) })
+	}
+	for _, a := range cu {
+		p, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(a)), "/")
+		if slices.ContainsFunc(out, func(o string) bool {
+			op, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(o)), "/")
+			return op == p
+		}) {
+			continue
+		}
+		none := p + "/" + heldToNone
+		if !slices.ContainsFunc(out, func(o string) bool { return strings.EqualFold(o, none) }) {
+			out = append(out, none)
+		}
 	}
 	for _, a := range append(co, po...) {
 		if !slices.ContainsFunc(out, func(o string) bool { return strings.EqualFold(o, a) }) {
@@ -513,7 +534,10 @@ func foldAccounts(child, issuer []string) []string {
 	return out
 }
 
-// foldUsed is foldAccounts over the accounts each names to use.
+// foldUsed is foldAccounts over the accounts each names to use: the
+// child's an issuer names too, and the issuer's of a provider the child
+// names none of. A provider both name keeps only what both name, never
+// the issuer's accounts the child never had.
 func foldUsed(child, issuer []string) []string {
 	if len(issuer) == 0 {
 		return child
@@ -537,12 +561,10 @@ func foldUsed(child, issuer []string) []string {
 	}
 	for _, a := range issuer {
 		p, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(a)), "/")
-		mine := slices.ContainsFunc(cs[p], func(x string) bool {
-			return slices.ContainsFunc(ps[p], func(y string) bool { return strings.EqualFold(x, y) })
-		})
-		if !mine {
-			out = append(out, a)
+		if _, named := cs[p]; named {
+			continue // the child's own of that provider are the fold
 		}
+		out = append(out, a)
 	}
 	return out
 }

@@ -219,3 +219,28 @@ func TestAccountGroupHoldsAnIssuedKey(t *testing.T) {
 		t.Fatalf("issued k1, its issuer's group now k2 alone: %v %v", who.Accounts, err)
 	}
 }
+
+// A key held to an account group may name a model its group's providers
+// serve: the group is read as a request reads it before HeldModels, which
+// from "@<id>" alone would hold the key to nothing. A model of a provider
+// outside the group is still refused.
+func TestAliasesReadAccountGroupProviders(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := provider.Save(provider.Provider{ID: "openai", Name: "OpenAI", Chat: "http://127.0.0.1:1/v1", Keys: []provider.KeyAccount{{Key: "sk-1"}}}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := SaveAccountGroup(AccountGroup{Name: "Team", Accounts: []string{"openai/" + provider.KeyID("sk-1")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := addKey(t, "Grouped")
+	if _, err := Update("accounts-key", Change{Key: id, Accounts: []string{GroupMark + g.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update("aliases-key", Change{Key: id, Aliases: map[string]string{"fast": "openai/gpt-4o"}}); err != nil {
+		t.Fatalf("a model of the group's provider: %v", err)
+	}
+	if _, err := Update("aliases-key", Change{Key: id, Aliases: map[string]string{"opus": "anthropic/claude-opus"}}); err == nil {
+		t.Fatal("a model of a provider outside the group was named")
+	}
+}

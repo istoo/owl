@@ -133,3 +133,26 @@ func TestHeldBodiesBounded(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// A string and a map key decoded from bytes nobody holds are copies too: a
+// buffer a stream fills again, or one kept long after, can't change them
+// under their holder (unquoteJSON shares only a held body's, or a view's).
+func TestDecodeJSONCopiesStringsNotHeld(t *testing.T) {
+	buf := []byte(`{"model":"m1","tags":{"alpha":"one","beta":"two"}}`)
+	var v struct {
+		Model string            `json:"model"`
+		Tags  map[string]string `json:"tags"`
+	}
+	if err := decodeJSON(buf, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Model != "m1" || v.Tags["alpha"] != "one" || v.Tags["beta"] != "two" {
+		t.Fatalf("decoded %+v", v)
+	}
+	for i := range buf {
+		buf[i] = 'y'
+	}
+	if v.Model != "m1" || v.Tags["alpha"] != "one" || v.Tags["beta"] != "two" {
+		t.Fatalf("changed with the buffer: %+v", v)
+	}
+}

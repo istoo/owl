@@ -92,6 +92,11 @@ func CalmHTTP2(t *http.Transport) error {
 // calmed is every transport CalmHTTP2 set up, so a clone is set up anew.
 var calmed sync.Map // *http.Transport -> *calmPool
 
+// uncalm forgets t, a transport being dropped: calmed keeps no entry for
+// one that will send no request again, so dropping transports doesn't
+// grow it without end.
+func uncalm(t *http.Transport) { calmed.Delete(t) }
+
 func isCalm(t *http.Transport) bool {
 	_, ok := calmed.Load(t)
 	return ok

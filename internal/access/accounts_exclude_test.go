@@ -123,6 +123,44 @@ func TestKeptOutFolded(t *testing.T) {
 	}
 }
 
+// Folding an issuer in never widens what the issued key names: a provider
+// the child named whose accounts the fold leaves none of is held to none
+// of it, and an issuer's whitelist sharing nothing with the child's gives
+// the child nothing, rather than "every account but" or the issuer's own.
+func TestKeptOutFoldNeverWidens(t *testing.T) {
+	for _, c := range []struct {
+		name         string
+		child, issue []string
+	}{
+		{"the issuer keeps out the child's only account", []string{"codex/a1"}, []string{"codex/!a1"}},
+		{"the whitelists share nothing", []string{"codex/a1"}, []string{"codex/a2"}},
+		{"kept out among other providers", []string{"codex/a1", "claude/c1"}, []string{"codex/!a1"}},
+	} {
+		got := foldAccounts(c.child, c.issue)
+		who := Identity{Accounts: got}
+		for _, ref := range []string{"a1", "a2", ""} {
+			if who.AllowsAccount("codex", ref) {
+				t.Errorf("%s: %q lets codex/%q in", c.name, got, ref)
+			}
+		}
+	}
+	// the child's other provider is its own that the issuer named nothing
+	// of, and the issuer's kept-out entry is kept for the record
+	got := foldAccounts([]string{"codex/a1", "claude/c1"}, []string{"codex/!a1"})
+	who := Identity{Accounts: got}
+	if !who.AllowsAccount("claude", "c1") || who.AllowsAccount("claude", "c2") {
+		t.Fatalf("claude isn't held to c1: %v", got)
+	}
+	if !slices.Contains(got, "codex/!a1") {
+		t.Fatalf("the issuer's kept-out entry is lost: %v", got)
+	}
+	// a provider both name keeps only the accounts both name
+	both := Identity{Accounts: foldAccounts([]string{"codex/a1", "codex/a2"}, []string{"codex/a2", "codex/a3"})}
+	if both.AllowsAccount("codex", "a1") || !both.AllowsAccount("codex", "a2") || both.AllowsAccount("codex", "a3") {
+		t.Fatalf("the intersection isn't a2: %v", both.Accounts)
+	}
+}
+
 // A key value replaced in place (#1869) moves the keys keeping it out too.
 func TestKeptOutReplaced(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

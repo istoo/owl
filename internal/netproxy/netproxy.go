@@ -328,6 +328,7 @@ func (d *dispatch) transport(r route) *http.Transport {
 	if len(d.own) >= 32 { // choices come and go as they are edited
 		for k, t := range d.own {
 			t.CloseIdleConnections()
+			uncalm(t) // calmed mustn't keep a transport dropped from the pool
 			delete(d.own, k)
 		}
 	}

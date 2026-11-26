@@ -289,7 +289,13 @@ func Masking(wanted bool) (Masker, error) {
 func Safely[T any](f func() T) (out T, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("masking failed, so nothing was sent: %v", r)
+			if e, ok := r.(error); ok {
+				// keep the error's own type (a request held back is a
+				// maskBlocked the caller reads with errors.As)
+				err = fmt.Errorf("masking failed, so nothing was sent: %w", e)
+			} else {
+				err = fmt.Errorf("masking failed, so nothing was sent: %v", r)
+			}
 		}
 	}()
 	return f(), nil

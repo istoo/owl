@@ -365,7 +365,7 @@ func fillJSONIn(raw []byte, v reflect.Value, members []memberSpan, share bool) e
 		if raw[0] != '"' {
 			return errSlowJSON
 		}
-		s, ok := unquoteJSON(raw)
+		s, ok := unquoteJSONIn(raw, share || inHeldBody(raw))
 		if !ok {
 			return errSlowJSON
 		}
@@ -400,7 +400,7 @@ func fillJSONIn(raw []byte, v reflect.Value, members []memberSpan, share bool) e
 		var many []bool
 		var err error
 		eachMemberIn(raw, members, func(key, val []byte) bool {
-			name, ok := keyName(key)
+			name, ok := keyName(key, share)
 			if !ok {
 				err = errSlowJSON
 				return false
@@ -466,7 +466,7 @@ func fillJSONIn(raw []byte, v reflect.Value, members []memberSpan, share bool) e
 		}
 		var err error
 		eachMemberIn(raw, members, func(key, val []byte) bool {
-			name, ok := unquoteJSON(key)
+			name, ok := unquoteJSONIn(key, share || inHeldBody(key))
 			if !ok {
 				err = errSlowJSON
 				return false
@@ -736,25 +736,32 @@ func skipJSONValue(data []byte, i int) int {
 
 // keyName is a member's key as unquoteJSON reads it, without making a
 // string of it: a plain ASCII key, the kind nearly every key is, is the
-// bytes between its quotes.
-func keyName(key []byte) ([]byte, bool) {
+// bytes between its quotes. share is unquoteJSONIn's, for a name that
+// needs unquoting.
+func keyName(key []byte, share bool) ([]byte, bool) {
 	if len(key) < 2 || key[0] != '"' || key[len(key)-1] != '"' {
 		return nil, false
 	}
 	k := key[1 : len(key)-1]
 	for _, c := range k {
 		if c == '\\' || c == '"' || c < ' ' || c >= utf8.RuneSelf {
-			name, ok := unquoteJSON(key)
+			name, ok := unquoteJSONIn(key, share || inHeldBody(key))
 			return []byte(name), ok
 		}
 	}
 	return k, true
 }
 
-// unquoteJSON is the string a valid JSON string literal holds, as
+// unquoteJSON is unquoteJSONIn sharing q's bytes, for a reader that
+// keeps nothing it decodes past its return (decodeJSONView).
+func unquoteJSON(q []byte) (string, bool) { return unquoteJSONIn(q, true) }
+
+// unquoteJSONIn is the string a valid JSON string literal holds, as
 // encoding/json decodes it (unquoteBytes): invalid UTF-8 and lone
-// surrogates become U+FFFD.
-func unquoteJSON(q []byte) (string, bool) {
+// surrogates become U+FFFD. share, as json.RawMessage's, lets a string
+// with no escape be q's own bytes; otherwise it is a copy, so a value
+// kept past a buffer written again is never changed with it.
+func unquoteJSONIn(q []byte, share bool) (string, bool) {
 	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
 		return "", false
 	}
@@ -779,7 +786,10 @@ func unquoteJSON(q []byte) (string, bool) {
 		// no escape in it: the body's own bytes, which nothing writes to
 		// while the request is read (inHeldBody), not a copy of them —
 		// 4 MB of a 1 MB request's strings were copies of the request
-		return unsafe.String(unsafe.SliceData(s), len(s)), true
+		if share {
+			return unsafe.String(unsafe.SliceData(s), len(s)), true
+		}
+		return string(s), true
 	}
 	b := make([]byte, 0, len(s)+2*utf8.UTFMax)
 	b = append(b, s[:r]...)
@@ -1908,7 +1918,15 @@ func marshalItems(v any, spend bool, kept *int) ([]json.RawMessage, int, bool) {
 		if *kept <= 0 {
 			n, ok := jsonSize(it)
 			if !ok {
-				return nil, 0, false
+				// a value jsonSize can't measure (a map key written
+				// escaped) is still one json.Marshal writes: measure it by
+				// writing it now, rather than refuse the whole body after
+				// the items before it were let go
+				b, err := marshalSized(it)
+				if err != nil {
+					return nil, 0, false
+				}
+				n = len(b)
 			}
 			size += n
 			continue
