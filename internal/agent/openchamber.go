@@ -89,31 +89,36 @@ func (s ocStore) set(kvs map[string]any) error {
 		return err
 	}
 	_, statErr := os.Stat(s.settings())
-	for key, v := range kvs {
-		if has {
+	// both files move as one: OpenChamber reads the profile from
+	// preferences.json and its copy from settings.json, and a failure
+	// part way through the set would leave them saying different things
+	return edit.Atomically(func() error {
+		for key, v := range kvs {
+			if has {
+				if v == nil {
+					err = edit.DelJSON(s.prefs(), "fields."+key)
+				} else {
+					err = edit.SetJSON(s.prefs(), edit.KV{Path: "fields." + key + ".value", Value: v},
+						edit.KV{Path: "fields." + key + ".updatedAt", Value: time.Now().UnixMilli()})
+				}
+				if err != nil {
+					return err
+				}
+			}
+			if has && statErr != nil {
+				continue
+			}
 			if v == nil {
-				err = edit.DelJSON(s.prefs(), "fields."+key)
+				err = edit.DelJSON(s.settings(), key)
 			} else {
-				err = edit.SetJSON(s.prefs(), edit.KV{Path: "fields." + key + ".value", Value: v},
-					edit.KV{Path: "fields." + key + ".updatedAt", Value: time.Now().UnixMilli()})
+				err = edit.SetJSON(s.settings(), edit.KV{Path: key, Value: v})
 			}
 			if err != nil {
 				return err
 			}
 		}
-		if has && statErr != nil {
-			continue
-		}
-		if v == nil {
-			err = edit.DelJSON(s.settings(), key)
-		} else {
-			err = edit.SetJSON(s.settings(), edit.KV{Path: key, Value: v})
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	}, s.prefs(), s.settings())
 }
 
 // model and small are the models OpenChamber sends, "" when it leaves them

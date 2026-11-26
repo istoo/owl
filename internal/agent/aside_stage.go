@@ -70,10 +70,12 @@ func (c *asideConnection) stage(key, value string) error {
 	raw, _ := json.Marshal(selection)
 	owned.Pending = append(json.RawMessage(nil), raw...)
 	r.Fields[key] = owned
-	if err := c.save(r); err != nil {
+	// the agent's file first: a write that fails leaves the record as it
+	// was, rather than saying a change is pending that never landed
+	if err := edit.SetJSON(c.path, edit.KV{Path: path, Value: json.RawMessage(raw)}); err != nil {
 		return err
 	}
-	if err := edit.SetJSON(c.path, edit.KV{Path: path, Value: json.RawMessage(raw)}); err != nil {
+	if err := c.save(r); err != nil {
 		return err
 	}
 	c.read = false

@@ -213,7 +213,7 @@ func reasonixIn(at place) *Agent {
 				return err
 			}
 		}
-		if v, exists := edit.GetEnvFile(env, reasonixKey); exists && v == gwKey() {
+		if v, exists := edit.GetEnvFile(env, reasonixKey); exists && keyHolds(v, gwKey()) {
 			if err := edit.DelEnvFile(env, reasonixKey); err != nil {
 				return err
 			}

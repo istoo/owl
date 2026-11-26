@@ -302,8 +302,11 @@ func DelTOMLKey(path, name, key string) error {
 		}
 	}
 	out = append(out, lines[at:table.to]...)
+	// A note of owl's is not content: the note over the key just taken out
+	// is all a table can be left holding, and writing that back left the
+	// empty header (a Codex too old for the table then refused the config).
 	for _, line := range out[table.from+1:] {
-		if strings.TrimSpace(line) != "" {
+		if strings.TrimSpace(line) != "" && !IsNote(line) {
 			out = append(out, lines[table.to:]...)
 			return writeTOML(path, out)
 		}

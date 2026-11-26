@@ -239,3 +239,29 @@ func TestRestoreGoneKeepsAnUnreadableFile(t *testing.T) {
 	}
 	fileAsMine(t, path, kiloMine)
 }
+
+// A plugin that serves WSL adds a row per distro (kilo@wsl:Ubuntu…): the
+// one owl takes the agent out of must be every one, not only the first.
+func TestUnwirePluginTakesEveryWSLTwin(t *testing.T) {
+	var wired []string
+	mk := func(id string) *Agent {
+		return &Agent{ID: id, Name: id, Plugin: "kilo-spec", Fields: []Field{{
+			Key: "model", Label: "model",
+			Get: func() string { return owlID },
+			Set: func(string) error { wired = append(wired, id); return nil },
+		}}}
+	}
+	host, twin := mk("kilo"), mk("kilo@wsl:Ubuntu")
+	other := &Agent{ID: "other", Plugin: "another-spec"}
+	found := agentsOfPlugin([]*Agent{host, other, twin}, "kilo-spec")
+	if len(found) != 2 || found[0].ID != "kilo" || found[1].ID != "kilo@wsl:Ubuntu" {
+		t.Fatalf("found %+v", found)
+	}
+	codexHome(t, "", "")
+	if err := unwireEach(found); err != nil {
+		t.Fatal(err)
+	}
+	if len(wired) != 2 || wired[0] != "kilo" || wired[1] != "kilo@wsl:Ubuntu" {
+		t.Fatalf("took owl out of %v", wired)
+	}
+}

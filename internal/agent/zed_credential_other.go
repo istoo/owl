@@ -146,7 +146,7 @@ func saveZedSecret(ctx context.Context, url string) error {
 			"url": url, "username": "Bearer",
 		}),
 	}
-	secret := zedSecret{Session: session, Parameters: []byte{}, Value: []byte(agentKey("zed")), ContentType: "text/plain; charset=utf8"}
+	secret := zedSecret{Session: session, Parameters: []byte{}, Value: []byte(agentKeyAt("zed", url)), ContentType: "text/plain; charset=utf8"}
 	var item dbus.ObjectPath
 	if err := conn.Object("org.freedesktop.secrets", collection).CallWithContext(ctx, "org.freedesktop.Secret.Collection.CreateItem", 0, properties, secret, true).Store(&item, &prompt); err != nil {
 		return err

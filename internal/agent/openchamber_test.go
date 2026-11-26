@@ -35,6 +35,28 @@ func TestOpenCodeConfigDir(t *testing.T) {
 	}
 }
 
+// OpenChamber reads the profile from preferences.json and a copy from
+// settings.json: a set that fails on one of them writes neither, so the
+// two never say different things.
+func TestOpenChamberSetRollsBothFilesBack(t *testing.T) {
+	dir := t.TempDir()
+	prefs := filepath.Join(dir, "preferences.json")
+	writeFile(t, prefs, `{"version":1,"fields":{"defaultModel":{"value":"before","updatedAt":5}}}`)
+	// a folder where settings.json goes: its write fails after the
+	// profile's has gone through
+	if err := os.Mkdir(filepath.Join(dir, "settings.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := ocStore{dir}
+	if err := s.set(map[string]any{"defaultModel": "after"}); err == nil {
+		t.Fatal("the failure was lost")
+	}
+	got := readFile(prefs)
+	if !strings.Contains(got, `"before"`) || strings.Contains(got, `"after"`) {
+		t.Fatalf("the profile wasn't put back:\n%s", got)
+	}
+}
+
 // OpenChamber sends each new session its own default model ahead of
 // OpenCode's: owl sets that one, in preferences.json (which wins) and
 // its copy in settings.json, keeping the rest of both, and puts owl's

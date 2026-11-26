@@ -1528,7 +1528,13 @@ func (b beforeOwl) take() {
 		raw, err := os.ReadFile(f)
 		switch {
 		case err == nil:
-			if edit.WriteAtomic(f+".before-owl", raw) != nil {
+			// the copy holds the same key the file does, so it keeps the
+			// file's mode: a new one is made 0600, never 0644
+			mode := os.FileMode(0o600)
+			if st, serr := os.Stat(f); serr == nil {
+				mode = st.Mode().Perm()
+			}
+			if edit.WriteAtomicMode(f+".before-owl", raw, mode) != nil {
 				os.Remove(f + ".before-owl")
 			}
 		case errors.Is(err, fs.ErrNotExist):

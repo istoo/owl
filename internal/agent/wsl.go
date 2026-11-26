@@ -1120,7 +1120,42 @@ func WSLOpen(a *Agent, path string) (string, error) {
 // files, which starts the distro.
 func asleep(live *Agent, k wslKind, d distro) *Agent {
 	started := false
-	a := &Agent{ID: live.ID, Name: live.Name, Icon: live.Icon, WSL: d.Name, detect: live.detect, Spelled: live.Spelled, ModelAliases: live.ModelAliases, NoNames: live.NoNames,
+	var warm *Agent
+	// wake starts the distro and reads it again: what its files are, and
+	// the address it reaches Windows at now, which a NAT address changes
+	// with a WSL restart. Read-only looks never wake it.
+	wake := func() (*Agent, error) {
+		if warm != nil {
+			return warm, nil
+		}
+		// opening a stopped distro's files is aborted rather than waiting
+		// for it to start, so it is started first
+		if _, err := wslRun(time.Minute, "-d", d.Name, "-e", "true"); err != nil {
+			return nil, fmt.Errorf("start WSL %s: %w", d.Name, err)
+		}
+		started = true
+		// probed again while it runs: its gateway, links and networking
+		// mode may have changed while it was stopped
+		w := d
+		wslRefresh()
+		for _, now := range wslKnown() {
+			if now.Name == d.Name {
+				w = now
+				break
+			}
+		}
+		w.Running = true
+		// the agent itself, at the refreshed place: its files can now be
+		// looked at, and a set's reads and writes go to them, not to
+		// what was remembered while it was stopped
+		warm = k.in(w.place(live.ID))
+		return warm, nil
+	}
+	a := &Agent{ID: live.ID, Name: live.Name, Icon: live.Icon, WSL: d.Name,
+		// what the row is called and how its models are spelled doesn't
+		// change with the distro's state
+		Plugin: live.Plugin, SplitSuffix: live.SplitSuffix, OwnVia: live.OwnVia,
+		detect: live.detect, Spelled: live.Spelled, ModelAliases: live.ModelAliases, NoNames: live.NoNames,
 		Notice: func() string {
 			if started {
 				return live.Notice()
@@ -1132,23 +1167,18 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 		f := Field{Key: key, Label: lf.Label, Quiet: lf.Quiet, Live: lf.Live, Closed: lf.Closed, Follows: lf.Follows, Own: lf.Own, Options: lf.Options,
 			Get: func() string { return wslLastSeen(d.Name, k.memo(key)) },
 			Set: func(v string) error {
-				// opening a stopped distro's files is aborted rather than
-				// waiting for it to start, so it is started first
-				if _, err := wslRun(time.Minute, "-d", d.Name, "-e", "true"); err != nil {
-					return fmt.Errorf("start WSL %s: %w", d.Name, err)
+				warm, err := wake()
+				if err != nil {
+					return err
 				}
-				started = true
 				// the agent again, now its files can be looked at: which of
 				// them it reads (opencode.jsonc or .json, ~/.kimi-code or
 				// ~/.kimi) is theirs to say, not the defaults it was built on
-				w := d
-				w.Running = true
-				warm := k.in(w.place(live.ID))
 				wf := warm.Field(key)
 				if wf == nil || wf.Set == nil {
 					return fmt.Errorf("%s has no %s", live.Name, key)
 				}
-				err := wf.Set(v)
+				err = wf.Set(v)
 				// a model settles the effort too
 				for _, f := range warm.Fields {
 					wslRemember(d.Name, k.memo(f.Key), f.Get())
@@ -1167,6 +1197,53 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 			f.Options = func(map[string]string) []Option { return nil }
 		}
 		a.Fields = append(a.Fields, f)
+	}
+	// The callbacks a live agent has are the row's too, so switching it
+	// off or setting it again means the same while its distro is stopped:
+	// one that changes the files wakes it, and one that only reads them
+	// says what a stopped distro can be said to be.
+	if live.Unwire != nil {
+		a.Unwire = func() error {
+			w, err := wake()
+			if err != nil {
+				return err
+			}
+			return w.Unwire()
+		}
+	}
+	if live.Restore != nil {
+		a.Restore = func() error {
+			w, err := wake()
+			if err != nil {
+				return err
+			}
+			return w.Restore()
+		}
+	}
+	if live.Join != nil {
+		a.Join = func() (bool, error) {
+			w, err := wake()
+			if err != nil {
+				return false, err
+			}
+			return w.Join()
+		}
+	}
+	// Sync stays nil: a stopped row has no files to sync, as the live one
+	// has none while its distro is stopped, and its files get the catalog
+	// once something wakes it (a model picked, a switch). A catalog sync
+	// runs on its own, in the background, and never starts a distro.
+	// reading these never wakes the distro: a stopped one is not joined,
+	// beside its own or routed, as a live row stopped reads; woken, the
+	// refreshed agent answers
+	if live.Joined != nil {
+		a.Joined = func() bool { return warm != nil && warm.Joined != nil && warm.Joined() }
+	}
+	if live.Beside != nil {
+		a.Beside = func() bool { return warm != nil && warm.Beside != nil && warm.Beside() }
+	}
+	if live.Routed != nil {
+		a.Routed = func() bool { return warm != nil && warm.Routed != nil && warm.Routed() }
 	}
 	return a
 }
@@ -1846,8 +1923,9 @@ func wslReady(kind string) []distro {
 // settings.json has a stand-in.
 func wslClaudeStandIn(model string) string {
 	for _, d := range wslReady("claude") {
-		path := filepath.Join(d.local(d.Home), ".claude", "settings.json")
-		if m := claudeStandInAt(d.place("claude@wsl:"+d.Name), path, model); m != "" {
+		at := d.place("claude@wsl:" + d.Name)
+		path := filepath.Join(at.claudeDir(), "settings.json")
+		if m := claudeStandInAt(at, path, model); m != "" {
 			return m
 		}
 	}

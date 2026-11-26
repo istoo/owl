@@ -160,6 +160,14 @@ func writeAtomic(path string, data []byte, explicit *fs.FileMode) error {
 	if hardLinked(path) {
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {
+			// a secret written in place keeps the mode it had, which can
+			// be wider: narrow it before the bytes go in
+			if explicit != nil {
+				if err := f.Chmod(*explicit); err != nil {
+					f.Close()
+					return err
+				}
+			}
 			if err := writeInPlace(f, data); err != nil {
 				return err
 			}
@@ -386,9 +394,9 @@ func Atomically(fn func() error, paths ...string) error {
 				}
 			}
 		case rerr != nil || !bytes.Equal(now, s.data):
-			if e := WriteAtomic(s.path, s.data); e != nil {
-				err = errors.Join(err, fmt.Errorf("put %s back: %w", s.path, e))
-			} else if e := os.Chmod(s.path, s.mode); e != nil {
+			// the mode it was found with is set before the rename, so a
+			// secret file is never left at the 0644 a new one gets
+			if e := WriteAtomicMode(s.path, s.data, s.mode); e != nil {
 				err = errors.Join(err, fmt.Errorf("put %s back: %w", s.path, e))
 			}
 		}

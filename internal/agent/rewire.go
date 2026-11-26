@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/istoo/owl/internal/gateway"
 	"github.com/istoo/owl/internal/settings"
 )
 
@@ -80,13 +81,7 @@ func setAgain(as []*Agent) (moved []string, errs []error) {
 		// for switching it off to put back
 		was := stashLoad()
 		e := reset(a)
-		// the address owl wrote follows it (wiredAt)
-		for k, v := range stashLoad() {
-			if strings.HasSuffix(k, wiredAt) {
-				was[k] = v
-			}
-		}
-		stashPut(was)
+		keepOriginals(a, was)
 		if e != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", a.Name, e))
 			continue
@@ -97,6 +92,96 @@ func setAgain(as []*Agent) (moved []string, errs []error) {
 		moved = append(moved, a.Name)
 	}
 	return moved, errs
+}
+
+// keepOriginals puts back the agent's own settings from before owl, which
+// setting it again can take for owl's and write over: a value owl had at
+// the address it was wired at (its URL, one of its keys, a model of its
+// own) is not what the user had. It reads and writes the stash once, under
+// stashMu, so a change another agent made meanwhile is kept; the address
+// owl wrote (wiredAt, which follows the move), a plugin's record of what it
+// wrote (its new key and value) and every other agent's keys stay as the
+// set left them.
+func keepOriginals(a *Agent, was map[string]string) {
+	if len(was) == 0 {
+		return
+	}
+	addresses := make([]string, 0, 1)
+	for k, v := range was {
+		if strings.HasSuffix(k, wiredAt) && v != "" {
+			addresses = append(addresses, v)
+		}
+	}
+	stashMu.Lock()
+	defer stashMu.Unlock()
+	now := stashLoad()
+	changed := false
+	for k, old := range was {
+		if old == "" || !originKey(a, k) {
+			continue
+		}
+		cur, ok := now[k]
+		if !ok || cur == old || !owlWrote(cur, addresses) {
+			continue
+		}
+		now[k] = old
+		changed = true
+	}
+	if changed {
+		stashWrite(now)
+	}
+}
+
+// originKey says whether key holds a value of the agent's own from before
+// owl: it is the agent's (its id, its kind, or the id a WSL row is the
+// twin of), not another agent's, and not what owl keeps of itself there.
+func originKey(a *Agent, key string) bool {
+	// a plugin's record holds what owl last wrote (Key, Wrote) beside the
+	// user's originals: the set has just renewed it, so it stays
+	if strings.HasPrefix(key, "plugin:") {
+		return false
+	}
+	// the address owl wrote follows the move
+	if strings.HasSuffix(key, wiredAt) {
+		return false
+	}
+	ids := []string{a.ID}
+	if kind, _, ok := strings.Cut(a.ID, "@wsl:"); ok {
+		ids = append(ids, kind)
+	}
+	if kind, _, ok := strings.Cut(a.ID, "#"); ok {
+		ids = append(ids, kind)
+	}
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if key == id || strings.HasPrefix(key, id+".") || strings.HasPrefix(key, id+":") || strings.HasPrefix(key, id+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// owlWrote says v is something owl had written into an agent's config
+// before it was set again: one of the gateway's keys, a model of owl's, or
+// the gateway at an address it wrote (addresses).
+func owlWrote(v string, addresses []string) bool {
+	if ourKey(v) || gatewayKey(v) || v == owlID || prefixed(v) || isOwl(v) {
+		return true
+	}
+	if !strings.Contains(v, "://") {
+		return false
+	}
+	if sameHost(v, gateway.URL()) {
+		return true
+	}
+	for _, addr := range addresses {
+		if sameHost(v, addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // joinErrs is errs as one error, "; " between them; nil for none.
@@ -128,10 +213,3 @@ func reset(a *Agent) error {
 // wiredAt ends a stash key holding the gateway address owl last wrote
 // into an agent's config, which a move of the gateway updates.
 const wiredAt = ".wired_at"
-
-// stashPut writes the stash as m has it.
-func stashPut(m map[string]string) {
-	stashMu.Lock()
-	defer stashMu.Unlock()
-	stashWrite(m)
-}

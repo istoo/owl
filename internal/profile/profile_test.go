@@ -282,3 +282,29 @@ func TestProfileLeavesPermissionMode(t *testing.T) {
 		t.Errorf("a profile wrote the permission mode:\n%s", s)
 	}
 }
+
+// A profile carries Gemini CLI's provider as owl and one of owl's models:
+// owl as its provider is set through the model (that signs it in through
+// owl), so setting the provider first on an agent not yet routed is
+// refused; the model goes first and the provider then finds it routed.
+func TestApplyFieldsGeminiProviderAfterItsModel(t *testing.T) {
+	h := sandbox(t)
+	// Gemini CLI's row is its binary being on PATH (what it leaves in
+	// ~/.gemini is Antigravity's too)
+	testenv.Program(t, filepath.Join(h, "bin", "gemini"), "#!/bin/sh\n")
+	write(t, filepath.Join(h, ".gemini", "settings.json"), "{}")
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Chat: "https://relay.example.com/v1",
+		Key: "synthetic-key", Models: []string{"pro"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyFields(map[string]string{
+		"gemini.provider": agent.OwlID,
+		"gemini.model":    "relay/pro",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, filepath.Join(h, ".gemini", "settings.json"))
+	if !strings.Contains(got, `"gemini-api-key"`) || !strings.Contains(got, `"relay/pro"`) {
+		t.Fatalf("Gemini CLI is not on owl:\n%s", got)
+	}
+}

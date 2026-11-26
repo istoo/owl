@@ -246,3 +246,56 @@ func TestPortKeepsWhatAnAgentHadBefore(t *testing.T) {
 		t.Fatalf("switched off, Claude Code got %q %q back, not its own", u, tok)
 	}
 }
+
+// Rewire's set writes the agent's config again, and a value owl had at the
+// old address (its URL, one of its keys, a model of its own) must not be
+// taken for what the user had: the true originals stay, while what owl
+// keeps of itself (a window it last wrote, a plugin's new key and value)
+// and another agent's key written meanwhile stay as they are now.
+func TestSetAgainKeepsOriginalsNotWhatWasWrittenSince(t *testing.T) {
+	codexHome(t, "", "")
+	a := &Agent{ID: "claude"}
+	was := map[string]string{
+		"claude.base_url":       "https://relay.example",
+		"claude.auth_token":     "own-token",
+		"claude.context_tokens": "100000",
+		"codex.model":           "gpt-5.5",
+		"plugin:kilo:/k.json":   `{"wrote":{"model":"old"},"value":"old"}`,
+	}
+	now := map[string]string{
+		"claude.base_url":       gateway.URL() + "/v1", // the set took owl's address for the user's
+		"claude.auth_token":     gateway.Token,         // and owl's key
+		"claude.context_tokens": "200000",              // owl's record, renewed
+		"codex.model":           "fake/m1",             // another agent's write, meanwhile
+		"plugin:kilo:/k.json":   `{"wrote":{"model":"new"},"value":"new"}`,
+		"another.key":           "fresh", // a key written meanwhile
+	}
+	stash(now)
+	keepOriginals(a, was)
+	got := stashLoad()
+	for k, want := range map[string]string{
+		"claude.base_url":       "https://relay.example",
+		"claude.auth_token":     "own-token",
+		"claude.context_tokens": "200000",
+		"codex.model":           "fake/m1",
+		"plugin:kilo:/k.json":   `{"wrote":{"model":"new"},"value":"new"}`,
+		"another.key":           "fresh",
+	} {
+		if got[k] != want {
+			t.Errorf("%s = %q, want %q", k, got[k], want)
+		}
+	}
+}
+
+// A model of owl's is not a user's original either: a set at the old
+// address notes the old model, which must not come back as what they had.
+func TestSetAgainKeepsTheUsersModelOverOwlsOld(t *testing.T) {
+	codexHome(t, "", "")
+	a := &Agent{ID: "codex"}
+	was := map[string]string{"codex.model": "gpt-5.5"}
+	stash(map[string]string{"codex.model": "fake/m1"})
+	keepOriginals(a, was)
+	if got := stashLoad()["codex.model"]; got != "gpt-5.5" {
+		t.Fatalf("codex.model = %q", got)
+	}
+}

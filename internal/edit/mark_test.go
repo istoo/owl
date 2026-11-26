@@ -82,6 +82,33 @@ func TestMarkTOMLKeepsCRLF(t *testing.T) {
 	}
 }
 
+// Owl's note is not content: taking out a table's last key leaves only the
+// note over it, and the table goes with it rather than an empty header an
+// older Codex refuses.
+func TestMarkTOMLDelLastKeyTakesTheTable(t *testing.T) {
+	marking(t)
+	p := tmpFile(t, "config.toml", "model = \"gpt-5\"\n")
+	if err := SetTOMLTable(p, "features.async_compaction", KV{Path: "base_url", Value: "http://127.0.0.1:3425/v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, p); !strings.Contains(got, "# owl: T features.async_compaction\n") {
+		t.Fatalf("no note over the key:\n%s", got)
+	}
+	if err := DelTOMLKey(p, "features.async_compaction", "base_url"); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, p)
+	if strings.Contains(got, "[features.async_compaction]") || strings.Contains(got, "# owl:") {
+		t.Fatalf("an empty table or its note stayed:\n%s", got)
+	}
+	if !strings.Contains(got, "model = \"gpt-5\"\n") {
+		t.Fatalf("the model went with it:\n%s", got)
+	}
+	if err := validateTOML([]byte(got)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMarkTOMLOff(t *testing.T) {
 	p := tmpFile(t, "config.toml", "")
 	if err := SetTOMLTop(p, KV{Path: "openai_base_url", Value: "http://127.0.0.1:3425/x"}); err != nil {

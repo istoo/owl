@@ -30,7 +30,7 @@ func saveZedCredential(url string) error {
 		return err
 	}
 	user, _ := windows.UTF16PtrFromString("Bearer")
-	key := []byte(agentKey("zed"))
+	key := []byte(agentKeyAt("zed", url))
 	credential := zedWindowsCredential{
 		Type: 1, TargetName: target, UserName: user, // CRED_TYPE_GENERIC
 		CredentialBlobSize: uint32(len(key)), CredentialBlob: &key[0],

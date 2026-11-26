@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/istoo/owl/internal/edit"
 	"github.com/istoo/owl/internal/filememo"
 	"github.com/istoo/owl/internal/gateway"
 	"github.com/istoo/owl/internal/lastgood"
@@ -60,8 +61,12 @@ func appliedSave(m map[string]applied) {
 		return
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
-	os.MkdirAll(filepath.Dir(appliedPath()), 0o755)
-	os.WriteFile(appliedPath(), b, 0o600)
+	// written through a temp file and renamed over, so a crash part way
+	// leaves the old record rather than half of one
+	if err := edit.WriteAtomicMode(appliedPath(), b, 0o600); err != nil {
+		log.Printf("applied.json wasn't written: %v", err)
+		return
+	}
 	filememo.Look(appliedPath())
 }
 
@@ -935,7 +940,17 @@ func (a *Agent) Disconnect() (err error) {
 	// the user's say, kept till they connect it again: nothing owl does
 	// by itself (a start's Sync, Codex's account failover) puts owl back
 	// in, this Disconnect's own writes included (paynezhuang on Discord)
+	wasDisconnected := a.Disconnected()
 	stash(map[string]string{a.ID + disconnectedKey: "1"})
+	// a Disconnect that fails part way leaves the agent still wired, so
+	// the mark that keeps owl from connecting it again would outlast the
+	// attempt and stop RestoreOnQuit and the Codex takeover from fixing
+	// it: put it back as it was
+	defer func() {
+		if err != nil && !wasDisconnected {
+			forget(a.ID + disconnectedKey)
+		}
+	}()
 	// the user's own say over a harness Kiro Crew's connect put on
 	kiroCrewUserLeft(a.ID)
 	before, rec := a.Values(), appliedOf(a.ID)

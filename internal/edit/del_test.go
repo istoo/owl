@@ -2,6 +2,7 @@ package edit
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +90,30 @@ func TestEnvFile(t *testing.T) {
 	}
 	if got := read(t, np); got != "A=1\n" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// A value with a newline or carriage return is written escaped, not left to
+// end the line: unescaped, the rest of it became another key (and a reader
+// saw a truncated value), and DelEnvFile could not take it out cleanly.
+func TestEnvFileEscapesNewlines(t *testing.T) {
+	v := "line1\nline2\r\"q\"\\end"
+	p := tmpFile(t, ".env", "KEEP=1\n")
+	if err := SetEnvFile(p, KV{"SECRET", v}); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, p)
+	if strings.Count(got, "SECRET=") != 1 || strings.Count(got, "\n") != 2 {
+		t.Fatalf("the value wrote more lines:\n%q", got)
+	}
+	back, ok := GetEnvFile(p, "SECRET")
+	if !ok || back != v {
+		t.Fatalf("read back %q, %v; want %q", back, ok, v)
+	}
+	if err := DelEnvFile(p, "SECRET"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, p); got != "KEEP=1\n" {
+		t.Fatalf("left %q", got)
 	}
 }

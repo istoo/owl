@@ -49,7 +49,11 @@ func SetEnvFile(path string, kvs ...KV) error {
 			if !strings.ContainsAny(v, "'\r\n") {
 				v = "'" + v + "'"
 			} else {
-				v = `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
+				// a newline or carriage return is escaped rather than left
+				// to end the line, which would write the rest as another
+				// key (and read back as one); unquote undoes it
+				v = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\r", `\r`, "\n", `\n`).Replace(v)
+				v = `"` + v + `"`
 			}
 		}
 		lines = setLine(lines, kv.Path, kv.Path+"="+v, nil, func(l string) (string, bool) {

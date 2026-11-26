@@ -23,7 +23,13 @@ import (
 // "owl": an agent's config already written by upstream keeps pointing
 // at its gateway, and a model it picked keeps its "owl/model" spelling.
 // The name shown beside it is Owl's.
-const owlID = "owl"
+// OwlID is owlID for a package that orders or reads an agent's fields
+// without knowing the id: a profile applying a saved setup puts a model
+// through owl before it sets owl as the provider behind it (Gemini CLI
+// signs in through its model).
+const OwlID = "owl"
+
+const owlID = OwlID
 
 // RoutingGroups is the picker's group of routing groups.
 const RoutingGroups = "Routing groups"

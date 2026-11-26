@@ -391,3 +391,32 @@ func TestInstalledWiringReadsNoCopy(t *testing.T) {
 		t.Fatalf("10 looks at an unchanged config allocated %d bytes", n)
 	}
 }
+
+// A Disconnect that fails part way leaves the agent still wired, so the
+// mark that keeps owl from connecting it again must not stay: it would
+// stop RestoreOnQuit and the Codex takeover from ever fixing it.
+func TestDisconnectFailureLeavesItConnected(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a    *Agent
+	}{
+		{"unwire fails", &Agent{ID: "fake", Name: "Fake",
+			Unwire: func() error { return fmt.Errorf("the endpoint won't go") },
+			Fields: []Field{{Key: "model", Label: "model", Get: func() string { return owlID }, Set: func(string) error { return nil }}}}},
+		{"the model won't go", &Agent{ID: "fake", Name: "Fake",
+			Fields: []Field{{Key: "model", Label: "model", Get: func() string { return owlID }, Set: func(string) error { return fmt.Errorf("read-only config") }}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			codexHome(t, "", "")
+			if !tc.a.Wired() {
+				t.Fatal("the fake agent isn't wired")
+			}
+			if err := tc.a.Disconnect(); err == nil {
+				t.Fatal("the failure was lost")
+			}
+			if tc.a.Disconnected() {
+				t.Fatal("left marked disconnected after a failed Disconnect")
+			}
+		})
+	}
+}

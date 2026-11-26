@@ -62,6 +62,28 @@ func TestWriteAtomicKeepsHardLink(t *testing.T) {
 	}
 }
 
+// A secret written into a hard-linked file is narrowed where it is: a
+// write in place kept the wider mode it had, so the key stayed readable by
+// everyone the file was.
+func TestWriteAtomicModeNarrowsHardLink(t *testing.T) {
+	d := t.TempDir()
+	other := filepath.Join(d, "other.json")
+	if err := os.WriteFile(other, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(d, "auth.json")
+	hardLink(t, other, p)
+	if err := WriteAtomicMode(p, []byte(`{"key":"sk-secret"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sameFile(t, p, other)
+	for _, name := range []string{p, other} {
+		if fi, err := os.Stat(name); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("%s at %v, %v", name, fi.Mode(), err)
+		}
+	}
+}
+
 // Emptying a file with another name empties both and keeps it, as with a
 // symlink: deleting one name would leave the old text under the other.
 func TestRemoveKeepsHardLink(t *testing.T) {

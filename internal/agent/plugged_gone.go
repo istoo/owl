@@ -35,26 +35,40 @@ func init() {
 // the plugin's is put back from the stash alone. An agent not on owl is
 // left as it is.
 func UnwirePlugin(spec string) error {
-	var a *Agent
-	for _, x := range All() {
-		if x.Plugin == spec {
-			a = x
-			break
-		}
+	if found := agentsOfPlugin(All(), spec); len(found) > 0 {
+		return unwireEach(found)
 	}
-	if a == nil {
-		a = pluggedOff(spec)
-	}
-	if a != nil {
-		if !a.Wired() {
-			return nil
-		}
-		if err := a.Disconnect(); err != nil {
-			return fmt.Errorf("%s: %w", a.Name, err)
-		}
-		return nil
+	if a := pluggedOff(spec); a != nil {
+		return unwireEach([]*Agent{a})
 	}
 	_, _, err := restoreLeft(func(_ string, st pluggedStash) bool { return st.Spec == spec })
+	return err
+}
+
+// agentsOfPlugin are the agents a plugin adds now, all of them: a WSL
+// distro's is its own row (id@wsl:<distro>), and a plugin that says wsl
+// adds one per distro. Stopping at the first left the rest on owl (#3810).
+func agentsOfPlugin(as []*Agent, spec string) []*Agent {
+	var found []*Agent
+	for _, x := range as {
+		if x.Plugin == spec {
+			found = append(found, x)
+		}
+	}
+	return found
+}
+
+// unwireEach takes owl out of each agent's config, the errors joined.
+func unwireEach(found []*Agent) error {
+	var err error
+	for _, a := range found {
+		if !a.Wired() {
+			continue
+		}
+		if e := a.Disconnect(); e != nil {
+			err = errors.Join(err, fmt.Errorf("%s: %w", a.Name, e))
+		}
+	}
 	return err
 }
 

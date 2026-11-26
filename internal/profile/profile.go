@@ -294,6 +294,12 @@ func ApplyFields(p map[string]string) (int, error) {
 	rank := func(k string) int {
 		switch {
 		case strings.HasSuffix(k, ".provider"):
+			// owl as the provider is set through the model field (Gemini
+			// CLI signs in through owl by its model), and setting it first
+			// on an agent not yet routed is refused: it goes after models
+			if p[k] == agent.OwlID {
+				return 2
+			}
 			return 0
 		case strings.HasSuffix(k, ".model"):
 			return 1

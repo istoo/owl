@@ -186,7 +186,9 @@ func qwenIn(at place) *Agent {
 	// it is replaced and never removed: owl only removes what it wrote.
 	setEnvKey := func(with bool) error {
 		if with {
-			if v, ok := edit.GetJSON(path, qwenEnv); ok && v != at.gwKey() {
+			// a key of owl's at an older address (or made for another
+			// machine) is still owl's, not the user's to get back
+			if v, ok := edit.GetJSON(path, qwenEnv); ok && !keyHolds(v, at.gwKey()) {
 				stash(map[string]string{keyEnv: v})
 			}
 			return edit.SetJSON(path, edit.KV{Path: qwenEnv, Value: at.gwKey()})
@@ -194,7 +196,7 @@ func qwenIn(at place) *Agent {
 		if was := unstash(keyEnv); was != "" {
 			return edit.SetJSON(path, edit.KV{Path: qwenEnv, Value: was})
 		}
-		if v, ok := edit.GetJSON(path, qwenEnv); ok && v == at.gwKey() {
+		if v, ok := edit.GetJSON(path, qwenEnv); ok && keyHolds(v, at.gwKey()) {
 			if err := edit.DelJSON(path, qwenEnv); err != nil {
 				return err
 			}

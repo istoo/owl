@@ -1,6 +1,7 @@
 package edit
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,5 +35,34 @@ func TestWriteAtomicModeIsPrivateFromTheStart(t *testing.T) {
 	}
 	if fi, err := os.Stat(q); err != nil || fi.Mode().Perm() != 0o644 {
 		t.Fatalf("plain: %v %v", fi.Mode(), err)
+	}
+}
+
+// A transaction that fails after removing a secret file puts it back at the
+// mode it had, not at the 0644 a new file gets.
+func TestAtomicallyPutsASecretBackAtItsMode(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "auth.json")
+	if err := os.WriteFile(p, []byte(`{"key":"sk-secret"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Atomically(func() error {
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		if err := WriteAtomicMode(p, []byte(`{"key":"sk-new"}`), 0o600); err != nil {
+			return err
+		}
+		return errors.New("the second file failed")
+	}, p)
+	if err == nil {
+		t.Fatal("the failure was lost")
+	}
+	b, rerr := os.ReadFile(p)
+	if rerr != nil || string(b) != `{"key":"sk-secret"}` {
+		t.Fatalf("not put back (%v): %q", rerr, b)
+	}
+	if fi, serr := os.Stat(p); serr != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("put back at %v, %v", fi.Mode(), serr)
 	}
 }
