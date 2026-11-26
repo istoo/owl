@@ -953,11 +953,19 @@ func lastUserTexts(r *Request) []string {
 // stringOrText reads a JSON value that is either a string or an array of
 // {type:"text", text} blocks (Anthropic's system, tool results…).
 func stringOrText(raw json.RawMessage) string {
+	return stringOrTextIn(raw, decodeJSON)
+}
+
+func stringOrTextView(raw json.RawMessage) string {
+	return stringOrTextIn(raw, decodeJSONView)
+}
+
+func stringOrTextIn(raw json.RawMessage, decode func([]byte, any) error) string {
 	if len(raw) == 0 {
 		return ""
 	}
 	var s string
-	if decodeJSON(raw, &s) == nil {
+	if decode(raw, &s) == nil {
 		return s
 	}
 	var blocks []struct {
@@ -965,7 +973,7 @@ func stringOrText(raw json.RawMessage) string {
 		Text     string `json:"text"`
 		ToolName string `json:"tool_name"`
 	}
-	if decodeJSON(raw, &blocks) == nil {
+	if decode(raw, &blocks) == nil {
 		var b strings.Builder
 		for _, x := range blocks {
 			switch x.Type {
@@ -996,7 +1004,15 @@ func stringOrText(raw json.RawMessage) string {
 // upstream that can't hear it), so an upstream given the text alone knows
 // the tool returned one; a Gemini upstream is given the recording too.
 func toolOutput(raw json.RawMessage) (string, []Part, []Part) {
-	text := stringOrText(raw)
+	return toolOutputIn(raw, decodeJSON)
+}
+
+func toolOutputView(raw json.RawMessage) (string, []Part, []Part) {
+	return toolOutputIn(raw, decodeJSONView)
+}
+
+func toolOutputIn(raw json.RawMessage, decode func([]byte, any) error) (string, []Part, []Part) {
+	text := stringOrTextIn(raw, decode)
 	var blocks []struct {
 		Type   string `json:"type"`
 		Source *struct {
@@ -1011,7 +1027,7 @@ func toolOutput(raw json.RawMessage) (string, []Part, []Part) {
 			Format string `json:"format"`
 		} `json:"input_audio"`
 	}
-	if len(raw) == 0 || raw[0] != '[' || decodeJSON(raw, &blocks) != nil {
+	if len(raw) == 0 || raw[0] != '[' || decode(raw, &blocks) != nil {
 		return text, nil, nil
 	}
 	var images, audio []Part
@@ -1026,12 +1042,12 @@ func toolOutput(raw json.RawMessage) (string, []Part, []Part) {
 		case "input_image", "image_url":
 			var u string
 			detail := b.Detail
-			if decodeJSON(b.ImageURL, &u) != nil {
+			if decode(b.ImageURL, &u) != nil {
 				var o struct {
 					URL    string `json:"url"`
 					Detail string `json:"detail"`
 				}
-				decodeJSON(b.ImageURL, &o)
+				decode(b.ImageURL, &o)
 				u, detail = o.URL, o.Detail
 			}
 			if u != "" {

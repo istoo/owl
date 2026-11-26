@@ -172,7 +172,7 @@ func readAdvised(body []byte, clientMarks, facts, advised bool) (*Request, error
 	if err := decode(body, &a); err != nil {
 		return nil, fmt.Errorf("invalid request: %v", err)
 	}
-	r := &Request{Model: a.Model, System: stringOrText(a.System), MaxTokens: a.MaxTokens,
+	r := &Request{Model: a.Model, System: stringOrTextView(a.System), MaxTokens: a.MaxTokens,
 		Temp: a.Temperature, TopP: a.TopP, Stop: a.StopSequences, Stream: a.Stream, Fast: a.Speed == "fast"}
 	if len(a.System) > 0 {
 		r.systemRaw = []json.RawMessage{a.System}
@@ -204,7 +204,7 @@ func readAdvised(body []byte, clientMarks, facts, advised bool) (*Request, error
 			continue
 		}
 		var s string
-		if decodeJSON(m.Content, &s) == nil {
+		if decode(m.Content, &s) == nil {
 			if s != "" {
 				msg.Parts = append(msg.Parts, Part{Kind: Text, Text: s})
 			}
@@ -254,7 +254,7 @@ func readAdvised(body []byte, clientMarks, facts, advised bool) (*Request, error
 						msg.Parts = append(msg.Parts, Part{Kind: ToolResult, CallID: anthropicInID(b.ToolUseID)})
 						break
 					}
-					out, images, audio := toolOutput(b.Content)
+					out, images, audio := toolOutputView(b.Content)
 					msg.Parts = append(msg.Parts, Part{Kind: ToolResult, CallID: anthropicInID(b.ToolUseID), Text: out, Images: images, Audio: audio, IsError: b.IsError, Loads: toolRefs(b.Content), block: true})
 				case "thinking":
 					msg.Parts = append(msg.Parts, Part{Kind: Thinking, Text: b.Thinking, Signature: b.Signature, block: true})
