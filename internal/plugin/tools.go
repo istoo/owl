@@ -87,6 +87,8 @@ func ToolsPath() string { return toolsPath() }
 var toolsMu sync.Mutex
 
 // noteTools notes which plugins the host loaded give tools, written whole.
+var toolsNoting sync.WaitGroup
+
 func noteTools(loaded []Loaded) {
 	m := map[string][]string{}
 	for _, l := range loaded {
@@ -115,7 +117,11 @@ func noteTools(loaded []Loaded) {
 		return
 	}
 	if f := ToolsNoted; f != nil {
-		go f()
+		toolsNoting.Add(1)
+		go func() {
+			defer toolsNoting.Done()
+			f()
+		}()
 	}
 }
 

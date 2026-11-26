@@ -692,6 +692,8 @@ func Settle() {
 	}
 	// nor is the restart, or a sign-in a host saved, told in the next test
 	Told()
+	// nor a ToolsNoted hook still writing library.json into the next test's home
+	toolsNoting.Wait()
 	// and the plugins go with the folder: the next test's, in a folder of
 	// its own, are not taken for the plugins changed (checkList), nor
 	// answered with these
