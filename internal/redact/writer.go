@@ -194,7 +194,7 @@ func (rw *Writer) Finish() {
 			rw.pending = nil
 		}
 		if rw.buf.Len() > 0 {
-			rw.w.Write([]byte(restore(rw.buf.String(), false, rw.count())))
+			rw.w.Write(restoreEvent(rw.buf.Bytes(), rw.count()))
 		}
 	}
 	rw.Flush()
@@ -220,7 +220,7 @@ func (rw *Writer) event(ev []byte) error {
 		if err := rw.release(); err != nil {
 			return err
 		}
-		_, err := rw.w.Write([]byte(restore(string(ev), false, rw.count())))
+		_, err := rw.w.Write(restoreEvent(ev, rw.count()))
 		return err
 	}
 	if rw.pending != nil && waiting(name, data) {
@@ -332,6 +332,72 @@ func (rw *Writer) release() error {
 func rebuild(pre, data, post []byte) []byte {
 	out := make([]byte, 0, len(pre)+len(data)+len(post))
 	return append(append(append(out, pre...), data...), post...)
+}
+
+// restoreEvent puts the values back in an event splitEvent can't take
+// apart: data over more than one line, a data line that isn't JSON, or
+// what a stream left at Finish with no blank line after it.
+//
+// A payload that is JSON (one that starts with { or [) goes through
+// restoreJSON as a whole, and comes back as many data lines as it came:
+// a value restored inside a JSON string is escaped for it, where
+// restoring the event as plain text put a quote, a backslash or a line
+// break into the JSON syntax and broke it (#54). Any other event is put
+// back line by line as it came.
+func restoreEvent(ev []byte, put map[string]int) []byte {
+	lines := bytes.SplitAfter(ev, []byte("\n"))
+	type dataLine struct {
+		at          int
+		prefix, eol []byte
+	}
+	var data []dataLine
+	var bodies []string
+	for i, l := range lines {
+		t := bytes.TrimRight(l, "\r\n")
+		if !bytes.HasPrefix(t, []byte("data:")) {
+			continue
+		}
+		start := 5
+		if len(t) > 5 && t[5] == ' ' {
+			start = 6
+		}
+		data = append(data, dataLine{at: i, prefix: t[:start], eol: l[len(t):]})
+		bodies = append(bodies, string(t[start:]))
+	}
+	if len(data) == 0 {
+		return []byte(restore(string(ev), false, put))
+	}
+	joined := strings.Join(bodies, "\n")
+	if !jsonData(joined) {
+		return []byte(restore(string(ev), false, put))
+	}
+	parts := strings.Split(string(restoreJSON([]byte(joined), put)), "\n")
+	if len(parts) != len(data) {
+		// A JSON payload keeps its lines (its strings are escaped, never
+		// raw newlines), but if it doesn't, leave the event as it came
+		// rather than put the parts in the wrong `data:` lines.
+		return ev
+	}
+	var b bytes.Buffer
+	k := 0
+	for i, l := range lines {
+		if k < len(data) && data[k].at == i {
+			b.Write(data[k].prefix)
+			b.WriteString(parts[k])
+			b.Write(data[k].eol)
+			k++
+			continue
+		}
+		b.Write(l)
+	}
+	return b.Bytes()
+}
+
+// jsonData says an SSE payload is a JSON document: its first byte that
+// isn't space is { or [.
+func jsonData(s string) bool {
+	s = strings.TrimLeft(s, " \t\r\n")
+	return s != "" && (s[0] == '{' || s[0] == '[')
 }
 
 // splitEvent finds the one data line of an event that has JSON in it:

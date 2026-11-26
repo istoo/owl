@@ -106,6 +106,31 @@ func TestEncodeCacheMatchesTheOldBytes(t *testing.T) {
 	}
 }
 
+// A text with more spans than a uint16 holds is not written: the count
+// cut short left the file with spans it didn't name, which decodeCache
+// read as a cut-short file, and every other entry in it went with that
+// one (#65). It is kept in memory only; the rest of the cache is written
+// whole.
+func TestEncodeCacheSkipsTooManySpans(t *testing.T) {
+	c := newLRU(10)
+	big := sha256.Sum256([]byte("big"))
+	fs := make([]redact.Found, 1<<16) // one more than a uint16 holds
+	for i := range fs {
+		fs[i] = redact.Found{Start: 2 * i, End: 2*i + 1, Label: "private_person", Score: 1}
+	}
+	c.put(big, fs)
+	small := sha256.Sum256([]byte("small"))
+	c.put(small, []redact.Found{{Start: 0, End: 1, Label: "private_email", Score: 1}})
+
+	es, err := decodeCache(encodeCache(c))
+	if err != nil {
+		t.Fatalf("a cache with an over-long entry isn't readable: %v", err)
+	}
+	if len(es) != 1 || es[0].k != small || len(es[0].fs) != 1 || es[0].fs[0].Label != "private_email" {
+		t.Fatalf("read back %d entries: %+v", len(es), es)
+	}
+}
+
 // encodeCache is handed the whole cache under its lock on every save, so
 // it allocates its output once: no buffer that doubles, no reflection.
 func TestEncodeCacheAllocsOnce(t *testing.T) {

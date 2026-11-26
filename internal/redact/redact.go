@@ -1264,13 +1264,17 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		found = append(found, knownSpans(s, o)...)
 	}
 	if escaped {
+		// a value masked before with a newline, a quote or a backslash in it
+		// reads here as it is written, escaped: knownSpans reading the
+		// unescapedView finds none of those (#58)
+		found = append(found, knownSpansInJSON(raw, o)...)
 		found = inStrings(raw, outsideEscapes(raw, found))
 	}
 	found = noNumbers(s, noIDs(s, found))
 	if o.sent {
 		noteScores(raw, found) // what is masked for a vendor, not a preview
 	}
-	return apply(raw, found, put, o)
+	return apply(raw, found, put, o, escaped)
 }
 
 // ruleSpans are what the rules, owl's and the user's own, find in s,
@@ -1387,7 +1391,7 @@ func learnLate(raw string, now, kept []span, o Options, escaped bool) {
 	if escaped {
 		put = unescapedPut(put)
 	}
-	apply(raw, late, put, o)
+	apply(raw, late, put, o, escaped)
 }
 
 // unescapedView is s, JSON text, as long as s and read as the vendor reads
@@ -1429,13 +1433,7 @@ func unescapedView(s string) string {
 // JSON string's text goes as it is.
 func unescapedPut(put func(kind, v string) string) func(kind, v string) string {
 	return func(kind, v string) string {
-		if strings.IndexByte(v, '\\') >= 0 {
-			var u string
-			if json.Unmarshal([]byte(`"`+v+`"`), &u) == nil {
-				v = u
-			}
-		}
-		return put(kind, v)
+		return put(kind, unescapeValue(v))
 	}
 }
 
@@ -1788,7 +1786,7 @@ func (r rule) takes(s string, a, b int, ok func(string) bool) bool {
 // holds from the next text on: a text sent masked on o.Route before
 // keeps its value masked, so a vendor's cache of it still matches
 // (allowkept.go).
-func apply(s string, found []span, put func(kind, v string) string, o Options) (string, int) {
+func apply(s string, found []span, put func(kind, v string) string, o Options, escaped bool) (string, int) {
 	if len(found) == 0 {
 		return s, 0
 	}
@@ -1829,7 +1827,16 @@ func apply(s string, found []span, put func(kind, v string) string, o Options) (
 			continue
 		}
 		v := s[f.start:f.end]
-		if f.by != ByWord && o.allows(v) && (!remember || !maskedBefore(textOf(), v)) {
+		// val is the value as the vendor and the agent read it: in JSON
+		// text of its own (escaped), a \n or a \" is the newline or quote
+		// it stands for. The user's Allow, what was masked before and the
+		// record of it are of that value, not of how the text spells it
+		// (#58).
+		val := v
+		if escaped {
+			val = unescapeValue(v)
+		}
+		if f.by != ByWord && o.allows(val) && (!remember || !maskedBefore(textOf(), val)) {
 			kept = max(kept, f.end)
 			continue
 		}
@@ -1839,10 +1846,10 @@ func apply(s string, found []span, put func(kind, v string) string, o Options) (
 			act = ""
 		}
 		h := Hit{Kind: f.kind, By: f.by, Action: act}
-		h.Head, h.Len = Hint(f.kind, v)
+		h.Head, h.Len = Hint(f.kind, val)
 		if act == Warn {
 			if o.Seen != nil {
-				h.Placeholder = tag(f.kind, v)
+				h.Placeholder = tag(f.kind, val)
 				o.Seen(h)
 			}
 			continue
@@ -1855,7 +1862,7 @@ func apply(s string, found []span, put func(kind, v string) string, o Options) (
 			b.WriteString(h.Placeholder)
 		}
 		if remember {
-			keepMasked(textOf(), v)
+			keepMasked(textOf(), val)
 		}
 		if o.Seen != nil {
 			o.Seen(h)

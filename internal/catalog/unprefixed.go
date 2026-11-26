@@ -30,10 +30,11 @@ func Unprefixed(catalogs []string, id string) string {
 	if len(catalogs) == 0 || id == "" {
 		return ""
 	}
-	all, at := loadGen()
+	c, at := loadSnapGen()
+	all := c.mdev
 	k := SameModel(id)
-	for _, c := range catalogs {
-		if s, ok := unprefixedOf(all, at, c)[k]; ok {
+	for _, cat := range catalogs {
+		if s, ok := unprefixedOf(c, all, at, cat)[k]; ok {
 			return s
 		}
 	}
@@ -49,7 +50,7 @@ var unprefixedIndexes struct {
 // unprefixedOf is, for the models.dev provider pid, the spelling each of
 // its models listed without a maker's prefix is (Unprefixed), by the
 // model's SameModel id, built once a load.
-func unprefixedOf(all map[string]mdProvider, at int, pid string) map[string]string {
+func unprefixedOf(snap *catalogSnap, all map[string]mdProvider, at int, pid string) map[string]string {
 	unprefixedIndexes.Lock()
 	defer unprefixedIndexes.Unlock()
 	if unprefixedIndexes.by == nil || unprefixedIndexes.gen != at {
@@ -67,7 +68,7 @@ func unprefixedOf(all map[string]mdProvider, at int, pid string) map[string]stri
 		if b == "" || b == c {
 			continue
 		}
-		if s := unprefixedAs(b, c); s != "" {
+		if s := unprefixedAs(b, c, snap.normal); s != "" {
 			if was, ok := x[b]; !ok || s < was {
 				x[b] = s
 			}
@@ -82,7 +83,7 @@ func unprefixedOf(all map[string]mdProvider, at int, pid string) map[string]stri
 // itself when b is c with a maker's name taken off the front, that name
 // before b when b goes on past such a c and models.dev knows a model by
 // it, else "".
-func unprefixedAs(b, c string) string {
+func unprefixedAs(b, c string, normal map[string]string) string {
 	for i := 0; i < len(c); i++ {
 		if c[i] != '-' {
 			continue
@@ -93,7 +94,7 @@ func unprefixedAs(b, c string) string {
 		}
 		switch {
 		case b == rest:
-			return spellingOr(c)
+			return spellingOr(c, normal)
 		case strings.HasPrefix(b, rest+"-"):
 			if s := normal[maker+"-"+b]; s != "" {
 				return s
@@ -105,7 +106,7 @@ func unprefixedAs(b, c string) string {
 
 // spellingOr is models.dev's spelling of the model k (a SameModel id),
 // else k.
-func spellingOr(k string) string {
+func spellingOr(k string, normal map[string]string) string {
 	if s := normal[k]; s != "" {
 		return s
 	}

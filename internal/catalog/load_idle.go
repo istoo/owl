@@ -68,7 +68,7 @@ func dropIdleLoad() bool {
 	loaded = false
 	built = nil
 	gen++
-	mdev, images, windows, outputs, efforts, thinks, names, listed, canonical, labs, normal = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+	snap.Store(nil)
 	loadMu.Unlock()
 	// what was indexed of the old load is made again for the next
 	priceIndexes.Lock()

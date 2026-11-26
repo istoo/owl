@@ -1062,9 +1062,34 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 			return s
 		}
 		if o.Secrets && under(path, args) && namedSecret(key, s) {
-			p := put("SECRET", s)
-			total++
-			return p
+			// A value masked for its field's name goes through the same
+			// policy as one a rule finds: the user's Allow lets it go as
+			// written, Actions["SECRET"] may warn of it or block it, and
+			// Seen is told of it. Masked here alone it would skip all of
+			// that, and the gateway, seeing no hit, would send the body
+			// back as it came (#52).
+			if !o.allows(s) {
+				act := o.Actions["SECRET"]
+				if act != Warn && act != Block {
+					act = ""
+				}
+				h := Hit{Kind: "SECRET", By: ByRule, Action: act}
+				h.Head, h.Len = Hint(h.Kind, s)
+				if act == Warn {
+					if o.Seen != nil {
+						h.Placeholder = tag(h.Kind, s)
+						o.Seen(h)
+					}
+					return s
+				}
+				h.Placeholder = put("SECRET", s)
+				if o.Seen != nil {
+					o.Seen(h)
+				}
+				total++
+				return h.Placeholder
+			}
+			return s
 		}
 		if !masked(path, key, s) || under(path, defs) {
 			return s
@@ -1113,7 +1138,7 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 		// masked in another conversation (13800138000 is in many), and
 		// masked, its text would no longer match its signature
 		ko := Options{Secrets: o.Secrets, Route: o.Route}
-		t, n := apply(t, sentSpans(sentKnown, t, ko, func() []span { return knownSpans(t, ko) }), o.put(), o)
+		t, n := apply(t, sentSpans(sentKnown, t, ko, func() []span { return knownSpans(t, ko) }), o.put(), o, false)
 		total += n
 		return t
 	})

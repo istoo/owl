@@ -589,7 +589,21 @@ var (
 	// gen counts Resets, so a list built from an older load isn't kept.
 	built map[string][]Model
 	gen   int
-	mdev  map[string]mdProvider
+	// snap is the loaded catalog, published whole. Every field of it is
+	// built before the store and nothing writes it after, so a query reads
+	// it without loadMu; a Reset or the idle drop stores nil, which leaves
+	// a snapshot a call already took whole and safe for the GC to take.
+	snap atomic.Pointer[catalogSnap]
+
+	syncCh = make(chan struct{}, 1)
+)
+
+// catalogSnap is one load of models.dev's catalog: what its entries say of
+// each model, counted across the providers serving it. Nothing in it is
+// written once it is published (see snap).
+type catalogSnap struct {
+	// mdev is the catalog as read.
+	mdev map[string]mdProvider
 	// images are the models, by bare id, most of the providers serving
 	// them say take images (a few mislabel a text model)
 	images map[string]bool
@@ -630,9 +644,7 @@ var (
 	// spellings, the one the most entries give (kimi-k3.1-pro over
 	// Venice's kimi-k3-1-pro); a tie goes to the first in order.
 	normal map[string]string
-
-	syncCh = make(chan struct{}, 1)
-)
+}
 
 // CachePath is where `owl sync` stores the models.dev catalog.
 func CachePath() string { return appdir.Join(appdir.Cache(), "models.json") }
@@ -653,208 +665,230 @@ func Source() string {
 }
 
 func load() map[string]mdProvider {
-	all, _ := loadGen()
-	return all
+	return loadSnap().mdev
+}
+
+// loadSnap is the loaded catalog ready to read. What it returns is never
+// written again: a Reset or the idle drop meanwhile only drops the
+// package's pointer to it, so the caller reads it without loadMu.
+func loadSnap() *catalogSnap {
+	s, _ := loadSnapGen()
+	return s
 }
 
 // loadGen is load with the Reset count it was loaded at, read under the
 // same lock, so what is built of it is kept for that load alone.
 func loadGen() (map[string]mdProvider, int) {
+	s, at := loadSnapGen()
+	return s.mdev, at
+}
+
+// loadSnapGen is loadSnap with the Reset count it was loaded at, both read
+// under loadMu so a Reset between them cannot pair a snapshot with another
+// load's count.
+func loadSnapGen() (*catalogSnap, int) {
 	loadMu.Lock()
 	defer loadMu.Unlock()
 	loadUsed()
 	if !loaded {
 		loaded = true
-		func() {
-			// owl's own copy, OpenCode's, then the one owl ships
-			// with (bundled.go): a file that can't be read or parsed is
-			// passed over for the next, never read as no catalog
-			for _, read := range []func() ([]byte, error){
-				func() ([]byte, error) { return os.ReadFile(CachePath()) },
-				func() ([]byte, error) { return os.ReadFile(opencodeCache()) },
-				func() ([]byte, error) { return bundledCatalog(), nil },
-			} {
-				b, err := read()
-				if err != nil || b == nil {
-					continue
-				}
-				var m map[string]mdProvider
-				if json.Unmarshal(b, &m) == nil && len(m) > 0 {
-					shareCatalog(m)
-					mdev = m
-					votes, reasons := map[string]int{}, map[string]int{}
-					named := map[string]map[string]int{}
-					sizes, outs := map[string]map[int]int{}, map[string]map[int]int{}
-					levels := map[string]map[string]int{}
-					kinds := map[string]map[string]int{}
-					voted := map[string]bool{}
-					spelt := map[string]int{}
-					listed = map[string]bool{}
-					canonical = map[string]bool{}
-					// vote is what one entry says of a model, counted for
-					// the id it names it by: its window, reply limit,
-					// thinking, images, levels and name. One vote a
-					// provider for each list it gives a model: a gateway
-					// listing it under each host it routes to (llmgateway's
-					// deepinfra/…, xiaomi/…) votes its levels once, not
-					// once a host.
-					vote := func(who, own, by string, x mdModel) {
-						if routerIDs[who] {
-							return
-						}
-						spelt[who]++
-						if x.Name != "" && x.Name != own && x.Name != who {
-							if named[who] == nil {
-								named[who] = map[string]int{}
-							}
-							named[who][x.Name]++
-						}
-						// This vote answers what the catalog lists for the
-						// model across providers. A verified provider's toggle
-						// support is applied only when that provider itself is
-						// queried; it must not leak into relays or aggregates.
-						if e := x.efforts(""); len(e) > 0 {
-							l := strings.Join(e, ",")
-							if levels[who] == nil {
-								levels[who] = map[string]int{}
-							}
-							if k := by + "\x00" + who + "\x00" + l; !voted[k] {
-								voted[k] = true
-								levels[who][l]++
-							}
-						}
-						if x.Thinks || len(x.efforts("")) > 0 {
-							reasons[who]++
-						} else {
-							reasons[who]--
-						}
-						if slices.Contains(x.Modalities.Input, "image") {
-							votes[who]++
-						} else {
-							votes[who]--
-						}
-						if x.Modalities.Input != nil {
-							l := strings.Join(kindOrder(Kinds(x.Modalities.Input)), ",")
-							if kinds[who] == nil {
-								kinds[who] = map[string]int{}
-							}
-							if k := by + "\x00" + who + "\x00in\x00" + l; !voted[k] {
-								voted[k] = true
-								kinds[who][l]++
-							}
-						}
-						if w := x.window(); w > 0 {
-							if sizes[who] == nil {
-								sizes[who] = map[int]int{}
-							}
-							sizes[who][w]++
-						}
-						if o := x.Limit.Output; o > 0 {
-							if outs[who] == nil {
-								outs[who] = map[int]int{}
-							}
-							outs[who][o]++
-						}
-					}
-					for pid, p := range m {
-						for id, x := range p.Models {
-							listed[bareID(id)] = true
-							if _, _, ok := strings.Cut(x.Canonical, "/"); ok {
-								canonical[bareID(x.Canonical)] = true
-							}
-							OneHourFor(id, x.Cost)
-							vote(bareID(id), id, pid, x)
-						}
-					}
-					// and a model no catalog lists by its id, one entries
-					// only name as their canonical_model_id (#1520), takes
-					// their word for it too: its window, thinking, images
-					// and name are the model's, whoever serves it. One
-					// listed by its id keeps the answers it has, so nothing
-					// known changes.
-					for pid, p := range m {
-						for id, x := range p.Models {
-							if _, _, ok := strings.Cut(x.Canonical, "/"); !ok {
-								continue
-							}
-							if c := bareID(x.Canonical); !listed[c] {
-								vote(c, id, pid, x)
-							}
-						}
-					}
-					// and a model no provider lists at all, only its lab
-					// (models.dev's models.json): a gated one, as Claude
-					// Mythos 5.1 is since models.dev took it out of
-					// anthropic's list, that a vendor's own list or the
-					// account's still serves (iebb on Discord). Its lab
-					// file holds what is the model's on every host — name,
-					// window, reply limit, thinking, images — and no
-					// price. One a provider lists keeps its answers.
-					labs = map[string]mdModel{}
-					for id, x := range readLabs() {
-						b := bareID(id)
-						if listed[b] || canonical[b] {
-							continue
-						}
-						if x.ID == "" {
-							x.ID = id
-						}
-						if _, ok := labs[b]; !ok || id < labs[b].ID {
-							labs[b] = x
-						}
-						vote(b, b, "lab:"+id, x)
-					}
-					for b := range labs {
-						listed[b] = true
-					}
-					windows = map[string]int{}
-					for id, by := range sizes {
-						windows[id] = mostGiven(by)
-					}
-					outputs = map[string]int{}
-					for id, by := range outs {
-						outputs[id] = mostGiven(by)
-					}
-					inputs = map[string][]string{}
-					for id, by := range kinds {
-						if l := mostListed(by); l != "" {
-							inputs[id] = strings.Split(l, ",")
-						}
-					}
-					efforts = map[string][]string{}
-					for id, by := range levels {
-						efforts[id] = strings.Split(mostListed(by), ",")
-					}
-					normal = map[string]string{}
-					for id, n := range spelt {
-						k := SameModel(id)
-						if was, ok := normal[k]; !ok || n > spelt[was] || n == spelt[was] && id < was {
-							normal[k] = id
-						}
-					}
-					names = map[string]string{}
-					for id, by := range named {
-						names[id] = mostNamed(by)
-					}
-					thinks = map[string]bool{}
-					for id, v := range reasons {
-						if v > 0 {
-							thinks[id] = true
-						}
-					}
-					images = map[string]bool{}
-					for id, v := range votes {
-						if v > 0 {
-							images[id] = true
-						}
-					}
-					labKinEfforts(m)
+		snap.Store(loadNow())
+	}
+	return snap.Load(), gen
+}
+
+// loadNow reads and builds the catalog's snapshot. The caller holds loadMu.
+// Every map is built here before the snapshot is published, so no reader
+// ever sees one half-written.
+func loadNow() *catalogSnap {
+	s := &catalogSnap{}
+	// owl's own copy, OpenCode's, then the one owl ships
+	// with (bundled.go): a file that can't be read or parsed is
+	// passed over for the next, never read as no catalog
+	for _, read := range []func() ([]byte, error){
+		func() ([]byte, error) { return os.ReadFile(CachePath()) },
+		func() ([]byte, error) { return os.ReadFile(opencodeCache()) },
+		func() ([]byte, error) { return bundledCatalog(), nil },
+	} {
+		b, err := read()
+		if err != nil || b == nil {
+			continue
+		}
+		var m map[string]mdProvider
+		if json.Unmarshal(b, &m) == nil && len(m) > 0 {
+			shareCatalog(m)
+			s.mdev = m
+			votes, reasons := map[string]int{}, map[string]int{}
+			named := map[string]map[string]int{}
+			sizes, outs := map[string]map[int]int{}, map[string]map[int]int{}
+			levels := map[string]map[string]int{}
+			kinds := map[string]map[string]int{}
+			voted := map[string]bool{}
+			spelt := map[string]int{}
+			s.listed = map[string]bool{}
+			s.canonical = map[string]bool{}
+			// vote is what one entry says of a model, counted for
+			// the id it names it by: its window, reply limit,
+			// thinking, images, levels and name. One vote a
+			// provider for each list it gives a model: a gateway
+			// listing it under each host it routes to (llmgateway's
+			// deepinfra/…, xiaomi/…) votes its levels once, not
+			// once a host.
+			vote := func(who, own, by string, x mdModel) {
+				if routerIDs[who] {
 					return
 				}
+				spelt[who]++
+				if x.Name != "" && x.Name != own && x.Name != who {
+					if named[who] == nil {
+						named[who] = map[string]int{}
+					}
+					named[who][x.Name]++
+				}
+				// This vote answers what the catalog lists for the
+				// model across providers. A verified provider's toggle
+				// support is applied only when that provider itself is
+				// queried; it must not leak into relays or aggregates.
+				if e := x.efforts(""); len(e) > 0 {
+					l := strings.Join(e, ",")
+					if levels[who] == nil {
+						levels[who] = map[string]int{}
+					}
+					if k := by + "\x00" + who + "\x00" + l; !voted[k] {
+						voted[k] = true
+						levels[who][l]++
+					}
+				}
+				if x.Thinks || len(x.efforts("")) > 0 {
+					reasons[who]++
+				} else {
+					reasons[who]--
+				}
+				if slices.Contains(x.Modalities.Input, "image") {
+					votes[who]++
+				} else {
+					votes[who]--
+				}
+				if x.Modalities.Input != nil {
+					l := strings.Join(kindOrder(Kinds(x.Modalities.Input)), ",")
+					if kinds[who] == nil {
+						kinds[who] = map[string]int{}
+					}
+					if k := by + "\x00" + who + "\x00in\x00" + l; !voted[k] {
+						voted[k] = true
+						kinds[who][l]++
+					}
+				}
+				if w := x.window(); w > 0 {
+					if sizes[who] == nil {
+						sizes[who] = map[int]int{}
+					}
+					sizes[who][w]++
+				}
+				if o := x.Limit.Output; o > 0 {
+					if outs[who] == nil {
+						outs[who] = map[int]int{}
+					}
+					outs[who][o]++
+				}
 			}
-		}()
+			for pid, p := range m {
+				for id, x := range p.Models {
+					s.listed[bareID(id)] = true
+					if _, _, ok := strings.Cut(x.Canonical, "/"); ok {
+						s.canonical[bareID(x.Canonical)] = true
+					}
+					OneHourFor(id, x.Cost)
+					vote(bareID(id), id, pid, x)
+				}
+			}
+			// and a model no catalog lists by its id, one entries
+			// only name as their canonical_model_id (#1520), takes
+			// their word for it too: its window, thinking, images
+			// and name are the model's, whoever serves it. One
+			// listed by its id keeps the answers it has, so nothing
+			// known changes.
+			for pid, p := range m {
+				for id, x := range p.Models {
+					if _, _, ok := strings.Cut(x.Canonical, "/"); !ok {
+						continue
+					}
+					if c := bareID(x.Canonical); !s.listed[c] {
+						vote(c, id, pid, x)
+					}
+				}
+			}
+			// and a model no provider lists at all, only its lab
+			// (models.dev's models.json): a gated one, as Claude
+			// Mythos 5.1 is since models.dev took it out of
+			// anthropic's list, that a vendor's own list or the
+			// account's still serves (iebb on Discord). Its lab
+			// file holds what is the model's on every host — name,
+			// window, reply limit, thinking, images — and no
+			// price. One a provider lists keeps its answers.
+			s.labs = map[string]mdModel{}
+			for id, x := range readLabs() {
+				b := bareID(id)
+				if s.listed[b] || s.canonical[b] {
+					continue
+				}
+				if x.ID == "" {
+					x.ID = id
+				}
+				if _, ok := s.labs[b]; !ok || id < s.labs[b].ID {
+					s.labs[b] = x
+				}
+				vote(b, b, "lab:"+id, x)
+			}
+			for b := range s.labs {
+				s.listed[b] = true
+			}
+			s.windows = map[string]int{}
+			for id, by := range sizes {
+				s.windows[id] = mostGiven(by)
+			}
+			s.outputs = map[string]int{}
+			for id, by := range outs {
+				s.outputs[id] = mostGiven(by)
+			}
+			s.inputs = map[string][]string{}
+			for id, by := range kinds {
+				if l := mostListed(by); l != "" {
+					s.inputs[id] = strings.Split(l, ",")
+				}
+			}
+			s.efforts = map[string][]string{}
+			for id, by := range levels {
+				s.efforts[id] = strings.Split(mostListed(by), ",")
+			}
+			s.normal = map[string]string{}
+			for id, n := range spelt {
+				k := SameModel(id)
+				if was, ok := s.normal[k]; !ok || n > spelt[was] || n == spelt[was] && id < was {
+					s.normal[k] = id
+				}
+			}
+			s.names = map[string]string{}
+			for id, by := range named {
+				s.names[id] = mostNamed(by)
+			}
+			s.thinks = map[string]bool{}
+			for id, v := range reasons {
+				if v > 0 {
+					s.thinks[id] = true
+				}
+			}
+			s.images = map[string]bool{}
+			for id, v := range votes {
+				if v > 0 {
+					s.images[id] = true
+				}
+			}
+			labKinEfforts(s, m)
+			return s
+		}
 	}
-	return mdev, gen
+	return s
 }
 
 // Reset forgets the loaded catalog so the next call re-reads the cache,
@@ -867,7 +901,7 @@ func Reset() {
 	built = nil
 	gen++
 	resets.Add(1)
-	mdev, images, inputs, windows, outputs, efforts, thinks, names, listed, canonical, labs, normal = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+	snap.Store(nil)
 	loadMu.Unlock()
 	if Forget != nil {
 		Forget()
@@ -1022,11 +1056,12 @@ func TierPrice(std Price, model, tier string) (Price, bool) {
 // for a dash, then as the model an entry names as its canonical_model_id
 // (DeepSeek's deepseek-flash is deepseek-v4.1-flash).
 func PricedBy(providers []string, id string) (Price, bool) {
-	all, at := loadGen()
-	return pricedOnce(at, 'p', providers, id, func() (Price, bool) { return pricedBy(all, at, providers, id) })
+	c, at := loadSnapGen()
+	return pricedOnce(at, 'p', providers, id, func() (Price, bool) { return pricedBy(c, at, providers, id) })
 }
 
-func pricedBy(all map[string]mdProvider, at int, providers []string, id string) (Price, bool) {
+func pricedBy(c *catalogSnap, at int, providers []string, id string) (Price, bool) {
+	all := c.mdev
 	for _, pid := range providers {
 		if m, ok := all[pid].Models[id]; ok && m.Cost != nil {
 			return *m.Cost, true
@@ -1063,7 +1098,7 @@ func pricedBy(all map[string]mdProvider, at int, providers []string, id string) 
 	}
 	// and a relay's rename of a model none of them lists as given
 	// (claude-deepseek-v4.1-flash[1M] is deepseek-v4.1-flash, #1383)
-	if r, _, ok := renamed(b); ok {
+	if r, _, ok := renamed(c, b); ok {
 		return PricedBy(providers, r)
 	}
 	return Price{}, false
@@ -1400,8 +1435,8 @@ func ProviderName(id string) string {
 // it levels; for a vendor it doesn't list, serving a model it knows from
 // others.
 func Thinks(id string) bool {
-	load()
-	v, _ := lookup(id, thinks)
+	s := loadSnap()
+	v, _ := lookup(s, id, s.thinks)
 	return v
 }
 
@@ -1410,16 +1445,16 @@ func Thinks(id string) bool {
 // without a vendor's prefix, in any case. "" when no provider names it
 // other than by its id.
 func NameOf(id string) string {
-	load()
+	s := loadSnap()
 	b := bareID(id)
-	if n, ok := found(b, names); ok {
+	if n, ok := found(b, s.names); ok {
 		return n
 	}
-	r, w, ok := renamedBy(b, false)
+	r, w, ok := renamedBy(s, b, false)
 	if !ok {
 		return ""
 	}
-	n, _ := found(r, names)
+	n, _ := found(r, s.names)
 	if n != "" && w > 0 {
 		// two of a relay's models apart by their window alone read apart:
 		// "DeepSeek V4.1 Flash [1M]", the mark as the id writes it
@@ -1434,8 +1469,7 @@ func NameOf(id string) string {
 // its providers spell it (the normal index normalFor reads). Lowercase,
 // without a vendor's prefix; "" when it knows the model by no spelling.
 func Spelling(id string) string {
-	load()
-	return normal[SameModel(id)]
+	return loadSnap().normal[SameModel(id)]
 }
 
 // Named gives a model the list names by its id alone the name models.dev
@@ -1509,8 +1543,8 @@ func Knows(id string) bool {
 // rule kept for some models by name reaches them on a relay that renames
 // them.
 func IsOneOf(id string, ids map[string]bool) bool {
-	load()
-	_, ok := lookup(id, ids)
+	s := loadSnap()
+	_, ok := lookup(s, id, ids)
 	return ok
 }
 
@@ -1519,14 +1553,14 @@ func IsOneOf(id string, ids map[string]bool) bool {
 // written, so an id a user typed that only folds into a known one
 // ("Kimi K3.1 Pro 261024") is not sent.
 func KnowsAsWritten(id string) bool {
-	if contextAs(id, false) > 0 {
+	s := loadSnap()
+	if contextAs(s, id, false) > 0 {
 		return true
 	}
-	load()
-	if e, _ := lookupAs(id, efforts, false); len(e) > 0 {
+	if e, _ := lookupAs(s, id, s.efforts, false); len(e) > 0 {
 		return true
 	}
-	v, _ := lookupAs(id, thinks, false)
+	v, _ := lookupAs(s, id, s.thinks, false)
 	return v
 }
 
@@ -1534,8 +1568,7 @@ func KnowsAsWritten(id string) bool {
 // last part, any case), not one found by another spelling: claude-opus-5.5
 // only when that is how one of its providers spells it.
 func Lists(id string) bool {
-	load()
-	return listed[bareID(id)]
+	return loadSnap().listed[bareID(id)]
 }
 
 // SeesImages reports whether models.dev says a model of this id takes
@@ -1543,8 +1576,8 @@ func Lists(id string) bool {
 // doesn't list, serving a model it knows from others ("z-ai/glm-5.3" is
 // glm-5.3).
 func SeesImages(id string) bool {
-	load()
-	v, _ := lookup(id, images)
+	s := loadSnap()
+	v, _ := lookup(s, id, s.images)
 	return v
 }
 
@@ -1553,8 +1586,8 @@ func SeesImages(id string) bool {
 // found as SeesImages finds it; nil when it doesn't know the model. The
 // list is shared: the caller only reads it.
 func InputsOf(id string) []string {
-	load()
-	v, _ := lookup(id, inputs)
+	s := loadSnap()
+	v, _ := lookup(s, id, s.inputs)
 	return v
 }
 
@@ -1591,45 +1624,44 @@ func kindOrder(ks []string) []string {
 // Last, a model it lists under another spelling (normalFor): Volcengine
 // Ark's kimi-k3-1-pro-261024 has kimi-k3.1-pro's window. A window the
 // vendor's own list gives is read before this, by the caller, and stays.
-func ContextOf(id string) int { return contextAs(id, true) }
+func ContextOf(id string) int { return contextAs(loadSnap(), id, true) }
 
 // contextAs is ContextOf, with another spelling (normalFor), the model
 // the user said it is the same as (UserSame) and a tag in brackets taken
 // off (untagged) only when spellings is true.
-func contextAs(id string, spellings bool) int {
-	load()
-	return contextIn(bareID(id), spellings, spellings)
+func contextAs(c *catalogSnap, id string, spellings bool) int {
+	return contextIn(c, bareID(id), spellings, spellings)
 }
 
 // contextIn is contextAs for a bare id, the user's word (UserSame) heard
 // only with user: the model it names is looked up as any other, but not
 // sent to the user's word again.
-func contextIn(b string, spellings, user bool) int {
-	if w, ok := found(b, windows); ok {
+func contextIn(c *catalogSnap, b string, spellings, user bool) int {
+	if w, ok := found(b, c.windows); ok {
 		return w
 	}
 	if s, ok := userSame(b, user); ok {
-		if w := contextIn(s, true, false); w > 0 {
+		if w := contextIn(c, s, true, false); w > 0 {
 			return w
 		}
 	}
-	if r, w, ok := renamed(b); ok {
+	if r, w, ok := renamed(c, b); ok {
 		if w > 0 {
 			return w
 		}
-		if w, ok := found(r, windows); ok {
+		if w, ok := found(r, c.windows); ok {
 			return w
 		}
 	}
-	if n, ok := normalFor(b); spellings && ok {
-		w, _ := found(n, windows)
+	if n, ok := normalFor(c, b); spellings && ok {
+		w, _ := found(n, c.windows)
 		return w
 	}
 	if t, ok := untagged(b); spellings && ok {
-		return contextIn(t, true, user)
+		return contextIn(c, t, true, user)
 	}
 	if spellings {
-		return geminiKinWindow(b)
+		return geminiKinWindow(c, b)
 	}
 	return 0
 }
@@ -1640,7 +1672,7 @@ func contextIn(b string, spellings, user bool) int {
 // lists name it at once; Gemini 4 Carbon came after Argon and read no
 // window (stockAAAAA on X), where Google's model page gives both 1M.
 // Siblings that differ give no guess.
-func geminiKinWindow(b string) int {
+func geminiKinWindow(c *catalogSnap, b string) int {
 	rest, ok := strings.CutPrefix(b, "gemini-")
 	if !ok {
 		return 0
@@ -1656,7 +1688,7 @@ func geminiKinWindow(b string) int {
 	}
 	prefix := "gemini-" + rest[:i+1]
 	w := 0
-	for id, n := range windows {
+	for id, n := range c.windows {
 		if !strings.HasPrefix(id, prefix) || n <= 0 {
 			continue
 		}
@@ -1671,8 +1703,8 @@ func geminiKinWindow(b string) int {
 // OutputOf is the most tokens a reply from a model of this id may hold, as
 // most of the providers serving it give it, or 0 when not known.
 func OutputOf(id string) int {
-	load()
-	o, _ := lookup(id, outputs)
+	s := loadSnap()
+	o, _ := lookup(s, id, s.outputs)
 	return o
 }
 
@@ -1683,8 +1715,8 @@ func OutputOf(id string) int {
 // say it does, where it would otherwise be taken for a model that doesn't
 // reason, and an agent offer no levels for it.
 func EffortsOf(id string) []string {
-	load()
-	e, _ := lookup(id, efforts)
+	s := loadSnap()
+	e, _ := lookup(s, id, s.efforts)
 	return slices.Clone(e)
 }
 
@@ -1693,38 +1725,38 @@ func EffortsOf(id string) []string {
 // the spelling models.dev lists it by (normalFor). Every capability is
 // looked up the same way, so a model the catalog knows has all of them
 // or none.
-func lookup[T any](id string, table map[string]T) (T, bool) {
-	return lookupAs(id, table, true)
+func lookup[T any](c *catalogSnap, id string, table map[string]T) (T, bool) {
+	return lookupAs(c, id, table, true)
 }
 
 // lookupAs is lookup, with another spelling (normalFor), the model the
 // user said it is the same as (UserSame) and a tag in brackets taken off
 // (untagged) only when spellings is true.
-func lookupAs[T any](id string, table map[string]T, spellings bool) (T, bool) {
-	return lookupIn(bareID(id), table, spellings, spellings)
+func lookupAs[T any](c *catalogSnap, id string, table map[string]T, spellings bool) (T, bool) {
+	return lookupIn(c, bareID(id), table, spellings, spellings)
 }
 
 // lookupIn is lookupAs for a bare id, the user's word heard only with
 // user, as contextIn.
-func lookupIn[T any](b string, table map[string]T, spellings, user bool) (T, bool) {
+func lookupIn[T any](c *catalogSnap, b string, table map[string]T, spellings, user bool) (T, bool) {
 	if v, ok := found(b, table); ok {
 		return v, true
 	}
 	if s, ok := userSame(b, user); ok {
-		if v, ok := lookupIn(s, table, true, false); ok {
+		if v, ok := lookupIn(c, s, table, true, false); ok {
 			return v, true
 		}
 	}
-	if r, _, ok := renamed(b); ok {
+	if r, _, ok := renamed(c, b); ok {
 		if v, ok := found(r, table); ok {
 			return v, true
 		}
 	}
-	if n, ok := normalFor(b); spellings && ok {
+	if n, ok := normalFor(c, b); spellings && ok {
 		return found(n, table)
 	}
 	if t, ok := untagged(b); spellings && ok {
-		return lookupIn(t, table, true, user)
+		return lookupIn(c, t, table, true, user)
 	}
 	var zero T
 	return zero, false
@@ -1798,8 +1830,8 @@ func untagged(b string) (string, bool) {
 // snapshot date (Ark's six digits, "-261024"; "-20260801") don't keep
 // them apart, while a variant does (-pro-max is not -pro, -mini not the
 // model, k3.1 not k3). False for an id it knows as given, or none.
-func normalFor(b string) (string, bool) {
-	n, ok := normal[SameModel(b)]
+func normalFor(c *catalogSnap, b string) (string, bool) {
+	n, ok := c.normal[SameModel(b)]
 	if !ok || n == b {
 		return "", false
 	}
@@ -1853,18 +1885,18 @@ var channelPrefix = lazyre.New(`^[a-z]{2,24}-`)
 // claude-sonnet-4-0, not sonnet-4-0); a prefix comes off only when what is
 // left is known — listed, or an entry's canonical_model_id (#1520) — and
 // names a version ("claude-auto" is not the router "auto").
-func renamed(b string) (string, int, bool) { return renamedBy(b, true) }
+func renamed(c *catalogSnap, b string) (string, int, bool) { return renamedBy(c, b, true) }
 
 // renamedBy is renamed, a channel's word (channelPrefix) taken off only
 // with channels: the name a model is shown by keeps a channel's word, so
 // a relay's nyro-gpt-5.5 and its gpt-5.5 still read apart.
-func renamedBy(b string, channels bool) (string, int, bool) {
-	if _, ok := found(b, listed); ok || canonical[b] {
+func renamedBy(c *catalogSnap, b string, channels bool) (string, int, bool) {
+	if _, ok := found(b, c.listed); ok || c.canonical[b] {
 		return "", 0, false
 	}
 	r, w := unmarked(b)
 	if r != b {
-		if knownModel(r) {
+		if knownModel(c, r) {
 			return r, w, true
 		}
 	}
@@ -1873,12 +1905,12 @@ func renamedBy(b string, channels bool) (string, int, bool) {
 		if !ok || !strings.ContainsAny(rest, "0123456789") {
 			continue
 		}
-		if knownModel(rest) {
+		if knownModel(c, rest) {
 			return rest, w, true
 		}
 	}
 	if pre := channelPrefix.FindString(r); channels && pre != "" {
-		if rest := r[len(pre):]; strings.ContainsAny(rest, "0123456789") && knownModel(rest) {
+		if rest := r[len(pre):]; strings.ContainsAny(rest, "0123456789") && knownModel(c, rest) {
 			return rest, w, true
 		}
 	}
@@ -1888,11 +1920,11 @@ func renamedBy(b string, channels bool) (string, int, bool) {
 // knownModel is whether models.dev knows b as a model: listed by its id,
 // or named as an entry's canonical_model_id (#1520) — a model no catalog
 // lists by it, which relays serve and Claude Code asks for under a prefix.
-func knownModel(b string) bool {
-	if _, ok := found(b, listed); ok {
+func knownModel(c *catalogSnap, b string) bool {
+	if _, ok := found(b, c.listed); ok {
 		return true
 	}
-	return canonical[b]
+	return c.canonical[b]
 }
 
 // unmarked is a bare id without a window mark at its end ("[1m]",
@@ -2004,9 +2036,10 @@ func ListedByBorrowed(providers []string, id string) ([]string, bool) {
 }
 
 func listedBy(providers []string, id string, providerOverrides bool) ([]string, bool) {
-	all, at := loadGen()
+	c, at := loadSnapGen()
+	all := c.mdev
 	b := bareID(id)
-	if r, _, ok := renamed(b); ok {
+	if r, _, ok := renamed(c, b); ok {
 		b = r
 	}
 	if r, ok := unprofiled(b); ok {
@@ -2036,7 +2069,7 @@ func listedBy(providers []string, id string, providerOverrides bool) ([]string, 
 	// lists glm-5.3 on its plan, glm-5-3-flash-260828 pay-as-you-go. Of a
 	// provider's several such entries, the first in key order.
 	n := SameModel(b)
-	if _, ok := normal[n]; !ok {
+	if _, ok := c.normal[n]; !ok {
 		return nil, false
 	}
 	for _, pid := range providers {

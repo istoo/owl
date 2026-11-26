@@ -24,7 +24,7 @@ func TestIdleCatalogLetGoAndReadAgain(t *testing.T) {
 	loadKept.last.Store(time.Now().Add(-2 * loadIdle).UnixNano())
 	loadIdleCheck()
 	loadMu.Lock()
-	held, kept := loaded || mdev != nil, built != nil
+	held, kept := loaded || snap.Load() != nil, built != nil
 	loadMu.Unlock()
 	if held || kept || loadDrops.Load() != drops+1 {
 		t.Fatalf("idle catalog kept: loaded %v, built %v, %d drops", held, kept, loadDrops.Load()-drops)

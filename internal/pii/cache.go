@@ -169,9 +169,18 @@ func (bk *backend) saveCache() error {
 // allocation rather than a buffer that doubles and a reflection call per
 // field; it is called with the cache locked on every save.
 func encodeCache(c *lru) []byte {
+	written := 0
 	n := len(cacheMagic) + 4
 	for e := c.ll.Back(); e != nil; e = e.Prev() {
 		en := e.Value.(*entry)
+		if len(en.fs) > math.MaxUint16 {
+			// the count is a uint16: writing it cut would leave the file
+			// with spans its count doesn't name, which decodeCache reads as
+			// a cut-short file, and every entry in it with that one (#65).
+			// This entry is kept in memory and not written.
+			continue
+		}
+		written++
 		n += len(en.k) + 2
 		for _, f := range en.fs {
 			n += 13 + len(f.Label)
@@ -182,9 +191,12 @@ func encodeCache(c *lru) []byte {
 	}
 	b := make([]byte, 0, n)
 	b = append(b, cacheMagic...)
-	b = binary.LittleEndian.AppendUint32(b, uint32(c.ll.Len()))
+	b = binary.LittleEndian.AppendUint32(b, uint32(written))
 	for e := c.ll.Back(); e != nil; e = e.Prev() {
 		en := e.Value.(*entry)
+		if len(en.fs) > math.MaxUint16 {
+			continue
+		}
 		b = append(b, en.k[:]...)
 		b = binary.LittleEndian.AppendUint16(b, uint16(len(en.fs)))
 		for _, f := range en.fs {

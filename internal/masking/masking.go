@@ -55,7 +55,15 @@ func WithForced(ctx context.Context) context.Context {
 // optionsCtx is options with the model's wait ending with ctx, for the
 // route ctx has (WithRoute).
 func optionsCtx(ctx context.Context) redact.Options {
-	st := settings.Shared()
+	st, err := settings.SharedChecked()
+	if err != nil {
+		// A failed read is unknown, never "mask nothing": the gateway asked
+		// for masking (redactionWanted fails closed), and a masker that read
+		// the settings as all-off would send the request as it came. Every
+		// entry point here runs under gwmw.Safely on a request's way out, so
+		// the panic is that request's error: it goes nowhere.
+		panic(fmt.Errorf("settings unreadable, so nothing was masked: %w", err))
+	}
 	o := redact.Options{Secrets: st.Redact, Personal: st.RedactPersonal, Kinds: st.RedactKinds, Words: st.RedactWords, WordsAnyCase: st.RedactWordsAnyCase, WordsWhole: st.RedactWordsWhole, Rules: st.RedactRules,
 		Actions: st.RedactActions, Allow: st.RedactAllow, Shape: st.RedactShape}
 	o.Route, _ = ctx.Value(routeKey{}).(string)

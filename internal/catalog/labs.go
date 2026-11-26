@@ -102,8 +102,9 @@ func labsMissing() bool {
 // labKinEfforts gives a lab-only model that thinks and lists no levels
 // (lab files have none) the levels of the newest thinking model of its
 // family released by then that any provider gives levels: Claude Mythos
-// 5.1 takes Mythos 5's. Called under loadMu, as the tables are built.
-func labKinEfforts(all map[string]mdProvider) {
+// 5.1 takes Mythos 5's. Called under loadMu, as the snapshot's tables are
+// built, and it fills them before they are published.
+func labKinEfforts(s *catalogSnap, all map[string]mdProvider) {
 	type kin struct{ id, date string }
 	byFamily := map[string][]kin{}
 	for _, p := range all {
@@ -113,13 +114,13 @@ func labKinEfforts(all map[string]mdProvider) {
 			}
 		}
 	}
-	for b, x := range labs {
-		if len(efforts[b]) > 0 || !thinks[b] || x.Family == "" {
+	for b, x := range s.labs {
+		if len(s.efforts[b]) > 0 || !s.thinks[b] || x.Family == "" {
 			continue
 		}
 		var best kin
 		for _, k := range byFamily[x.Family] {
-			if len(efforts[k.id]) == 0 || !thinks[k.id] || x.ReleaseDate != "" && k.date > x.ReleaseDate {
+			if len(s.efforts[k.id]) == 0 || !s.thinks[k.id] || x.ReleaseDate != "" && k.date > x.ReleaseDate {
 				continue
 			}
 			if best.id == "" || k.date > best.date || k.date == best.date && k.id > best.id {
@@ -127,7 +128,7 @@ func labKinEfforts(all map[string]mdProvider) {
 			}
 		}
 		if best.id != "" {
-			efforts[b] = slices.Clone(efforts[best.id])
+			s.efforts[b] = slices.Clone(s.efforts[best.id])
 		}
 	}
 }
@@ -139,7 +140,7 @@ func labKinEfforts(all map[string]mdProvider) {
 // list's own, kept when it gives one. It has no price: a lab gives none,
 // and another host's isn't this one's.
 func Describe(id, name string) Model {
-	load()
+	s := loadSnap()
 	m := Model{ID: id, Name: strings.TrimSpace(name)}
 	if m.Name == "" || m.Name == id {
 		m.Name = id
@@ -151,7 +152,7 @@ func Describe(id, name string) Model {
 	m.Efforts = EffortsOf(id)
 	m.Reasoning = Thinks(id) || len(m.Efforts) > 0
 	m.Images = SeesImages(id)
-	if x, ok := lookup(id, labs); ok {
+	if x, ok := lookup(s, id, s.labs); ok {
 		m.ImageInput = imageInput(x.Modalities.Input)
 		m.Released, m.Temperature = x.ReleaseDate, x.Temperature
 		m.InputModalities, m.OutputModalities = Kinds(x.Modalities.Input), Kinds(x.Modalities.Output)
