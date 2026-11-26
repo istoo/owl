@@ -256,7 +256,8 @@ off until switched on under Memory → Tidy up every night.
 
 - Due once a day from 03:00 local (`DreamHour`), never before the first
   03:00 after it was switched on (`Dreams`, `TestDreamsOnceANight`). `Keep`
-  runs it after the hourly distill run; Tidy now runs it at once. It
+  runs it on its hourly tick whether or not conversation distilling is on
+  (`TestKeepDreamsWhenDistillingOff`); Tidy now runs it at once. It
   shares distillation's model, run lock and `distill.json`.
 - What is sent: per scope with two or more active or candidate memories
   and at least one not fixed, up to 120 (`perAsk`) a request, each as

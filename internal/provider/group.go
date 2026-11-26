@@ -792,6 +792,7 @@ func AutoGroupsOn() bool { return !load().NoAutoGroups }
 // taken out, as DeleteGroup keeps it: the user's group would lose it
 // unsaid.
 func SetAutoGroups(on bool) error {
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1024,6 +1025,7 @@ func AutoGroupSkip() []string { return slices.Clone(load().AutoGroupSkip) }
 // are the user's. A request still naming a found group skipping took away
 // goes to its model from one provider (AutoStandIn).
 func SetAutoGroupSkip(ids []string) error {
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1950,6 +1952,7 @@ func SaveGroup(g Group) error {
 	if len(g.Members) == 0 && len(g.Match) == 0 {
 		return errors.New("a group needs a model in it, or a pattern its models match")
 	}
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -2290,11 +2293,14 @@ func memberGroupsIn(entries []Entry) map[string][]string {
 // to come back with ShowGroup. A group another has in it, or classifies
 // with, stays until it is taken out of that one.
 func DeleteGroup(id string) error {
+	unlock := lockProviders()
 	f, err := read()
 	if err != nil {
+		unlock()
 		return err
 	}
 	if in := GroupsWith(id); len(in) > 0 {
+		unlock()
 		var names []string
 		for _, g := range in {
 			names = append(names, g.Name)
@@ -2303,6 +2309,7 @@ func DeleteGroup(id string) error {
 	}
 	for _, g := range groupsIn(providerEntries()) {
 		if !g.Hidden && g.Classifier == GroupPrefix+id {
+			unlock()
 			return fmt.Errorf("%s is %s's classifier: choose another first", id, g.Name)
 		}
 	}
@@ -2330,11 +2337,14 @@ func DeleteGroup(id string) error {
 		found = true
 	}
 	if !found {
+		unlock()
 		return fmt.Errorf("no group %q", id)
 	}
 	if err := store(f); err != nil {
+		unlock()
 		return err
 	}
+	unlock()
 	if hidden {
 		return nil
 	}
@@ -2405,6 +2415,7 @@ func DeleteGroups(ids []string) error {
 // switched off; and one that classifies for another stays on, or that
 // group's rules would have no one to ask.
 func SwitchGroup(id string, on bool) error {
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -2435,6 +2446,7 @@ func SwitchGroup(id string, on bool) error {
 // from wherever the user switches it: the tray panel (#2489) too. Nothing
 // else of the group changes, and only a Manual group can be switched so.
 func PickGroup(id, pick string) error {
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -2488,6 +2500,7 @@ func RemovedGroups() []string {
 
 // ShowGroup brings back a group owl found that the user had removed.
 func ShowGroup(id string) error {
+	defer lockProviders()()
 	f, err := read()
 	if err != nil {
 		return err
@@ -2509,17 +2522,21 @@ func RenameGroup(from, to string) error {
 	if to == from {
 		return nil
 	}
+	unlock := lockProviders()
 	f, err := read()
 	if err != nil {
+		unlock()
 		return err
 	}
 	all := groupsIn(providerEntries())
 	g, ok := groupOf(all, from)
 	if !ok {
+		unlock()
 		return fmt.Errorf("no group %q", from)
 	}
 	if slices.ContainsFunc(all, func(o Group) bool { return o.ID == to }) ||
 		slices.ContainsFunc(f.Groups, func(o Group) bool { return o.ID == to }) {
+		unlock()
 		return fmt.Errorf("there is a group %q already", to)
 	}
 	found := slices.ContainsFunc(foundGroups(providerEntries()), func(o Group) bool { return o.ID == from })
@@ -2581,8 +2598,10 @@ func RenameGroup(from, to string) error {
 		}
 	}
 	if err := store(f); err != nil {
+		unlock()
 		return err
 	}
+	unlock()
 	return renameGroupPicks(old, now)
 }
 
