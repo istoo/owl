@@ -36,6 +36,8 @@ func Rename(from, to string) error {
 	if to == from {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -612,6 +614,8 @@ func deletedAt(f *file, id string) (int, error) {
 // added later under the deleted one's id is not merged.
 func MergeDeleted(id, into string) error {
 	into = strings.ToLower(strings.TrimSpace(into))
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -635,6 +639,8 @@ func MergeDeleted(id, into string) error {
 // NameDeleted names the deleted provider the Usage page lists under id
 // as the user wants it shown there; "" shows it by its own name again.
 func NameDeleted(id, name string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

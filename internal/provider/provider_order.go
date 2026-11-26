@@ -69,6 +69,8 @@ func samePlace(id string) string {
 // Every id must be a provider's, once; the ones left out follow those
 // named, as they are now, so a provider added later goes after them all.
 func SetOrder(ids []string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -110,6 +112,8 @@ func MirrorOrder(order []string) error {
 	if len(order) == 0 {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

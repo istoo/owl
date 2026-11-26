@@ -108,9 +108,19 @@ type shim struct {
 	nread    atomic.Int64
 
 	// images is where a message's images are written for their paths to
-	// be pasted, made with the first; images counts them
-	images  string
-	nimages int
+	// be pasted, made with the first; images counts them. imagesMu keeps
+	// writeImage and a drop on another goroutine apart (#14)
+	imagesMu sync.Mutex
+	images   string
+	nimages  int
+
+	// cleanupOnce runs the end's own work once: the signal and deadline
+	// handlers, which call os.Exit and so run no defer, and the deferred
+	// path share it (#14)
+	cleanupOnce sync.Once
+	// wslDir is the folder taken for reading a WSL transcript, removed at
+	// the end: os.Exit skips the defer that used to do it (#14)
+	wslDir string
 
 	// wsl is a Claude Code in a WSL distro (WSLEnv); nil for this
 	// machine's. wslr reads its transcript inside the distro, when
@@ -158,6 +168,7 @@ func Run(args []string) error {
 	}
 	args = interactiveArgs(pargs[len(wslArgs(wsl)):])
 	s := &shim{out: os.Stdout, changed: make(chan struct{}, 1), rowsCh: make(chan struct{}, 1), exited: make(chan struct{}), readDone: make(chan struct{}), wsl: wsl, listed: mcpListed(args)}
+	defer s.cleanup()
 	resume, named := "", ""
 	for i, a := range args {
 		if a == "--resume" && i+1 < len(args) {
@@ -181,15 +192,14 @@ func Run(args []string) error {
 	if wsl != nil && wsl.Projects != "" {
 		s.projects = wsl.Projects
 	} else if wsl != nil {
-		dir, err := os.MkdirTemp("", "owl-claude-wsl-")
+		dir, err := os.MkdirTemp("", wslPrefix)
 		if err != nil {
 			return fail(err.Error())
 		}
-		defer os.RemoveAll(dir)
+		s.wslDir = dir
 		if s.wslr, err = startWSLRead(wsl.Distro, s.sid, dir); err != nil {
 			return fail(err.Error())
 		}
-		defer s.wslr.stop()
 		s.projects = dir
 	}
 	// a resumed session's file has its earlier turns: only what is
@@ -203,30 +213,22 @@ func Run(args []string) error {
 	if s.tap, s.env = newTap(s.path); s.tap != nil {
 		s.tap.out, s.tap.sid = s, s.sid
 	}
-	defer s.tap.drop()
 	if err := s.start(path, append(slices.Clone(wslArgs(wsl)), args...)); err != nil {
-		s.tap.drop()
 		return fail(fmt.Sprintf("Claude Code's interactive mode could not start (%v)", err))
 	}
-	defer s.stop()
-	defer s.dropImages()
 	go dropLeft()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, endSignals...)
 	go func() {
 		<-sigs
-		s.stop()
-		s.dropImages()
-		s.tap.drop()
+		s.cleanup()
 		os.Exit(1)
 	}()
 	if by, ok := deadline(os.Getenv(DeadlineEnv)); ok {
 		started := time.Now()
 		t := time.AfterFunc(time.Until(by), func() {
 			fmt.Fprintf(os.Stderr, "claude-tui: %s\n", s.late(time.Since(started)))
-			s.stop()
-			s.dropImages()
-			s.tap.drop()
+			s.cleanup()
 			os.Exit(1)
 		})
 		defer t.Stop()
@@ -1163,6 +1165,8 @@ func (s *shim) userPieces(raw json.RawMessage) ([]piece, error) {
 // writeImage writes an image block's bytes to a file of its own, named
 // for its type, and returns its path.
 func (s *shim) writeImage(source, mediaType, data string) (string, error) {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
 	if source != "base64" {
 		return "", fmt.Errorf("an image by %s", source)
 	}
@@ -1187,9 +1191,29 @@ func (s *shim) writeImage(source, mediaType, data string) (string, error) {
 	return path, os.WriteFile(path, b, 0o600)
 }
 
+// cleanup ends what the helper started: Claude Code, a WSL transcript's
+// reader and the folder it copies into, the message's images and the
+// tap. The signal and deadline handlers run it before os.Exit, which runs
+// no defer, and the deferred call at run's end runs it once with them
+// (#14: a signal left owl-claude-wsl-* and the tap folders behind).
+func (s *shim) cleanup() {
+	s.cleanupOnce.Do(func() {
+		s.stop()
+		s.wslr.stop()
+		s.dropImages()
+		s.tap.drop()
+		if s.wslDir != "" {
+			_ = os.RemoveAll(s.wslDir)
+			s.wslDir = ""
+		}
+	})
+}
+
 // dropImages removes the images pasted: once their message is in the
 // transcript, Claude Code has them, and when the helper ends.
 func (s *shim) dropImages() {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
 	if s.images != "" {
 		_ = os.RemoveAll(s.images)
 		s.images = ""
@@ -1200,6 +1224,17 @@ func (s *shim) dropImages() {
 // after it.
 const imagesPrefix = "owl-claude-images-"
 
+// wslPrefix names the folders a WSL transcript is copied into before it is
+// read, removed at the end; one a killed helper left is removed after
+// wslLeft.
+const wslPrefix = "owl-claude-wsl-"
+
+// wslLeft is how long a WSL folder is left before another helper removes
+// it. It is far longer than imagesLeft: a session in WSL can run for
+// hours with its folder read throughout, and removing a live one would
+// lose its transcript.
+const wslLeft = 24 * time.Hour
+
 // imagesLeft is how long an image or tap folder is left before another
 // helper removes it: one killed, as Windows ends a run, can't remove its
 // own. A tap's files are open by then, in a run that goes on longer:
@@ -1207,12 +1242,19 @@ const imagesPrefix = "owl-claude-images-"
 const imagesLeft = time.Hour
 
 // dropLeft removes the image and tap folders helpers left, made over
-// imagesLeft ago.
+// imagesLeft ago, and the WSL folders, made over wslLeft ago: a WSL one
+// live for hours is left alone.
 func dropLeft() {
 	m, _ := filepath.Glob(filepath.Join(os.TempDir(), imagesPrefix+"*"))
 	t, _ := filepath.Glob(filepath.Join(os.TempDir(), tapPrefix+"*"))
 	for _, d := range append(m, t...) {
 		if fi, err := os.Stat(d); err == nil && fi.IsDir() && time.Since(fi.ModTime()) > imagesLeft {
+			_ = os.RemoveAll(d)
+		}
+	}
+	w, _ := filepath.Glob(filepath.Join(os.TempDir(), wslPrefix+"*"))
+	for _, d := range w {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() && time.Since(fi.ModTime()) > wslLeft {
 			_ = os.RemoveAll(d)
 		}
 	}
@@ -1621,15 +1663,33 @@ func (s *shim) tail(from int64) {
 		}
 		select {
 		case <-s.exited:
-			// what it wrote last
+			// what it wrote last: the whole tail, not one line of it —
+			// an assistant message, a synthetic error and the turn's end
+			// are written together, and reading one lost the rest (#13)
 			s.wslr.settle()
-			if line, _ := rd.ReadBytes('\n'); len(line) > 0 {
-				t.row(append(part, line...))
-			}
+			readTail(rd, part, t.row)
 			t.flush()
 			s.tap.settle()
 			return
 		case <-time.After(wait):
+		}
+	}
+}
+
+// readTail rows every line the transcript still has when Claude Code has
+// exited, part being a line not ended yet: an assistant message, a
+// synthetic error and the turn's end are written together, and reading one
+// line of them lost the rest (#13).
+func readTail(rd *bufio.Reader, part []byte, row func([]byte)) {
+	for {
+		line, err := rd.ReadBytes('\n')
+		if len(line) > 0 {
+			part = append(part, line...)
+			row(part)
+			part = nil
+		}
+		if err != nil {
+			return
 		}
 	}
 }

@@ -77,17 +77,99 @@ func Downloaded() (path, version string) {
 	return path, version
 }
 
-// newer is whether version a is after b (numbers compared one by one).
+// newer is whether version a is after b: numbers compared one by one,
+// and those equal, a release after a prerelease of it and prereleases by
+// SemVer, so "2.1.0" is after "2.1.0-rc1" and "2.1.0-rc2" after
+// "2.1.0-rc1" (#19: compared as text, a prerelease came out after its own
+// release).
 func newer(a, b string) bool {
-	pa, pb := strings.SplitN(strings.SplitN(a, "-", 2)[0], ".", 3), strings.SplitN(strings.SplitN(b, "-", 2)[0], ".", 3)
-	for i := range 3 {
-		x, _ := strconv.Atoi(pa[i])
-		y, _ := strconv.Atoi(pb[i])
-		if x != y {
-			return x > y
+	if c := compareVersionCore(a, b); c != 0 {
+		return c > 0
+	}
+	return prereleaseAfter(versionPrerelease(a), versionPrerelease(b))
+}
+
+// versionCore is a version's major.minor.patch, as numbers.
+func versionCore(v string) (core [3]int) {
+	main, _, _ := strings.Cut(v, "-")
+	for i, s := range strings.SplitN(main, ".", 3) {
+		if i < len(core) {
+			core[i], _ = strconv.Atoi(s)
 		}
 	}
-	return a > b
+	return core
+}
+
+// versionPrerelease is what follows the first "-" in v, "" for a release.
+func versionPrerelease(v string) string {
+	if _, pre, ok := strings.Cut(v, "-"); ok {
+		return pre
+	}
+	return ""
+}
+
+func compareVersionCore(a, b string) int {
+	ca, cb := versionCore(a), versionCore(b)
+	for i := range ca {
+		if ca[i] < cb[i] {
+			return -1
+		}
+		if ca[i] > cb[i] {
+			return 1
+		}
+	}
+	return 0
+}
+
+// prereleaseAfter is SemVer's rule with the cores equal: a release comes
+// after any prerelease of it, and of two prereleases the dot-separated
+// identifiers decide, a numeric one below a word one.
+func prereleaseAfter(a, b string) bool {
+	switch {
+	case a == "" && b == "":
+		return false
+	case a == "":
+		return true // a is the release, b a prerelease of it
+	case b == "":
+		return false // a is a prerelease, b the release
+	}
+	return comparePrerelease(a, b) > 0
+}
+
+func comparePrerelease(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if c := compareIdentifier(as[i], bs[i]); c != 0 {
+			return c
+		}
+	}
+	switch {
+	case len(as) < len(bs):
+		return -1
+	case len(as) > len(bs):
+		return 1
+	}
+	return 0
+}
+
+func compareIdentifier(a, b string) int {
+	an, aerr := strconv.Atoi(a)
+	bn, berr := strconv.Atoi(b)
+	switch {
+	case aerr == nil && berr == nil:
+		switch {
+		case an < bn:
+			return -1
+		case an > bn:
+			return 1
+		}
+		return 0
+	case aerr == nil:
+		return -1 // a number comes before a word
+	case berr == nil:
+		return 1
+	}
+	return strings.Compare(a, b)
 }
 
 // Find is the Claude Code to run on this machine: the user's own (on PATH

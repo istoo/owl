@@ -150,6 +150,8 @@ func moveAccountSettings(id string, moves map[string]string) error {
 	if len(moves) == 0 {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

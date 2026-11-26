@@ -152,6 +152,8 @@ func kiroOut(home, user, plan string) (map[string]any, error) {
 
 // setKiroKey sets (or, "", clears) the key saved on the Kiro provider.
 func setKiroKey(k string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

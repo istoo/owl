@@ -26,6 +26,7 @@ import (
 
 	"github.com/istoo/owl/internal/appdir"
 	"github.com/istoo/owl/internal/catalog"
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/filememo"
 	"github.com/istoo/owl/internal/lastgood"
 	"github.com/istoo/owl/internal/lazyre"
@@ -921,6 +922,28 @@ func Routings() ([]string, error) {
 	return out, nil
 }
 
+// providersMu keeps a read of providers.json, the change made from it and
+// the write back one at a time: this owl's writers take turns on its
+// mutex, and the other owls on the computer on the lock file beside it
+// (#10). Without it two writers each read the catalog as it was, changed
+// their own record and wrote theirs back, and the later write lost the
+// earlier one's.
+var providersMu = filelock.Mutex{Path: func() string { return Path() + ".lock" }}
+
+// lockProviders takes providers.json's lock for a read-change-write and
+// returns the unlock. It is taken before the read the change is made
+// from; a look that only reads needs none, since store renames its file
+// over the old one whole.
+//
+// Save takes it alone, so a write that is one provider replaced in the
+// file read afresh under it keeps every other writer's record. A
+// read-change-write that writes the file itself (Rename, the orders, the
+// restores) takes it around its own read and store.
+func lockProviders() func() {
+	providersMu.Lock()
+	return providersMu.Unlock
+}
+
 // store replaces providers.json whole, through a file renamed over it, so
 // that a read at that moment sees the old catalog or the new one, never a
 // file cut short.
@@ -1388,6 +1411,8 @@ func Save(p Provider) error {
 			return fmt.Errorf("%s %w", p.Name, ErrNeedsKey)
 		}
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1720,6 +1745,8 @@ func tuckedAccount(id string) bool {
 // owl" too (on), or lists it there again (off). Tucked, it is quiet as
 // well: no reminder line either (#116).
 func TuckAccount(id string, on bool) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1739,6 +1766,8 @@ func TuckAccount(id string, on bool) error {
 // QuietAccount stops reminding the user of an account they removed: its
 // "Add it back" line goes, and it is offered only from the Add sheet.
 func QuietAccount(id string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1755,6 +1784,8 @@ func QuietAccount(id string) error {
 // forgetKeptAccount marks a removed account signed out of owl while its
 // agent's own sign-in stays: Excluded leaves it out.
 func forgetKeptAccount(id string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1771,6 +1802,8 @@ func forgetKeptAccount(id string) error {
 // ShowAccount brings back the signed-in account of an agent the user had
 // removed from owl.
 func ShowAccount(id string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -1788,6 +1821,8 @@ func ShowAccount(id string) error {
 // only hidden from owl (its accounts and model picks kept, shown again
 // from Hidden or by signing in); signing out is each account's Remove.
 func Delete(id string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

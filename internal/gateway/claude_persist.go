@@ -77,6 +77,14 @@ func shelfPath() string { return filepath.Join(filepath.Dir(provider.Path()), "c
 // turn that finds nothing looks at the file again only when it changed.
 var shelfRead sync.Map
 
+// shelfIO keeps a write of the file and a read of it one at a time. Two
+// turns finding nothing at once both read it; the one that saw its mtime
+// first stored it and returned before the other had filled b.shelf, and
+// the second found the shelf still empty (#18). The write made its own
+// temporary file too, so two gateways ending together did not overwrite
+// each other's half-written file.
+var shelfIO sync.Mutex
+
 // keepShelf shelves the runs waiting for their next turn, and writes the
 // shelf to the file for the next gateway (b.mu not held). Called as the
 // gateway ends, before its runs are ended: a shelved run's session is
@@ -109,6 +117,8 @@ func (b *subscriptionBridge) keepShelf() {
 	if len(entries) == 0 {
 		return
 	}
+	shelfIO.Lock()
+	defer shelfIO.Unlock()
 	path := shelfPath()
 	data, err := json.Marshal(shelfFile{Version: shelfFileVersion, Saved: time.Now(), Entries: entries})
 	if err != nil || os.MkdirAll(filepath.Dir(path), 0o700) != nil {
@@ -117,12 +127,26 @@ func (b *subscriptionBridge) keepShelf() {
 	if path, err = edit.Target(path); err != nil {
 		return
 	}
-	tmp := path + ".owl-tmp"
-	if os.WriteFile(tmp, data, 0o600) != nil {
+	// a name of its own: two gateways writing the one path + ".owl-tmp"
+	// wrote each other's half file (#18)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".owl-shelf-*.tmp")
+	if err != nil {
 		return
 	}
-	if steady.Rename(tmp, path) != nil {
-		os.Remove(tmp)
+	name := tmp.Name()
+	defer os.Remove(name) // gone with the rename; left when one failed
+	if tmp.Chmod(0o600) != nil {
+		tmp.Close()
+		return
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return
+	}
+	if tmp.Close() != nil {
+		return
+	}
+	if steady.Rename(name, path) != nil {
 		return
 	}
 	log.Printf("claude: %d saved session(s) kept for the next start", len(entries))
@@ -132,6 +156,8 @@ func (b *subscriptionBridge) keepShelf() {
 // when the file changed since this one looked (b.mu not held). A file that
 // can't be read whole is unknown: nothing is taken from it.
 func (b *subscriptionBridge) loadShelf() {
+	shelfIO.Lock()
+	defer shelfIO.Unlock()
 	path := shelfPath()
 	fi, err := os.Stat(path)
 	if err != nil {

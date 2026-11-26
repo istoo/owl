@@ -413,6 +413,8 @@ func liveIDs(id string) map[string]bool {
 // not forgotten, and those of its Delisted now has go back among the picks
 // (relistPicks): a list that shrank for a while gives back what it took.
 func dropGonePicks(id string, before, now map[string]bool) ([]string, error) {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return nil, err
@@ -1448,6 +1450,8 @@ func (p Provider) servesAtBase(ctx context.Context, base string) bool {
 func (p Provider) setV1(base string) string {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	fixed := base + "/v1"
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return base

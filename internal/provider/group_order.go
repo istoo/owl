@@ -35,6 +35,8 @@ func orderedGroups(gs []Group, order []string) []Group {
 // as they are now, and the whole order is kept, so a group made or found
 // later goes after them all.
 func SetGroupOrder(ids []string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -75,6 +77,8 @@ func MirrorGroupOrder(order []string) error {
 	if len(order) == 0 {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

@@ -249,6 +249,8 @@ func copiesByName(ps []Provider) [][]int {
 // into providers.json's list in the order the user put them), those alike
 // but for their keys into the first of them that is on.
 func foldWhere(candidates func([]Provider) [][]int) (int, error) {
+	unlock := lockProviders()
+	defer unlock()
 	// read from its last good generation, the file is the user's to mend:
 	// a fold would write that generation over it
 	if b, err := os.ReadFile(Path()); err == nil && !validProviders(b) {

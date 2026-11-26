@@ -76,6 +76,8 @@ func setAside(pkg string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -104,6 +106,8 @@ func setAside(pkg string, ids []string) error {
 // gave the id to a provider since) stays aside.
 func takeBackLeft(spec string) error {
 	pkg := plugin.PackageName(spec)
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

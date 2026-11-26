@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,6 +65,9 @@ var (
 
 // tap reads what tap.js writes.
 type tap struct {
+	// mu keeps read and drop apart: the shim's tail reads while a signal
+	// or the deadline ends the run and drops the tap (#14)
+	mu  sync.Mutex
 	dir string
 	f   *os.File
 	rd  *bufio.Reader
@@ -139,21 +143,34 @@ func newTap(path func(string) string) (*tap, []string) {
 	return t, env
 }
 
-// drop removes the tap's folder.
+// drop removes the tap's folder, once: a signal and the deferred end both
+// call it.
 func (t *tap) drop() {
 	if t == nil {
 		return
 	}
-	if t.f != nil {
-		_ = t.f.Close()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.dir == "" {
+		return
 	}
-	_ = os.RemoveAll(t.dir)
+	dir, f := t.dir, t.f
+	t.dir, t.f = "", nil
+	if f != nil {
+		_ = f.Close() // Windows can't remove a folder with the file open
+	}
+	_ = os.RemoveAll(dir)
 }
 
 // read tells what tap.js wrote since it was last read.
 func (t *tap) read() {
 	if t == nil {
 		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.f == nil {
+		return // dropped
 	}
 	for {
 		line, err := t.rd.ReadBytes('\n')

@@ -108,9 +108,12 @@ func RunMCP(args []string) error {
 		_ = enc.Encode(v)
 		outMu.Unlock()
 	}
-	// listed is closed by the next tools/list, once the tools changed
+	// waiting holds one channel per retool whose change is not listed yet;
+	// the next tools/list closes every one of them. A second retool used
+	// to replace the first's channel, so the callers waiting on that one
+	// waited out listWait with no one to wake them (#16).
 	var toolsMu sync.Mutex
-	var listed chan struct{}
+	var waiting []chan struct{}
 	retool := func(next []tool) {
 		toolsMu.Lock()
 		if reflect.DeepEqual(next, tools) {
@@ -119,7 +122,7 @@ func RunMCP(args []string) error {
 		}
 		tools = next
 		done := make(chan struct{})
-		listed = done
+		waiting = append(waiting, done)
 		toolsMu.Unlock()
 		respond(map[string]any{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
 		select {
@@ -150,10 +153,15 @@ func RunMCP(args []string) error {
 			case "tools/list":
 				toolsMu.Lock()
 				result = map[string]any{"tools": tools}
-				if listed != nil {
+				if len(waiting) > 0 {
 					// answered before the calls waiting on it go on
-					defer close(listed)
-					listed = nil
+					waiters := waiting
+					waiting = nil
+					defer func() {
+						for _, ch := range waiters {
+							close(ch)
+						}
+					}()
 				}
 				toolsMu.Unlock()
 			case "tools/call":
@@ -173,7 +181,13 @@ func RunMCP(args []string) error {
 					id = newCallID()
 				}
 				payload, _ := json.Marshal(callbackRequest{ToolCallID: id, Name: p.Name, Arguments: p.Arguments})
-				httpReq, _ := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(payload))
+				httpReq, err := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(payload))
+				if err != nil {
+					// a callback URL that isn't one: an RPC error, not a
+					// nil request dereferenced below (#16)
+					rpcErr = map[string]any{"code": -32000, "message": err.Error()}
+					break
+				}
 				httpReq.Header.Set("Content-Type", "application/json")
 				res, err := client.Do(httpReq)
 				if err != nil {

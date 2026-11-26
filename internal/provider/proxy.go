@@ -182,6 +182,8 @@ func keepSignInProxy(id, user, proxy string) error {
 			alone = false
 		}
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

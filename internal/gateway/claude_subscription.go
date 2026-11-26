@@ -6629,6 +6629,13 @@ func (b *subscriptionBridge) mcpCall(w http.ResponseWriter, r *http.Request) {
 	}
 	waiter := make(chan mcpToolResult, 1)
 	run.mu.Lock()
+	if run.closed {
+		// finish took the pending waiters and closed them: one put in now
+		// would never be answered and would keep the run's b.calls entry
+		run.mu.Unlock()
+		http.Error(w, "the agent's run ended", http.StatusGone)
+		return
+	}
 	if result, ok := run.early[call.ToolCallID]; ok {
 		delete(run.early, call.ToolCallID)
 		run.mu.Unlock()
@@ -6639,6 +6646,19 @@ func (b *subscriptionBridge) mcpCall(w http.ResponseWriter, r *http.Request) {
 	onCall := run.onCall
 	run.mu.Unlock()
 	b.mu.Lock()
+	if b.runs[token] != run {
+		// the run ended between the check above and here: removeRun has
+		// already swept b.calls, so an entry put in now would leak, and
+		// the waiter would wait for a result nobody sends (#11)
+		b.mu.Unlock()
+		run.mu.Lock()
+		if run.pending[call.ToolCallID] == waiter {
+			delete(run.pending, call.ToolCallID)
+		}
+		run.mu.Unlock()
+		http.Error(w, "the agent's run ended", http.StatusGone)
+		return
+	}
 	b.calls[call.ToolCallID] = run
 	b.mu.Unlock()
 	if onCall != nil {

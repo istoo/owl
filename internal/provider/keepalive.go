@@ -135,6 +135,13 @@ func renewLogins(ctx context.Context, every time.Duration, atOnce int) []Renewal
 		if l.Agent != "codex" && !claudeKeptAlive(l) || l.AccessOnly || strings.EqualFold(active[l.Agent], l.User) || leftAlone(l.Agent) {
 			continue
 		}
+		// a lapsed Codex sign-in is gone: the vendor refused it, and the
+		// scheduled keep-alive doesn't retry it, so it doesn't take the
+		// one renewal each hourly look has (#17). RenewLogins(ctx, 0)
+		// still retries them: a person asking has room for the wait.
+		if every > 0 && l.Agent == "codex" && l.Lapsed != "" {
+			continue
+		}
 		r := Renewal{Agent: l.Agent, User: l.User}
 		if every > 0 && (!renewalDue(l, every, time.Now()) || renewWaiting(l.Agent, l.User, time.Now())) || atOnce > 0 && tried >= atOnce {
 			out = append(out, r)

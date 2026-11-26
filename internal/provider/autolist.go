@@ -196,6 +196,8 @@ func SetAutoInclude(id string, rules []string) ([]string, error) {
 // picked), so nothing served is taken away; with nothing to add nothing is
 // written.
 func takeMatching(id string, isNew func(string) bool) ([]string, error) {
+	unlock := lockProviders()
+	defer unlock()
 	p, err := Find(id)
 	if err != nil {
 		return nil, err

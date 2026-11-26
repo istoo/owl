@@ -363,6 +363,8 @@ func SetSearchAPI(a SearchAPI) error {
 	a.Vendor = strings.ToLower(strings.TrimSpace(a.Vendor))
 	a.Key, a.URL = strings.Join(a.Keys(), ","), strings.TrimSpace(a.URL)
 	pick := strings.ToLower(strings.TrimSpace(a.Pick))
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -401,6 +403,8 @@ func SetSearchAPI(a SearchAPI) error {
 
 // RemoveSearchAPI takes the vendor's search API away.
 func RemoveSearchAPI(vendor string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -416,6 +420,8 @@ func RemoveSearchAPI(vendor string) error {
 // SwitchSearchAPI switches the vendor's search API on or off (#2286),
 // keeping its key, address and place.
 func SwitchSearchAPI(vendor string, on bool) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -438,6 +444,8 @@ func MixSearchAPIs(vendors []string) error {
 	if len(vendors) == 1 {
 		return fmt.Errorf("name two or more search APIs to ask together")
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -461,6 +469,8 @@ func MixSearchAPIs(vendors []string) error {
 // after them; a name of none set up is refused, so an order sent from a
 // page drawn before one was removed changes nothing.
 func ArrangeSearchAPIs(order []string) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -493,6 +503,8 @@ func RestoreSearchAPIs(as []SearchAPI) error {
 	if len(as) == 0 {
 		return nil
 	}
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -519,6 +531,8 @@ func RestoreSearchAPIs(as []SearchAPI) error {
 // MirrorSearchAPIs makes the search APIs exactly these, as sync brings
 // them; one that came without a key keeps the key it has here.
 func MirrorSearchAPIs(as []SearchAPI) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err
@@ -544,6 +558,8 @@ func MirrorSearchAPIs(as []SearchAPI) error {
 // it. A list left with no key on, for an API that needs one, is refused:
 // the API's own switch or Remove is for that.
 func editSearchKeys(vendor string, edit func([]SearchKey) ([]SearchKey, error)) error {
+	unlock := lockProviders()
+	defer unlock()
 	f, err := read()
 	if err != nil {
 		return err

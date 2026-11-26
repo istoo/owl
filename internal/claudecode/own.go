@@ -36,8 +36,16 @@ var own = struct {
 func Own() string {
 	first := own.first()
 	all := own.all()
-	if len(all) == 0 || len(all) == 1 && (first == "" || all[0] == first) {
+	if len(all) == 0 {
 		return first
+	}
+	if len(all) == 1 {
+		// the only one found is the machine's own, whatever PATH's first
+		// is: none when first is "" (#15, a tool found only where its
+		// installer puts it was passed over and owl ran nothing)
+		if first == "" || all[0] == first {
+			return all[0]
+		}
 	}
 	cands := make([]string, 0, len(all)+1)
 	if first != "" {

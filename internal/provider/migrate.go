@@ -618,7 +618,7 @@ func Move(ctx context.Context, id string) error {
 		return nil
 	}
 	if movingNow(id) {
-		putBack(ctx, id, mv, "")
+		undoPutBack(ctx, id, mv, "")
 	}
 	err = move(ctx, id, mv)
 	if err != nil {
@@ -737,7 +737,7 @@ func move(ctx context.Context, id string, mv *mover) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			putBack(ctx, id, mv, err.Error())
+			undoPutBack(ctx, id, mv, err.Error())
 		}
 	}()
 	var moved []movedAccount
@@ -896,6 +896,17 @@ func tidyMoved(id string) {
 
 func sameMoved(a, b savedLogin) bool {
 	return a.Agent == b.Agent && strings.EqualFold(a.User, b.User) && a.Home == b.Home
+}
+
+// undoPutBack is putBack for a move that failed, on a context of its own:
+// the ctx that ended the move may be the one that was canceled or ran out,
+// and taking the accounts back must still reach the plugin and the
+// built-in. The timeout keeps a stuck plugin from holding the move's
+// caller forever (#12).
+func undoPutBack(ctx context.Context, id string, mv *mover, why string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	putBack(ctx, id, mv, why)
 }
 
 // putBack undoes a move cut short: the plugin's sign-ins go back into the
