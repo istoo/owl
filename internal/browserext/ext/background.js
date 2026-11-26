@@ -16,6 +16,9 @@ const ACT_SNAPSHOT_MAX = 30000;
 let ws = null;
 let retry = 1000;
 let connecting = false;
+// which connect() is the current one: a connect() waiting on the gateway
+// address gives up when a reconnect has started a newer one since.
+let attempt = 0;
 
 async function gatewayURL() {
   try {
@@ -39,8 +42,12 @@ async function gatewayKey() {
 async function connect() {
   if (connecting || (ws && ws.readyState <= 1)) return;
   connecting = true;
+  const mine = ++attempt;
   const base = await gatewayURL();
   const key = await gatewayKey();
+  // a reconnect started while this one waited for the address: it owns
+  // the connection now, and this one must not make another
+  if (mine !== attempt) return;
   let s;
   try {
     s = new WebSocket(base.replace(/\/$/, "") + "/v1/owl/browser/extension" + (key ? "?key=" + encodeURIComponent(key) : ""));
@@ -51,12 +58,14 @@ async function connect() {
   }
   ws = s;
   s.onopen = () => {
+    if (ws !== s) { try { s.close(); } catch {} return; }
     connecting = false;
     retry = 1000;
     s.send(JSON.stringify({ type: "hello", version: VERSION, agent: navigator.userAgent }));
     setStatus({ connected: true, gateway: base });
   };
   s.onmessage = (ev) => {
+    if (ws !== s) return;
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === "ping") return s.send(JSON.stringify({ type: "pong" }));
@@ -66,12 +75,35 @@ async function connect() {
     });
   };
   s.onclose = () => {
+    // a socket already replaced by a newer one (a manual reconnect closed
+    // it): its late close says nothing about the connection there is now
+    if (ws !== s) return;
+    ws = null;
     connecting = false;
-    if (ws === s) ws = null;
     setStatus({ connected: false, gateway: base });
     later();
   };
   s.onerror = () => {};
+}
+
+// dropSocket detaches from a socket before closing it, so its close is
+// not read as the connection ending: onclose would clear the status and
+// schedule another connect over the one that replaces it (#50).
+function dropSocket(s) {
+  if (!s) return;
+  s.onopen = s.onmessage = s.onclose = s.onerror = null;
+  try { s.close(); } catch {}
+}
+
+// reconnectNow is a manual (re)connect: the old socket is let go first,
+// and any connect() still waiting for the address is superseded.
+function reconnectNow() {
+  const old = ws;
+  ws = null;
+  connecting = false;
+  attempt++;
+  dropSocket(old);
+  connect();
 }
 
 let timer = 0;
@@ -97,15 +129,13 @@ chrome.runtime.onInstalled.addListener(() => connect());
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === "local" && (c.gateway || c.key)) {
     retry = 1000;
-    if (ws) ws.close();
-    else connect();
+    reconnectNow();
   }
 });
 chrome.runtime.onMessage.addListener((m, _s, reply) => {
   if (m && m.type === "reconnect") {
     retry = 1000;
-    if (ws) ws.close();
-    connect();
+    reconnectNow();
     reply({ ok: true });
   }
 });
@@ -412,12 +442,16 @@ async function act(t, what, fn, el = null, press = false) {
   };
   chrome.tabs.onCreated.addListener(onCreated);
   let said;
+  // done lets the dialog-watching poll end when the action does; without
+  // it the promise never settled and its 100ms timer ran for the life of
+  // the worker, holding the tab (#49).
+  let done = false;
   try {
     const p = fn();
     p.catch(() => {});
     said = await Promise.race([
       p,
-      (async () => { while (!t.dialog) await sleep(100); return ""; })(),
+      (async () => { while (!done && !t.dialog) await sleep(100); return ""; })(),
     ]);
   } catch (e) {
     // the page went away under an action already under way: what it did
@@ -425,6 +459,7 @@ async function act(t, what, fn, el = null, press = false) {
     if (t.sentInput && !e.code) throw fault("OUTCOME_UNKNOWN", `${what.replace(/\.$/, "")} was under way when the page changed (${String(e.message || e).slice(0, 200)})`);
     throw e;
   } finally {
+    done = true;
     human.done(t);
     setTimeout(() => chrome.tabs.onCreated.removeListener(onCreated), 1500);
   }

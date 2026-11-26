@@ -19,7 +19,9 @@
 // Anthropic's events.
 
 import { AsyncLocalStorage } from "node:async_hooks"
+import dns from "node:dns/promises"
 import fs from "node:fs"
+import net from "node:net"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
@@ -102,15 +104,180 @@ function keepSig(id, sig) {
 
 const zeroUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } })
 
+// An image a request names by URL is downloaded only from the public
+// internet: never this computer (loopback), the user's own network
+// (RFC 1918, fc00::/7), link-local addresses (169.254/16 with the cloud
+// metadata service, fe80::/10), CGNAT (100.64/10), or an address named
+// inside IPv6. Otherwise whoever can send owl a request could have the
+// plugin read a service only this computer reaches and get it back as the
+// "image". A redirect is followed by hand, each hop checked the same way,
+// and the body is capped, so a huge or endless one can't use up memory.
+const IMAGE_MAX_BYTES = 20 * 1024 * 1024
+const IMAGE_TIMEOUT_MS = 15_000
+const IMAGE_REDIRECTS = 5
+
+// privateAddress says ip is one owl doesn't download an image from.
+// Exported for the tests that drive it.
+export function privateAddress(ip) {
+  let s = String(ip).trim().toLowerCase()
+  if (s.startsWith("[") && s.endsWith("]")) s = s.slice(1, -1)
+  const zone = s.indexOf("%")
+  if (zone >= 0) s = s.slice(0, zone)
+  if (s.includes(":")) {
+    const w = ipv6Words(s)
+    return w === null || ipv6Private(w)
+  }
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s)
+  if (!m) return true
+  const o = m.slice(1).map(Number)
+  return o.some((n) => n > 255) || ipv4Private(o)
+}
+
+function ipv4Private([a, b]) {
+  if (a === 0 || a === 10 || a === 127) return true
+  if (a === 100 && b >= 64 && b <= 127) return true // CGNAT, Tailscale's
+  if (a === 169 && b === 254) return true // link-local, cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  return a >= 224 // multicast, reserved, broadcast
+}
+
+// ipv6Words is an IPv6 address as its eight 16-bit words, or null when it
+// doesn't parse; an embedded IPv4 (::ffff:127.0.0.1) becomes two words.
+function ipv6Words(ip) {
+  let s = ip
+  if (s.includes(".")) {
+    const i = s.lastIndexOf(":")
+    const tail = s.slice(i + 1).split(".").map(Number)
+    if (i < 0 || tail.length !== 4 || tail.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null
+    s = s.slice(0, i + 1) + ((tail[0] << 8) | tail[1]).toString(16) + ":" + ((tail[2] << 8) | tail[3]).toString(16)
+  }
+  const dbl = s.indexOf("::")
+  let parts
+  if (dbl >= 0) {
+    const head = s.slice(0, dbl)
+    const tail = s.slice(dbl + 2)
+    if (s.indexOf("::", dbl + 1) >= 0) return null
+    const h = head ? head.split(":") : []
+    const t = tail ? tail.split(":") : []
+    const fill = 8 - h.length - t.length
+    if (fill < 0) return null
+    parts = [...h, ...Array(fill).fill("0"), ...t]
+  } else {
+    parts = s.split(":")
+  }
+  if (parts.length !== 8) return null
+  const words = []
+  for (const p of parts) {
+    if (!/^[0-9a-f]{1,4}$/i.test(p)) return null
+    words.push(parseInt(p, 16))
+  }
+  return words
+}
+
+function ipv6Private(w) {
+  if (w.every((x) => x === 0)) return true // ::
+  if (w.slice(0, 7).every((x) => x === 0) && w[7] === 1) return true // ::1
+  if (w.slice(0, 5).every((x) => x === 0) && w[5] === 0xffff) {
+    // IPv4-mapped, ::ffff:a.b.c.d
+    return ipv4Private([(w[6] >> 8) & 255, w[6] & 255, (w[7] >> 8) & 255, w[7] & 255])
+  }
+  if (w.slice(0, 6).every((x) => x === 0)) {
+    // IPv4-compatible, ::a.b.c.d, names an IPv4 host too
+    return ipv4Private([(w[6] >> 8) & 255, w[6] & 255, (w[7] >> 8) & 255, w[7] & 255])
+  }
+  if ((w[0] & 0xfe00) === 0xfc00) return true // fc00::/7 unique local
+  if ((w[0] & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
+  return (w[0] & 0xff00) === 0xff00 // ff00::/8 multicast
+}
+
+// checkPublicHost refuses a host that is, or resolves to, an address owl
+// doesn't download from. Every address it resolves to must be public: a
+// name with one private answer beside a public one is not a public name.
+async function checkPublicHost(host) {
+  const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host
+  if (net.isIP(literal)) {
+    if (privateAddress(literal)) throw new Error(`${literal} is a private address, which owl doesn't download an image from`)
+    return
+  }
+  let addrs
+  try {
+    addrs = await dns.lookup(host, { all: true, verbatim: true })
+  } catch (e) {
+    throw new Error(`couldn't resolve ${host}: ${e?.message ?? e}`)
+  }
+  if (!addrs.length) throw new Error(`${host} resolves to no address`)
+  for (const a of addrs) {
+    if (privateAddress(a.address)) throw new Error(`${host} resolves to ${a.address}, a private address, which owl doesn't download an image from`)
+  }
+}
+
+// safeImageFetch is fetch for an image a request named: http(s) only, from
+// a public address, following IMAGE_REDIRECTS redirects by hand with the
+// same check on each, under IMAGE_TIMEOUT_MS. Exported for the tests.
+export async function safeImageFetch(url, signal) {
+  let current = String(url)
+  for (let hop = 0; hop <= IMAGE_REDIRECTS; hop++) {
+    let u
+    try {
+      u = new URL(current)
+    } catch {
+      throw new Error(`${current} isn't a URL`)
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`${u.protocol} isn't an http(s) URL: an image is fetched over http(s) or given as a data: URL`)
+    if (!u.hostname) throw new Error("the image URL names no host")
+    await checkPublicHost(u.hostname)
+    const timeout = AbortSignal.timeout(IMAGE_TIMEOUT_MS)
+    const r = await fetch(u.href, { redirect: "manual", signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
+    if (r.status >= 300 && r.status < 400) {
+      const location = r.headers.get("location")
+      try { await r.body?.cancel?.() } catch {}
+      if (!location) throw new Error(`the image URL ${u.href} redirected with no location`)
+      current = new URL(location, u).href
+      continue
+    }
+    if (!r.ok) throw new Error(`couldn't fetch the image ${u.href}: ${r.status}`)
+    return r
+  }
+  throw new Error(`the image URL redirects more than ${IMAGE_REDIRECTS} times`)
+}
+
+// readCapped is the whole body of r, if it is no more than max bytes:
+// Content-Length is checked first, then the stream is counted, so a body
+// with no length (or a lying one) still can't pass the cap. Exported for
+// the tests.
+export async function readCapped(r, max = IMAGE_MAX_BYTES) {
+  const cl = r.headers?.get?.("content-length")
+  if (cl != null && /^\d+$/.test(cl) && Number(cl) > max) throw new Error(`the image is ${cl} bytes, more than the ${max} owl reads`)
+  if (!r.body) {
+    const buf = Buffer.from(await r.arrayBuffer())
+    if (buf.length > max) throw new Error(`the image is ${buf.length} bytes, more than the ${max} owl reads`)
+    return buf
+  }
+  const reader = r.body.getReader()
+  const chunks = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      try { await reader.cancel() } catch {}
+      throw new Error(`the image is larger than the ${max} bytes owl reads`)
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks)
+}
+
 async function imageOf(b) {
   const s = b.source ?? {}
   if (s.type === "base64") return { type: "image", data: s.data, mimeType: s.media_type ?? "image/png" }
   if (s.type === "url" && typeof s.url === "string") {
     const m = /^data:([^;,]+);base64,(.*)$/s.exec(s.url)
     if (m) return { type: "image", data: m[2], mimeType: m[1] }
-    const r = await fetch(s.url)
-    if (!r.ok) throw new Error(`couldn't fetch the image ${s.url}: ${r.status}`)
-    return { type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] || "image/png" }
+    const r = await safeImageFetch(s.url)
+    return { type: "image", data: (await readCapped(r)).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] || "image/png" }
   }
   return undefined
 }

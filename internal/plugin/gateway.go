@@ -43,7 +43,13 @@ func Gateway(target string) string {
 	if err != nil || json.Unmarshal(b, &pkg) != nil || strings.TrimSpace(pkg.Owl.Hooks) == "" {
 		return ""
 	}
-	return filepath.Join(target, filepath.FromSlash(strings.TrimSpace(pkg.Owl.Hooks)))
+	// The entry must stay inside the plugin's own folder: a "..", an
+	// absolute path or a symlink out of it is no entry.
+	file, ok := entryInside(target, strings.TrimSpace(pkg.Owl.Hooks))
+	if !ok {
+		return ""
+	}
+	return file
 }
 
 // GatewayOnly distinguishes request hooks from packages that also serve a

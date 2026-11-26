@@ -48,7 +48,12 @@ func Middleware(target string) (file string, only bool) {
 	if name == "" {
 		return "", false
 	}
-	file = filepath.Join(target, filepath.FromSlash(name))
+	// The entry must stay inside the plugin's own folder: a "..", an
+	// absolute path or a symlink out of it is no entry.
+	file, ok := entryInside(target, name)
+	if !ok {
+		return "", false
+	}
 	return file, pkg.Main == "" && len(pkg.Exports) == 0
 }
 

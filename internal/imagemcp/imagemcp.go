@@ -773,13 +773,29 @@ func target(project, path, prompt, ext string, i, n int) (string, error) {
 		base = fmt.Sprintf("%s-%d", base, i+1)
 	}
 	out := filepath.Join(dir, base+e)
+	// A name is taken only when the file is there: any other answer from
+	// Stat (a folder where a part of dir should be is ENOTDIR, a closed
+	// folder EACCES, a path past the system's limit ENAMETOOLONG) means
+	// the name can't be tried at all. It used to be treated as taken, so
+	// k counted up forever, one failed Stat at a time, and pinned a CPU.
 	for k := 2; ; k++ {
-		if _, err := os.Stat(out); errors.Is(err, os.ErrNotExist) {
+		_, err := os.Stat(out)
+		if errors.Is(err, os.ErrNotExist) {
 			return out, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("couldn't tell whether %s is taken: %w", out, err)
+		}
+		if k > maxNameTries {
+			return "", fmt.Errorf("no free name for %s in %s: %d are taken", base+e, dir, maxNameTries)
 		}
 		out = filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, k, e))
 	}
 }
+
+// maxNameTries bounds how many taken names target steps past before it
+// gives up: a folder with that many of one name is not one to write into.
+const maxNameTries = 10000
 
 // imageExt are the extensions of the formats an image comes back in, videoExt
 // those a video may be given.

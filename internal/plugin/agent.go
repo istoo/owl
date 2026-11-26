@@ -37,7 +37,12 @@ func Agent(target string) (file string, only bool) {
 	if json.Unmarshal(b, &pkg) != nil || strings.TrimSpace(pkg.Owl.Agent) == "" {
 		return "", false
 	}
-	file = filepath.Join(target, filepath.FromSlash(strings.TrimSpace(pkg.Owl.Agent)))
+	// The entry must stay inside the plugin's own folder: a "..", an
+	// absolute path or a symlink out of it is no entry.
+	file, ok := entryInside(target, strings.TrimSpace(pkg.Owl.Agent))
+	if !ok {
+		return "", false
+	}
 	return file, pkg.Main == "" && len(pkg.Exports) == 0
 }
 

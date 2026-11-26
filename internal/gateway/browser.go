@@ -78,16 +78,42 @@ type browserRelay struct {
 	mu      sync.Mutex
 	conns   []*browserConn
 	chosen  map[string]*browserConn // session → the browser it picked
-	pending map[string]chan json.RawMessage
+	pending map[string]*browserPending
 	next    uint64
 	ids     uint64
 }
 
-type browserConn struct {
-	c       *websocket.Conn
-	id      string // b1, b2: in the order they connected, while owl runs
+// browserPending is one call waiting for the extension's answer, and the
+// connection it was handed to: when that connection goes away the call is
+// woken with an error instead of waiting out browserCallWait (#51).
+type browserPending struct {
+	conn *browserConn
+	ch   chan browserAnswer
+}
+
+// browserAnswer is what a pending call is woken with: the extension's
+// result, or why it never came.
+type browserAnswer struct {
+	result json.RawMessage
+	err    error
+}
+
+// errBrowserDisconnected ends a call whose browser went away before it
+// answered: the browser was closed, or its extension stopped.
+var errBrowserDisconnected = errors.New("Owl Browser disconnected before it answered (the browser was closed, or its extension stopped): check it is still open and connected, then take a snapshot to see where the page is")
+
+// browserInfo is what a connection's hello says about its extension. It
+// is replaced whole, so the reader of /browser/status takes either what
+// came before a repeated hello or what came after, never a mix (#51).
+type browserInfo struct {
 	version string
 	agent   string
+}
+
+type browserConn struct {
+	c    *websocket.Conn
+	id   string // b1, b2: in the order they connected, while owl runs
+	info atomic.Pointer[browserInfo]
 	// key is the gateway key the browser connected with, whose callers
 	// use it; "" for this computer's, connected over loopback
 	key string
@@ -126,7 +152,29 @@ func browserName(ua string) string {
 	return "a Chromium browser"
 }
 
-func (c *browserConn) name() string { return browserName(c.agent) }
+func (c *browserConn) name() string { return browserName(c.agent()) }
+
+// setHello records what a hello frame said; hello may be repeated on one
+// connection, and /browser/status and the tools read it meanwhile.
+func (c *browserConn) setHello(version, agent string) {
+	c.info.Store(&browserInfo{version: version, agent: agent})
+}
+
+// version is the extension version the connection said ("" before its
+// hello), and agent its browser's User-Agent.
+func (c *browserConn) version() string {
+	if i := c.info.Load(); i != nil {
+		return i.version
+	}
+	return ""
+}
+
+func (c *browserConn) agent() string {
+	if i := c.info.Load(); i != nil {
+		return i.agent
+	}
+	return ""
+}
 
 func (c *browserConn) send(ctx context.Context, v any) error {
 	b, err := json.Marshal(v)
@@ -317,16 +365,26 @@ func (b *browserRelay) remove(c *browserConn) {
 			delete(b.chosen, k)
 		}
 	}
+	// a call handed to this browser is woken now, not left to wait out
+	// browserCallWait on a socket that is gone (#51). Each channel takes
+	// one value and the entry is gone before the send, so no call is
+	// woken twice.
+	for id, p := range b.pending {
+		if p.conn == c {
+			delete(b.pending, id)
+			p.ch <- browserAnswer{err: errBrowserDisconnected}
+		}
+	}
 	b.mu.Unlock()
 }
 
 func (b *browserRelay) answered(id string, result json.RawMessage) {
 	b.mu.Lock()
-	ch := b.pending[id]
+	p := b.pending[id]
 	delete(b.pending, id)
 	b.mu.Unlock()
-	if ch != nil {
-		ch <- result
+	if p != nil {
+		p.ch <- browserAnswer{result: result}
 	}
 }
 
@@ -344,12 +402,12 @@ func (b *browserRelay) call(ctx context.Context, session, tool string, args json
 	}
 	b.mu.Lock()
 	if b.pending == nil {
-		b.pending = map[string]chan json.RawMessage{}
+		b.pending = map[string]*browserPending{}
 	}
 	b.next++
 	id := strconv.FormatUint(b.next, 10)
-	ch := make(chan json.RawMessage, 1)
-	b.pending[id] = ch
+	pc := &browserPending{conn: c, ch: make(chan browserAnswer, 1)}
+	b.pending[id] = pc
 	b.mu.Unlock()
 	defer func() {
 		b.mu.Lock()
@@ -365,8 +423,8 @@ func (b *browserRelay) call(ctx context.Context, session, tool string, args json
 	t := time.NewTimer(browserCallWait)
 	defer t.Stop()
 	select {
-	case r := <-ch:
-		return r, nil
+	case a := <-pc.ch:
+		return a.result, a.err
 	case <-t.C:
 		return nil, errors.New("Owl Browser didn't answer in " + browserCallWait.String() + ": the page may be stuck; take a snapshot or a screenshot to see where it is")
 	case <-ctx.Done():
@@ -493,7 +551,7 @@ func (s *Server) browserExtension(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case m.Type == "hello":
-			c.version, c.agent = m.Version, m.Agent
+			c.setHello(m.Version, m.Agent)
 			if !added {
 				s.browser.add(c)
 				added = true
@@ -529,8 +587,8 @@ func (s *Server) browserStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"connected": false, "version": browserext.Version()}
 	if c := s.browser.current(); c != nil {
 		out["connected"] = true
-		out["extension"] = c.version
-		out["browser"] = c.agent
+		out["extension"] = c.version()
+		out["browser"] = c.agent()
 		out["since"] = c.since
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -649,14 +707,14 @@ func (s *Server) browserMCPCall(r *http.Request, m mcpMessage) (any, map[string]
 // browser starts again, so the agent tells the user.
 func (s *Server) browserOlder(session string, result map[string]any) map[string]any {
 	c := s.browser.forSession(session)
-	if c == nil || !browserext.Older(c.version, browserext.Version()) || !c.told.CompareAndSwap(false, true) {
+	if c == nil || !browserext.Older(c.version(), browserext.Version()) || !c.told.CompareAndSwap(false, true) {
 		return result
 	}
 	how := "it is reloaded on chrome://extensions (edge://extensions in Edge): owl has put the new one in its folder already"
 	if c.key != "" {
 		how = "it is downloaded again from owl's Library → Owl Browser, unzipped over the old folder and reloaded on chrome://extensions (edge://extensions in Edge)"
 	}
-	note := fmt.Sprintf("Tell the user: Owl Browser in their browser is %s and owl has %s, which the browser doesn't run until %s.", c.version, browserext.Version(), how)
+	note := fmt.Sprintf("Tell the user: Owl Browser in their browser is %s and owl has %s, which the browser doesn't run until %s.", c.version(), browserext.Version(), how)
 	content, _ := result["content"].([]any)
 	result["content"] = append([]any{map[string]any{"type": "text", "text": note}}, content...)
 	return result
@@ -710,7 +768,7 @@ func (b *browserRelay) list(session string) string {
 		if c == mine {
 			mark = "*"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s %s, extension %s, connected %s", mark, c.id, c.name(), c.version, c.since.Format("15:04")))
+		lines = append(lines, fmt.Sprintf("%s %s %s, extension %s, connected %s", mark, c.id, c.name(), c.version(), c.since.Format("15:04")))
 	}
 	return strings.Join(lines, "\n")
 }

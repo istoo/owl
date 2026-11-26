@@ -1982,19 +1982,25 @@ function parsedArgs(name, schema, args) {
 // took is ms as Go prints a duration: 300ms, 55s.
 const took = (ms) => (ms % 1000 ? `${ms}ms` : `${ms / 1000}s`)
 
-async function runTool({ spec, name, args, ms, agent }) {
+async function runTool({ spec, name, args, ms, agent }, signal) {
   const def = toolsOf(spec).get(name)
   if (!def) throw new Error(`${spec} has no tool ${name}`)
   args = parsedArgs(name, def.args, args)
-  const abort = AbortSignal.timeout(ms > 0 ? ms : 60_000)
+  // owl's own deadline for the call, and the caller's: a tool the agent
+  // cancelled stops with it (#45), not only when its own time is up.
+  const deadline = AbortSignal.timeout(ms > 0 ? ms : 60_000)
+  const abort = signal ? AbortSignal.any([signal, deadline]) : deadline
   const ctx = {
     sessionID: "", messageID: "", callID: "", agent: agent ?? "",
     directory, worktree: directory, abort,
     metadata() {},
   }
+  const stopped = () => new Error(signal?.aborted ? `${name} was cancelled` : `${name} took longer than ${took(ms || 60_000)}`)
+  // the caller gave up before the tool started: it is not run
+  if (abort.aborted) throw stopped()
   const out = await Promise.race([
     Promise.resolve().then(() => pluginALS.run(spec, () => def.execute(args, ctx))),
-    new Promise((_, reject) => abort.addEventListener("abort", () => reject(new Error(`${name} took longer than ${took(ms || 60_000)}`)), { once: true })),
+    new Promise((_, reject) => abort.addEventListener("abort", () => reject(stopped()), { once: true })),
   ])
   if (typeof out === "string") return { text: out }
   if (out && typeof out === "object" && typeof out.output === "string") return { text: out.output }
@@ -2056,11 +2062,13 @@ function searchAuthOf(spec, def) {
   return typeof def.auth === "string" && def.auth && signsIn(spec).includes(def.auth) ? def.auth : ""
 }
 
-async function runSearch({ spec, id, query, count, key, url, ms, account, proxy }) {
+async function runSearch({ spec, id, query, count, key, url, ms, account, proxy }, signal) {
   const def = searchesOf(spec).get(id)
   if (!def) throw new Error(`${spec} has no search API ${id}`)
-  const abort = AbortSignal.timeout(ms > 0 ? ms : 60_000)
-  const late = new Promise((_, reject) => abort.addEventListener("abort", () => reject(new Error("no answer in time")), { once: true }))
+  // as runTool: the caller's cancellation stops the search with it
+  const deadline = AbortSignal.timeout(ms > 0 ? ms : 60_000)
+  const abort = signal ? AbortSignal.any([signal, deadline]) : deadline
+  const late = new Promise((_, reject) => abort.addEventListener("abort", () => reject(new Error(signal?.aborted ? "the search was cancelled" : "no answer in time")), { once: true }))
   late.catch(() => {})
   const ctx = { directory, worktree: directory, abort }
   const provider = searchAuthOf(spec, def)
@@ -2082,6 +2090,8 @@ async function runSearch({ spec, id, query, count, key, url, ms, account, proxy 
         }),
       )
   }
+  // the caller gave up before the search started: it is not run
+  if (abort.aborted) throw new Error(signal?.aborted ? "the search was cancelled" : "no answer in time")
   let out
   try {
     out = await Promise.race([Promise.resolve().then(run), late])
