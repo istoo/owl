@@ -1,11 +1,13 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // The bridge a plugin's page uses for what it can't do itself, through a
 // real iframe in both engines and a local fixture: a script added after the
-// page loaded is fetched by the window and run from data:, the page's own
-// file alone; a picture it shares goes to the server, within the same type,
-// size, dimensions and rate the server holds; and an asset outside the
-// page's folder or its service is refused. No attack is reproduced: the
-// boundaries are checked at their edge.
+// page loaded is fetched by the window and run from data: (the frame can't
+// get that file itself), the page's own file alone; a picture it shares goes
+// to the server within the same three kinds, whole PNG, size and rate the
+// server holds, a plain array of bytes and a picture cut before its IHDR's
+// CRC refused; and an asset outside the page's folder or its service is
+// refused. No attack is reproduced: the boundaries are checked at their
+// edge.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -20,7 +22,9 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
 const page = () => ({
   spec: SPEC, name: "bridge", key: "plugin-bridge", title: "Bridge",
-  reads: [], url: `/_owl/plugin/${TOK}/index.html`, icon: "",
+  // its address carries a query with slashes in it: the folder its files
+  // are in is the path's, never the query's
+  reads: [], url: `/_owl/plugin/${TOK}/index.html?o=http://owl.test`, icon: "",
 });
 
 // what pluginpage.go's pagePolicy sends the page's own files, with data:
@@ -49,6 +53,14 @@ const RUN = `(async () => {
   try { await owl.image.save(blob(), "chart-2"); out.save2 = "ok"; } catch (e) { out.save2 = e.message; }
   try { await owl.image.save(blob(), "chart-3"); out.rate = "given"; } catch (e) { out.rate = e.message; }
   try { await owl.image.save(new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }), "bad"); out.bad = "given"; } catch (e) { out.bad = e.message; }
+  // a picture cut before its IHDR's CRC: the first 24 bytes used to pass
+  await new Promise((r) => setTimeout(r, 600));
+  try { await owl.image.save(new Blob([png.subarray(0, 24)], { type: "image/png" }), "short"); out.short = "given"; } catch (e) { out.short = e.message; }
+  // a valid picture in a plain array is still not one of the three types
+  await new Promise((r) => setTimeout(r, 600));
+  try { await owl.image.save(Array.from(png), "plain"); out.plain = "given"; } catch (e) { out.plain = e.message; }
+  await new Promise((r) => setTimeout(r, 600));
+  try { await owl.image.save(png, "bytes"); out.bytes = "ok"; } catch (e) { out.bytes = e.message; }
   // a script added now is fetched by the window and run from data:
   const s = document.createElement("script");
   s.src = "extra.js";
@@ -91,7 +103,15 @@ function server(seen) {
       if (rel === "_owl/bridge.js") { body = "globalThis.__owlInlined=1;\n" + await fs.readFile(bridge, "utf8"); type = "text/javascript"; }
       else if (rel === "index.html") { body = INDEX; type = "text/html"; }
       else if (rel === "run.js") { body = RUN; type = "text/javascript"; }
-      else if (rel === "extra.js") { body = "window.__extra = 1;"; type = "text/javascript"; }
+      else if (rel === "extra.js") {
+        // only the window's fetch: the frame is no-referrer, so its own load
+        // of this file is not the bridge's (it gets nothing)
+        const h = req.headers();
+        const fromWindow = String(h.referer || "").includes("owl.test") || h["sec-fetch-dest"] === "empty";
+        seen.extra.push({ referer: h.referer || "", dest: h["sec-fetch-dest"] || "" });
+        if (!fromWindow) return route.fulfill({ status: 404, body: "" });
+        body = "window.__extra = 1;"; type = "text/javascript";
+      }
       else return route.fulfill({ status: 404, body: "" });
       return route.fulfill({ status: 200, headers: { ...headers, "Content-Type": type }, body });
     }
@@ -111,7 +131,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     p.setDefaultNavigationTimeout(60000);
     const errors = [];
     p.on("pageerror", (e) => errors.push(e.message));
-    const seen = { images: [] };
+    const seen = { images: [], extra: [] };
     await p.route("**/*", server(seen));
     await p.goto("http://owl.test/");
 
@@ -125,15 +145,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert.equal(probe.copy, "ok", probe.copy);
     assert.equal(probe.save, "ok", probe.save);
     assert.equal(probe.save2, "ok", probe.save2);
+    assert.equal(probe.bytes, "ok", probe.bytes);
     assert.equal(probe.extra, true, "the added script ran");
-    assert.ok(seen.images.length >= 3, `the server saw ${seen.images.length} pictures`);
+    assert.ok(seen.extra.some((r) => r.referer.includes("owl.test") || r.dest === "empty"), "the window fetched it");
+    assert.equal(seen.images.length, 4, `the server saw ${seen.images.length} pictures`);
     assert.equal(seen.images[0].action, "copy");
     assert.equal(seen.images[1].action, "save");
     assert.equal(seen.images[1].name, "chart");
+    assert.equal(seen.images[2].name, "chart-2");
+    assert.equal(seen.images[3].name, "bytes");
 
     // the edges: the same rate, the same PNG, and only the page's folder
     assert.match(probe.rate, /twice a second/, probe.rate);
     assert.match(probe.bad, /PNG/, probe.bad);
+    assert.match(probe.plain, /PNG/, probe.plain);
+    assert.match(probe.short, /PNG/, probe.short);
     assert.match(probe.api, /isn't the page's/, probe.api);
     assert.match(probe.service, /isn't the page's/, probe.service);
     assert.deepEqual(errors, []);

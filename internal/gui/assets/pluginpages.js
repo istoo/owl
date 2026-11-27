@@ -59,14 +59,33 @@
   // bounds them (pluginpage.go's pageinline, pageimage.go's pageImage).
   const MAX_ASSET = 8 << 20, MAX_IMAGE = 16 << 20, MAX_SIDE = 8192;
   const imgAt = new Map(); // spec → when it last shared a picture
-  // pngOK is bytes as the PNG a page may share: its signature, and at
-  // most 8192 pixels a side.
+  const CRC = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    CRC[n] = c >>> 0;
+  }
+  function crc32(b, from, to) {
+    let c = 0xffffffff;
+    for (let i = from; i < to; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  const be32 = (b, i) => (b[i] * 0x1000000 + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3])) >>> 0;
+  // pngOK is bytes as the PNG a page may share, as pageimage.go's PNG
+  // decoder takes it: the signature, one whole IHDR chunk (its length,
+  // its CRC, and at most 8192 pixels a side).
   function pngOK(b) {
-    if (b.length < 24 || b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47 ||
+    if (b.length < 33 || b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47 ||
       b[4] !== 0x0d || b[5] !== 0x0a || b[6] !== 0x1a || b[7] !== 0x0a) return false;
-    const w = b[16] * 0x1000000 + (b[17] << 16) + (b[18] << 8) + b[19];
-    const h = b[20] * 0x1000000 + (b[21] << 16) + (b[22] << 8) + b[23];
+    if (be32(b, 8) !== 13 || b[12] !== 0x49 || b[13] !== 0x48 || b[14] !== 0x44 || b[15] !== 0x52) return false;
+    if (be32(b, 29) !== crc32(b, 12, 29)) return false;
+    const w = be32(b, 16), h = be32(b, 20);
     return w >= 1 && h >= 1 && w <= MAX_SIDE && h <= MAX_SIDE;
+  }
+  // pagePath is a URL's pathname as the server decodes it (go's
+  // url.PathUnescape), so a namespace is compared in the same terms.
+  function pagePath(pathname) {
+    try { return decodeURIComponent(pathname); } catch { return null; }
   }
 
   // the theme or the language changed: every page open is told
@@ -177,8 +196,11 @@
         // never past a redirect (pagebridge.js)
         const u = new URL(String(m.params?.url || ""), location.href);
         const base = new URL(e.url, location.href);
-        const dir = base.href.slice(0, base.href.lastIndexOf("/") + 1);
-        if (u.origin !== base.origin || !u.href.startsWith(dir) || u.pathname.includes("/_owl/service/")) throw new Error(t("That file isn't the page's"));
+        const at = base.pathname.lastIndexOf("/");
+        const dir = at < 0 ? null : pagePath(base.pathname.slice(0, at + 1));
+        const p = pagePath(u.pathname); // the path alone: no query names the folder
+        const rest = dir && p && p.startsWith(dir) ? p.slice(dir.length) : null;
+        if (rest === null || u.origin !== base.origin || rest.includes("\\") || rest.split("/").some((s) => s === ".." || s === ".") || p.includes("/_owl/service/")) throw new Error(t("That file isn't the page's"));
         const r = await fetch(u.href, { credentials: "same-origin", redirect: "error" });
         if (!r.ok) throw new Error(t("{name} didn't answer", { name: u.pathname }));
         if (Number(r.headers.get("content-length") || 0) > MAX_ASSET) throw new Error(t("That file is too large"));
@@ -192,8 +214,8 @@
           chunks.push(value);
         }
         const all = new Uint8Array(n);
-        let at = 0;
-        for (const c of chunks) { all.set(c, at); at += c.length; }
+        let pos = 0;
+        for (const c of chunks) { all.set(c, pos); pos += c.length; }
         return { type: r.headers.get("content-type") || "", data: b64(all) };
       }
       case "image.copy":
@@ -204,14 +226,21 @@
         // same type, size, dimensions and rate.
         const raw = m.params?.png;
         const action = m.method.slice(6);
+        const bad = () => new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
+        // only the types the bridge sends: a Blob (its contract), a
+        // Uint8Array or an ArrayBuffer, each measured before it is copied
+        let bytes;
         if (raw instanceof Blob) {
-          if (raw.type && raw.type !== "image/png") throw new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
-          if (raw.size > MAX_IMAGE) throw new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
-        } else if ((raw?.byteLength ?? raw?.length ?? 0) > MAX_IMAGE) {
-          throw new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
+          if (raw.type && raw.type.toLowerCase() !== "image/png") throw bad();
+          if (raw.size > MAX_IMAGE) throw bad();
+          bytes = new Uint8Array(await raw.arrayBuffer());
+        } else if (raw instanceof Uint8Array || raw instanceof ArrayBuffer) {
+          if (raw.byteLength > MAX_IMAGE) throw bad();
+          bytes = new Uint8Array(raw);
+        } else {
+          throw bad();
         }
-        const bytes = raw instanceof Blob ? new Uint8Array(await raw.arrayBuffer()) : new Uint8Array(raw || []);
-        if (bytes.length > MAX_IMAGE || !pngOK(bytes)) throw new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
+        if (bytes.length > MAX_IMAGE || !pngOK(bytes)) throw bad();
         const now = Date.now(), last = imgAt.get(e.spec) || 0;
         if (now - last < 500) throw new Error(t("A page shares a picture twice a second at most"));
         imgAt.set(e.spec, now);
