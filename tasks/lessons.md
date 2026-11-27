@@ -193,3 +193,9 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 原因：锁原来只在 gui-suite.sh 里，内存实验的压测（约 2.5 核）绕过了它，和 GUI 套件同时跑，18 核的机器负载到了 77。另外 Playwright 的 WebKit 渲染进程由 XPC 拉起，不在我们的进程树里，不继承 nice（heavy.sh 里记了 debt）。
 - 顺带修了一个 gui-suite.sh 一直有的问题：从非交互脚本后台启动的命令，SIGINT 从一开始就被忽略，所以停止时转发的 INT 从来没送到 node，每次都白等满 10 秒，然后才按进程树结束。现在启动时打开作业控制（`set -m`），INT 送不到时 2 秒后改发 TERM。
 - 怎么验证：用单独的 TMPDIR 测 heavy.sh。第二个运行加 NOWAIT 时退出码 75；pid 已死的过期锁会被接管；退出码透传（7→7）；负载门槛设 0.5 时只等待不执行；后台启动后发 TERM，3 秒清完（以前 10 秒）；模拟前台按 Ctrl-C 发 INT，1 秒清完（以前 INT 送不到）；子进程树为空，锁已释放。gui-suite.sh 改走 heavy.sh 后实跑 2 个文件，26/26 通过。
+
+## 同一个「谁已经有它」在一页里只许有一种画法（2026-11-27，用户「这个太难看了，优化下」）
+
+- 规则：库页面里说明「哪些 Agent 已经有这个」的标记，一律用库自己行里那套「一手牌」chip（`agentChips` 的 `.lib-agents` + `.lib-ag`，24px 牌、14px 图标、叠放并悬停展开），只读的用 `span.lib-ag.on`；不允许再出现第二种画法（整枚 22px 原色 logo 平铺）。新增这类行时复用 `haveAgents()`，不要在行里自己 `icon()` 一串。
+- 原因：库自己的服务器/技能行早就用 chip 手，而「Agent 中已有」的服务器与技能/发现行还停在 `lib-have`：每行 8–9 枚 22px 原色 logo（`.row .ic` 在窗口里把 15px 覆盖成 22px），比行名还响，哪枚是哪个 Agent 只能靠轮廓认；窄窗时 logo 整行折行，行高翻倍。视觉上同一页两种说法，读起来像贴纸墙。
+- 怎么验证：`internal/gui/tests/library-have-chips.test.cjs` 在 900/440px、中英文下断言每个 Agent 是一枚 ≤26px 的 chip、14px 图标、同一行内按序排开、aria-label 列出全部 Agent，且不越过「导入」按钮、页面不横向滚动；换回旧的 `icon()` 平铺时四条全红。改动同时删掉了 `.lib-have` 的两条尺寸规则（`.row .ic` 的特异性问题随之消失）。

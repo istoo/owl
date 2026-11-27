@@ -2610,6 +2610,39 @@ owl.plugin("library", (ctx) => {
     return box;
   }
 
+  // The agents that already have a thing of their own (a server of their
+  // own, a skill's folder, a find): their marks as a hand of chips, read
+  // only — the tick a library row's chips are, without the click. The
+  // marks they were drawn as (each a full-size logo, right beside the
+  // row's own) read as the row's content and said nothing of which agent
+  // was which beyond its silhouette; the same hand the library's rows
+  // show says both, and keeps all of them on the row's one line.
+  // entries: [{ id, title }] — title says more than the agent's name
+  // where a copy of a skill is a second agent's, as foundSkillRow has it.
+  function haveAgents(entries) {
+    const box = el("span", "lib-agents lib-have");
+    const chips = [];
+    for (const e of entries) {
+      const a = agentOf(e.id);
+      if (!a) continue;
+      const c = el("span", "lib-ag on");
+      c.dataset.agent = a.id;
+      c.append(agentIcon(a.icon));
+      c.title = e.title || a.name;
+      chips.push(c);
+    }
+    box.style.setProperty("--lib-agent-count", chips.length);
+    chips.forEach((c, i) => { c.style.setProperty("--k", chips.length - 1 - i); box.append(c); });
+    if (chips.length) {
+      // the whole hand, named: each chip's own line may say more (a copy)
+      const names = entries.map((e) => nameOf(e.id)).join(", ");
+      box.title = names;
+      box.setAttribute("role", "group");
+      box.setAttribute("aria-label", names);
+    }
+    return box;
+  }
+
   function foundServerRow(f) {
     const s = f.server;
     const row = el("div", "row lib-row");
@@ -2619,8 +2652,8 @@ owl.plugin("library", (ctx) => {
     const sub = el("div", "sub mono", serverLine(s));
     sub.title = serverLine(s);
     who.append(sub);
-    const have = el("div", "lib-have");
-    for (const id of s.agents) { const a = agentOf(id); if (a) { const i = icon(a.icon); i.title = a.name; have.append(i); } }
+    const have = haveAgents(s.agents.map((id) => ({ id })));
+    if (have.childElementCount) row.classList.add("with-agents");
     row.append(mark(f.icon, s.transport === "stdio" ? GLYPH.cmd : GLYPH.web), who, have);
     if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another server by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
     const b = button(t("Bring in"), "action", () => change("servers/import", { name: s.name }, t("{name} is in the library now", { name: s.name })));
@@ -3662,10 +3695,10 @@ owl.plugin("library", (ctx) => {
     a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); browse(n.id); };
     src.append(a);
     who.append(src);
-    const have = el("div", "lib-have");
     // one find without its list of agents doesn't take the page down (#1217)
     const agents = n.agents || [];
-    for (const id of agents) { const ag = agentOf(id); if (ag) { const i = agentIcon(ag.icon); i.title = ag.name; have.append(i); } }
+    const have = haveAgents(agents.map((id) => ({ id })));
+    if (have.childElementCount) row.classList.add("with-agents");
     const ign = button(t("Ignore"), "", () => change("skills/ignore-new", { names: [n.id] }, t("{name} set aside", { name: n.name })));
     ign.title = t("A check for updates won't offer it again");
     const add = button(t("Add"), "action", async (e, b) => {
@@ -5847,10 +5880,13 @@ owl.plugin("library", (ctx) => {
     if (f.library) { const src = el("div", "lib-src"); src.append(el("span", "", t("in the library's folder, not listed")), pathLink(f.library)); who.append(src); }
     if (f.shared) { const src = el("div", "lib-src"); src.append(el("span", "", t("shared in")), pathLink(f.shared)); who.append(src); }
     if (f.link) { const src = el("div", "lib-src"); src.append(el("span", "", t("linked from")), pathLink(f.link)); who.append(src); }
-    const have = el("div", "lib-have");
     // an agent with a copy of the very same files has it as much as one
     // with the folder itself: it isn't said to differ
-    for (const id of [...f.agents, ...(f.copies || [])]) { const a = agentOf(id); if (a) { const i = agentIcon(a.icon); i.title = f.agents.includes(id) ? a.name : a.name + " — " + t("{agents} has the very same files; bringing it in gives it the library's, its copy kept with the backups", { agents: a.name }); have.append(i); } }
+    const have = haveAgents([...f.agents, ...(f.copies || [])].map((id) => ({
+      id,
+      title: f.agents.includes(id) ? "" : nameOf(id) + " — " + t("{agents} has the very same files; bringing it in gives it the library's, its copy kept with the backups", { agents: nameOf(id) }),
+    })));
+    if (have.childElementCount) row.classList.add("with-agents");
     row.append(glyph(GLYPH.skill), who, have);
     if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another skill by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
     const b = button(t("Bring in"), "action", () => change("skills/import", { name: f.name }, t("{name} is in the library now", { name: f.name })));

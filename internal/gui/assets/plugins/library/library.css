@@ -390,9 +390,10 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
 .lib-row > .lib-agents .lib-ag.all.on { color: var(--fg); }
 .lib-row > .lib-agents .lib-ag.all + .lib-ag { margin-left: 0; }
 
-/* agents that have one of their own, not in the library */
-.lib-have { display: flex; gap: 4px; flex: none; }
-.lib-have .ic { width: 15px; height: 15px; }
+/* agents that have one of their own, not in the library: the chips a row's
+   agents get, read only (client.js, haveAgents). Their hand is laid out and
+   drawn by .lib-row > .lib-agents above — a logo a row's own size per agent
+   read as the row's content, and said which agent only by its silhouette */
 
 /* a skill's actions show on hover */
 .lib-rowacts { display: flex; gap: 2px; flex: none; opacity: 0; transition: opacity .14s; }
