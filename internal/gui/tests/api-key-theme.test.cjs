@@ -23,6 +23,15 @@ async function palette(page, selectors) {
   }, selectors);
 }
 
+// A palette change is read once it has been painted: the page's colour
+// transitions (.01ms under reduced motion) end on the next frame, and a
+// fixed pause can pass with no frame drawn at all — headless Chromium
+// left every transition at currentTime 0 after 200ms, and the confirm
+// button still read the old scheme's accent.
+async function painted(page) {
+  await page.waitForFunction(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === "running"), null, { polling: "raf" });
+}
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const theme of (process.env.THEME ? [process.env.THEME] : ["light", "dark", "system"])) {
     test(`${engine} ${theme}: API key controls follow the global palette`, async (t) => {
@@ -49,7 +58,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const gatewayPaints = [];
       for (const scheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme: scheme });
-        await page.waitForTimeout(200);
+        await painted(page);
         const { colors: c, elements: e } = await palette(page, gatewaySelectors);
         assert.equal(e.card.bg, c.card);
         assert.equal(e.card.border, c.line);
@@ -79,7 +88,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator("#modal .lib-confirm").waitFor();
       for (const scheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme: scheme });
-        await page.waitForTimeout(200);
+        await painted(page);
         const { colors: c, elements: e } = await palette(page, {
           dialog: "#modal .dialog", message: "#modal .lib-confirm", confirm: "#modal .primary",
         });
@@ -110,7 +119,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.mouse.move(500, 20);
       for (const scheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme: scheme });
-        await page.waitForTimeout(200);
+        await painted(page);
         const { colors: c, elements: e } = await palette(page, { card: "#lanList", text: "#lanList .row.pref:last-child .name",
           key: "#lanList .lan-url", copy: "#lanList .row.pref:last-child .copy" });
         assert.equal(e.card.bg, c.card);
