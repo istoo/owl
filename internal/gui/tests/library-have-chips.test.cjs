@@ -33,8 +33,9 @@ const srv = (name, ids, extra = {}) => ({ name, transport: "stdio", command: "np
 const found = [
   // every agent, as a server an app installs for itself
   { server: srv("many", ALL) },
-  // two of them, with a difference said beside it
-  { server: srv("two", ["claude", "cursor"], { command: "", transport: "http", url: "https://api.githubcopilot.com/mcp" }), others: ["opencode", "qoder", "grok"] },
+  // two of them, with a difference said beside it — as many agents as a real
+  // server is set up in, so the pill is longer than a narrow row can hold
+  { server: srv("two", ["claude", "cursor"], { command: "", transport: "http", url: "https://api.githubcopilot.com/mcp" }), others: ["opencode", "qoder", "grok", "pi", "gemini"] },
 ];
 const lib = () => ({
   dir: `${HOME}/.config/owl/library`, backups: `${HOME}/.config/owl/backups`, home: HOME,
@@ -72,7 +73,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     assert(["chromium", "webkit"].includes(engine), "BROWSER must be chromium or webkit");
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
     t.after(() => browser.close());
-    for (const lang of ["en", "zh"]) for (const width of [900, 440]) {
+    // 734 is the owner's window, where a pill listing eight agents ran past
+    // the row's right edge and took Bring in and Remove with it
+    for (const lang of ["en", "zh"]) for (const width of [900, 734, 440]) {
       await t.test(`${lang} at ${width}px`, async () => {
         const ctx = await browser.newContext({ viewport: { width, height: 900 } });
         await ctx.addInitScript(() => { try { localStorage.setItem("owl.libTab", "mcp"); } catch {} });
@@ -119,6 +122,60 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
           });
           assert.ok(overlap <= 0, `the hand ends ${overlap}px into Bring in`);
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `no sideways scroll at ${width}px`);
+
+          // the pill naming the agents that have another server by this name
+          // gives way instead of pushing the row's buttons out of the list:
+          // a row cut at its right edge hid Bring in and lost the remove
+          // button altogether (no room left for them)
+          for (const name of ["many", "two"]) {
+            const inside = await rowOf(name).evaluate((row) => {
+              const r = row.getBoundingClientRect();
+              const cs = getComputedStyle(row);
+              const right = r.right - parseFloat(cs.paddingRight);
+              const out = [];
+              for (const c of row.children) {
+                const b = c.getBoundingClientRect();
+                if (c.matches(".lib-agents")) {
+                  // the hand is laid out fanned, past its own box on purpose
+                  if (Math.round(b.right) > Math.round(right) + 1) out.push(`${c.className}: hand ends ${Math.round(b.right - right)}px out`);
+                  continue;
+                }
+                if (Math.round(b.right) > Math.round(right) + 1) out.push(`${c.className || c.tagName}: ${Math.round(b.right - right)}px out`);
+              }
+              const btn = row.querySelector(":scope > button.action");
+              const rm = row.querySelector(":scope > .lib-icon.danger");
+              return {
+                out,
+                scroll: row.scrollWidth - row.clientWidth,
+                bring: btn ? Math.round(btn.getBoundingClientRect().width) : 0,
+                trash: rm ? Math.round(rm.getBoundingClientRect().width) : 0,
+                bringIn: btn ? Math.round(btn.getBoundingClientRect().right) <= Math.round(right) : false,
+                trashIn: rm ? Math.round(rm.getBoundingClientRect().right) <= Math.round(right) : false,
+              };
+            });
+            assert.deepEqual(inside.out, [], `${name}: nothing sticks out of the row`);
+            assert.ok(inside.scroll <= 0, `${name}: the row hides nothing (${inside.scroll}px)`);
+            assert.ok(inside.bring > 0 && inside.bringIn, `${name}: Bring in is whole and inside the row`);
+            assert.ok(inside.trash > 0 && inside.trashIn, `${name}: Remove is whole and inside the row`);
+          }
+
+          // the long pill is what gives way, and it says so with an ellipsis
+          // (its tooltip holds the full sentence) rather than being cut off
+          const pill = await rowOf("two").evaluate((row) => {
+            const tag = row.querySelector(":scope > .lib-tag.warn");
+            const t = tag.querySelector(":scope > .t");
+            const cs = getComputedStyle(t);
+            const btn = row.querySelector(":scope > button.action").getBoundingClientRect();
+            return { text: t.textContent, cut: t.scrollWidth > t.clientWidth + 1, ellipsis: cs.textOverflow, title: tag.title, height: tag.getBoundingClientRect().height, under: Math.round(tag.getBoundingClientRect().top - btn.top) };
+          });
+          assert.ok(pill.ellipsis === "ellipsis", "the pill ends in an ellipsis");
+          assert.ok(pill.title && pill.title.length > pill.text.length, "its tooltip still holds the whole sentence");
+          if (width === 900) assert.equal(pill.cut, false, "wide, the pill says it all");
+          else if (width === 734) assert.equal(pill.cut, true, `at ${width}px the pill is cut, not the row: ${pill.text}`);
+          // a phone-width row puts the pill under the name, the hand and the
+          // buttons, where it has the row's whole width for the names
+          if (width === 440) assert.ok(pill.under > 20, `the pill sits under the row's first line (${pill.under}px)`);
+          else assert.ok(Math.abs(pill.under) < 20, `the pill sits beside Bring in (${pill.under}px)`);
           assert.deepEqual(errors, []);
         } finally {
           await ctx.close();

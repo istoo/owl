@@ -186,6 +186,11 @@ button.row.lib-hubfolded:hover { background: var(--pill); }
 .lib-row .who { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* and beside a hand of many agents' chips it keeps room to be read (#936) */
 .lib-row.with-agents > .who { min-width: min(140px, 32%); }
+/* a row's tag names a state or the agents that have another server by that
+   name: on a narrow row it takes only what the name and the hand leave and
+   ends in an ellipsis, its tooltip holding the rest, rather than pushing the
+   row's buttons out of the list (no room left for Bring in and remove) */
+.lib-row > .lib-tag { flex: 0 1 auto; min-width: 0; }
 /* a server's or skill's picture sits level with the top of its name */
 .lib-row > .lib-logo, .lib-row > .lib-glyph { align-self: flex-start; margin-top: 1px; }
 .lib-row .name.mono, .lib-pick .name.mono { font: var(--code-style, normal) 500 12.5px var(--code-font, var(--code)); font-stretch: var(--code-stretch, 100%); }
@@ -224,6 +229,9 @@ button.row.lib-hubfolded:hover { background: var(--pill); }
 /* tags beside a name */
 .lib-tags { display: flex; gap: 5px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 .lib-tag { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; color: var(--fg-2); background: var(--pill); white-space: nowrap; }
+/* the words inside a tag, in a span of their own so the box can cut them
+   with an ellipsis where room runs out; the dot ::before stays whole */
+.lib-tag > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lib-tag.warn { color: var(--amber); background: var(--amber-soft); }
 .lib-tag.warn::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 /* what a check for updates found, beside a skill's name */
@@ -504,6 +512,15 @@ input.lib-setname:focus { border-color: var(--accent); box-shadow: 0 0 0 3px col
 
 @media (max-width: 560px) {
   .lib-list .row { flex-wrap: wrap; }
+  /* a row with a hand of chips keeps one line: its name gives way to an
+     ellipsis rather than taking the buttons under it */
+  .lib-list .row.with-agents { flex-wrap: nowrap; }
+  .lib-list .row.with-agents > .who { min-width: 0; }
+  /* and the tag naming the agents that have another server by that name,
+     the longest thing in the row, goes under it, where it was pushing
+     Bring in and Remove onto lines of their own */
+  .lib-list .row.with-tag { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; column-gap: 11px; row-gap: 5px; }
+  .lib-list .row.with-tag > .lib-tag { grid-column: 2 / -1; grid-row: 2; justify-self: start; max-width: 100%; }
   /* a long command ellipsizes beside the row's picture rather than taking
      the name to a line under it (tao0194) */
   .lib-list .lib-row > .lib-glyph + .who, .lib-list .lib-row > .lib-logo + .who { max-width: calc(100% - var(--lib-indent)); }

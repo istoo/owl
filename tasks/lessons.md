@@ -199,3 +199,9 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 规则：库页面里说明「哪些 Agent 已经有这个」的标记，一律用库自己行里那套「一手牌」chip（`agentChips` 的 `.lib-agents` + `.lib-ag`，24px 牌、14px 图标、叠放并悬停展开），只读的用 `span.lib-ag.on`；不允许再出现第二种画法（整枚 22px 原色 logo 平铺）。新增这类行时复用 `haveAgents()`，不要在行里自己 `icon()` 一串。
 - 原因：库自己的服务器/技能行早就用 chip 手，而「Agent 中已有」的服务器与技能/发现行还停在 `lib-have`：每行 8–9 枚 22px 原色 logo（`.row .ic` 在窗口里把 15px 覆盖成 22px），比行名还响，哪枚是哪个 Agent 只能靠轮廓认；窄窗时 logo 整行折行，行高翻倍。视觉上同一页两种说法，读起来像贴纸墙。
 - 怎么验证：`internal/gui/tests/library-have-chips.test.cjs` 在 900/440px、中英文下断言每个 Agent 是一枚 ≤26px 的 chip、14px 图标、同一行内按序排开、aria-label 列出全部 Agent，且不越过「导入」按钮、页面不横向滚动；换回旧的 `icon()` 平铺时四条全红。改动同时删掉了 `.lib-have` 的两条尺寸规则（`.row .ic` 的特异性问题随之消失）。
+
+## 行里的长标签让路给名字和按钮，不许把按钮挤出列表（2026-11-27）
+
+- 规则：一行左边是名字、右边是按钮时，中间那些可长的字（标签、说明、列表名）必须能缩、能以省略号结尾（`flex: 0 1 auto; min-width: 0` + 文字在自己的 `span` 里带 `overflow: hidden; text-overflow: ellipsis`，全文留在 `title`），按钮永远整体在行内；窄到一行放不下时，让这枚标签落到行下面单独一行（≤560px 的 `grid` 第二行），而不是把按钮挤到第三行或挤出列表。
+- 原因：「Agent 中已有」的行加了「在 Qoder, Grok Build, Pi 中不同」这类按 Agent 数变长的琥珀色标签后，`.lib-tag` 是 `flex: none; white-space: nowrap`，窗宽 734px 时标签把「导入」截掉一半、垃圾桶整个被 `.lib-list` 的 `overflow: hidden` 吞掉（用户截图）；≤560px 时标签、按钮各占一行、三个行高。
+- 怎么验证：`internal/gui/tests/library-have-chips.test.cjs` 在 900 / 734（用户窗宽）/ 440px、中英文下断言两行的「导入」「删除」完整且在行内、行内没有溢出、标签在 734px 时被省略号截断、440px 时落到行下；去掉 `flex: 0 1 auto` 时 734px 那四条红（`text lib-icon danger: 6px out`），换回 `flex: none` 即刻复现用户截图的形状。

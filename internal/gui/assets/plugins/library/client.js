@@ -1606,7 +1606,11 @@ owl.plugin("library", (ctx) => {
   }
 
   function tag(text, kind, title) {
-    const s = el("span", "lib-tag " + (kind || ""), text);
+    const s = el("span", "lib-tag " + (kind || ""));
+    // the words in a span of their own: a row too narrow for them cuts them
+    // with an ellipsis (library.css) instead of pushing the row's buttons
+    // out of the list, which the dot ::before keeps in place
+    s.append(el("span", "t", text));
     if (title) s.title = title;
     return s;
   }
@@ -2655,7 +2659,10 @@ owl.plugin("library", (ctx) => {
     const have = haveAgents(s.agents.map((id) => ({ id })));
     if (have.childElementCount) row.classList.add("with-agents");
     row.append(mark(f.icon, s.transport === "stdio" ? GLYPH.cmd : GLYPH.web), who, have);
-    if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another server by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    if (f.others?.length) {
+      row.classList.add("with-tag");
+      row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another server by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    }
     const b = button(t("Bring in"), "action", () => change("servers/import", { name: s.name }, t("{name} is in the library now", { name: s.name })));
     b.title = t("Keeps it in the library: {agents} go on having it, and you can give it to the others", { agents: s.agents.map(nameOf).join(", ") });
     // gone from the agents' own MCP settings without bringing it in first
@@ -5888,7 +5895,10 @@ owl.plugin("library", (ctx) => {
     })));
     if (have.childElementCount) row.classList.add("with-agents");
     row.append(glyph(GLYPH.skill), who, have);
-    if (f.others?.length) row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another skill by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    if (f.others?.length) {
+      row.classList.add("with-tag");
+      row.append(tag(t("differs in {agents}", { agents: f.others.map(nameOf).join(", ") }), "warn", t("{agents} has another skill by this name; bringing this one in leaves that one as it is", { agents: f.others.map(nameOf).join(", ") })));
+    }
     const b = button(t("Bring in"), "action", () => change("skills/import", { name: f.name }, t("{name} is in the library now", { name: f.name })));
     b.title = f.library ? t("Lists it in the library where it is, nothing moved: you can give it to any agent")
       : f.shared ? t("Keeps it where it is in the shared skills folder and links to it: you can give it to any agent")
