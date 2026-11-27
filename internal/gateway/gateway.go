@@ -3500,6 +3500,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		inOrder = routingOf(g.Routing) == provider.Ordered
 	}
 	cands, pl, aff, stuck := affine(scope, mode, rotate, spread, inOrder, hit != nil && hit.Ended > 0, r.Header, from, body, plain, cands, pl)
+	// the key or account that answered the conversation last (aff.Last is
+	// its rest key, which a provider with one key spells otherwise): a
+	// Copilot-hosted key that isn't it can read none of what it sealed
+	stWho := ""
+	if st, ok := stickOf(stuck); ok && time.Since(st.at) <= stickKeep {
+		stWho = st.who
+	}
 	// a strict conversation left with its own account of several: its
 	// failure rests the account as it would with the others still there,
 	// for new conversations to go elsewhere meanwhile (#1797)
@@ -4153,6 +4160,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// conversation, isn't sent to be refused again; its own is
 			if b, ok := withoutRefused(stuck, c.vendor(), attemptBody); ok {
 				attemptBody = b
+			}
+			// a conversation that last answered on another key or account
+			// of a Copilot-hosted provider: it binds what it sealed to the
+			// connection that minted it, so this one would refuse the
+			// whole request ("input item ID does not belong to this
+			// connection"). The sealed items are left out before the
+			// upload, as a refusal would have them left out after it.
+			if stWho != "" && stWho != c.vendor() && copilotServed(c.p, from) {
+				if b, ok := withoutSeals(attemptBody); ok {
+					attemptBody = b
+				}
 			}
 		}
 		if isGroup {
@@ -4908,6 +4926,28 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 				try.Fail = failForeign
 				s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
 				i--
+				continue
+			}
+		}
+		if !hw.passing && copilotForeignSealSaid(hw.code(), hw.errBody()) {
+			// Copilot's item belongs to the connection that minted it, and
+			// neither branch above could take it out of this request (or
+			// it was asked again without and refused): the request's
+			// history is what is refused, not the key, so this one does
+			// not rest and no failure is counted. Every key of the
+			// provider answers it alike: only another provider's members
+			// are asked, rather than the whole multi-MB body uploaded
+			// again to each of them.
+			if other == nil {
+				other = &Try{Status: call.Status, Error: call.Error, errType: call.Usage.ErrType}
+			}
+			rest := Rest{Why: failForeign, Status: hw.code(), By: "off", Until: time.Now()}
+			try.Fail, try.Rest = failForeign, &rest
+			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
+			skipped = append(skipped, c.label()+": "+call.Error)
+			cands = append(cands[:i+1:i+1], elsewhere(cands[i+1:], c)...)
+			last = i == len(cands)-1
+			if !last {
 				continue
 			}
 		}
@@ -6099,7 +6139,7 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 	// subagent's turn came back "Encrypted function output content could
 	// not be decrypted or decoded" (2026-10-17, a real account). Translated,
 	// the marks are left out and the call goes back to Codex unsealed.
-	if relay && from == provider.Responses && p.Account != nil && p.Account.Agent == "copilot" && asksSealing(body) {
+	if relay && from == provider.Responses && copilotServed(p, from) && asksSealing(body) {
 		relay, ownAPI = false, true
 	}
 	// Zen's free models are asked as OpenCode asks them (zenfree.go)
@@ -6150,7 +6190,7 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 		// (#2951, #4374: six requests of one turn, all refused) — so
 		// nothing tells owl what to learn from. They go as functions
 		// from the first ask.
-		if p.Account != nil && p.Account.Agent == "copilot" && grokModel(model) {
+		if copilotServed(p, from) && grokModel(model) {
 			return true
 		}
 		return !s.fits(p.ID, customToolRefused(model), from)
@@ -6420,7 +6460,7 @@ func (s *Server) forwardOnce(ctx context.Context, p provider.Provider, to provid
 	body = copilotGrokFlat(p, to, body)
 	body = kimiToolEnumTypes(p, to, body)
 	body = kimiToolRefTypes(p, to, body)
-	body = geminiTypes(body, copilotGemini(p, body))
+	body = geminiTypes(body, copilotGemini(p, to, body))
 	body = kimiLockedSampling(p, to, body)
 	body = clinePin(p, to, body)
 	body = codexImagesFit(p, to, body)
@@ -9568,6 +9608,9 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 	// the carried reasoning this key or account refused in the
 	// conversation (reasoning_carry.go, #4798)
 	withoutRefusedCarry(r.Context(), p, request)
+	// and the reasoning another key or account of a vendor that binds a
+	// seal to it minted (Copilot), left out before it is refused
+	withoutForeignMinted(r.Context(), p, to, request)
 	// a glm-5.3-flash* replica's CR stitched into a call's arguments
 	// (tool_args_cr.go, #4256)
 	request.CR = glmServed(wiresOf(r.Context()), p, model)
@@ -9636,7 +9679,7 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 		}
 		return writeVendorErrorFrom(w, from, actual, p, res, msg, b), msg
 	}
-	dec := carryReasoning(decoderFor(p, actual, request.Tools), from, actual)
+	dec := carryReasoning(r.Context(), decoderFor(p, actual, request.Tools), from, actual)
 	rd, sse := eventStream(res)
 	if !sse {
 		// the provider ignored stream:true; read the whole reply as one
@@ -11240,7 +11283,7 @@ func keepsLoneNone(p provider.Provider) bool {
 // tool_choice with no tools beside it: xAI's, and Copilot's /responses in
 // front of it for Grok (#378).
 func refusesLoneToolChoice(p provider.Provider) bool {
-	return p.VendorHost() == "api.x.ai" || p.Account != nil && p.Account.Agent == "copilot"
+	return p.VendorHost() == "api.x.ai" || copilotServed(p, provider.Responses)
 }
 
 // withoutLoneToolChoice leaves out a tool_choice sent with no tools; with

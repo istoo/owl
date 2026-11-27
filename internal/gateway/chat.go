@@ -598,6 +598,15 @@ func buildChat(r *Request, model, host string, rejectTemp bool) []byte {
 				content = append(content, chatImage(p))
 			case ToolResult:
 				out := p.Text
+				if strings.TrimSpace(out) == "" && len(p.Loads) > 0 {
+					// Claude Code's ToolSearch answers with tool_reference
+					// blocks alone, which a Chat upstream has no field for.
+					// The Messages reader already turns them into this text
+					// (toolOutputIn); a result that reaches a builder with
+					// the names alone still says what was loaded, rather
+					// than an empty tool message an upstream may turn away.
+					out = loadedToolsNote(p.Loads)
+				}
 				if n := len(p.Images); n > 0 {
 					note := fmt.Sprintf("[The tool returned %d images; they follow in the next message.]", n)
 					if n == 1 {
@@ -709,6 +718,21 @@ func buildChat(r *Request, model, host string, rejectTemp bool) []byte {
 	}
 	b, _ := marshalBody(out, "messages")
 	return b
+}
+
+// loadedToolsNote is what a tool result says where a Claude Code
+// ToolSearch's tool_reference blocks left it empty: the tools the search
+// loaded, by name. The words go to the vendor, so they name neither owl nor
+// the vendor. A tool message with no content is one an upstream may refuse,
+// and the model needs the names to know what it may call next.
+func loadedToolsNote(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) == 1 {
+		return "Loaded tool: " + names[0] + "."
+	}
+	return "Loaded tools: " + strings.Join(names, ", ") + "."
 }
 
 // pairToolMessages mends the tool exchange of a Chat request's messages

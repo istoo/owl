@@ -630,7 +630,14 @@ func buildCodeAssistSent(r *Request, sent, agent string) []byte {
 				case p.IsError:
 					key = "error"
 				}
-				res := map[string]any{"name": name, "response": map[string]any{key: p.Text}}
+				out := p.Text
+				if strings.TrimSpace(out) == "" && len(p.Loads) > 0 {
+					// a ToolSearch's tool_reference blocks leave the result
+					// empty, as a Chat upstream's tool message is left
+					// (loadedToolsNote, chat.go)
+					out = loadedToolsNote(p.Loads)
+				}
+				res := map[string]any{"name": name, "response": map[string]any{key: out}}
 				if id := toolID(p.CallID); id != "" {
 					res["id"] = id
 				}

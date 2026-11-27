@@ -19,7 +19,7 @@ import (
 // and the first of two same-named tools is kept; a schema without either
 // is not touched, byte for byte.
 func copilotGeminiToolsFit(p provider.Provider, to provider.Protocol, body []byte) []byte {
-	if to != provider.Chat || p.Account == nil || p.Account.Agent != "copilot" ||
+	if to != provider.Chat || !copilotServed(p, to) ||
 		!geminiNamed(gjson.GetBytes(body, "model").String()) {
 		return body
 	}

@@ -58,8 +58,10 @@ func askSealedReasoning(p provider.Provider, from provider.Protocol, r *Request)
 }
 
 // reasonedID is a call's id carrying the reasoning items before it, or the
-// id as it was when they couldn't be kept.
-func reasonedID(id string, items []json.RawMessage) string {
+// id as it was when they couldn't be kept. who is the key or account that
+// minted them, kept with them (noteReasonMinter) for the vendors that bind
+// what they seal to it.
+func reasonedID(id string, items []json.RawMessage, who string) string {
 	if len(items) == 0 {
 		return id
 	}
@@ -71,37 +73,45 @@ func reasonedID(id string, items []json.RawMessage) string {
 	if key == "" {
 		return id
 	}
+	noteReasonMinter(key, who)
 	if id == "" {
 		id = "call_" + newID()
 	}
 	return id + reasonTail + key
 }
 
-// unreasonedID splits an id reasonedID made into the call's own id and
-// the reasoning items it refers to (none when owl no longer has them).
-// Any other id comes back as it is.
-func unreasonedID(id string) (string, []json.RawMessage) {
+// unreasonedID splits an id reasonedID made into the call's own id, the
+// reasoning items it refers to (none when owl no longer has them), and
+// the key or account that minted them ("" when unknown). Any other id
+// comes back as it is.
+func unreasonedID(id string) (string, []json.RawMessage, string) {
 	at := len(id) - reasonKeyLen - len(reasonTail)
 	if at < 1 || id[at:at+len(reasonTail)] != reasonTail {
-		return id, nil
+		return id, nil, ""
 	}
 	own, key := id[:at], id[at+len(reasonTail):]
 	var items []json.RawMessage
+	from := ""
 	if kept := keptSignature(key); kept != "" {
 		if json.Unmarshal([]byte(kept), &items) != nil {
 			items = nil
 		}
+		if items != nil {
+			from = reasonMinter(key)
+		}
 	}
-	return own, items
+	return own, items, from
 }
 
 // carryReasoning is dec for a client of from, with the sealed reasoning a
 // Responses upstream gives before a call carried in that call's id, when
-// the client is of another API.
-func carryReasoning(dec func(string, func(Event)) error, from, actual provider.Protocol) func(string, func(Event)) error {
+// the client is of another API. ctx's sealScope names the key or account
+// that minted it, which is kept beside the items.
+func carryReasoning(ctx context.Context, dec func(string, func(Event)) error, from, actual provider.Protocol) func(string, func(Event)) error {
 	if from == provider.Responses || actual != provider.Responses {
 		return dec
 	}
+	who := sealWho(ctx)
 	var held []json.RawMessage
 	return func(data string, emit func(Event)) error {
 		return dec(data, func(ev Event) {
@@ -109,7 +119,7 @@ func carryReasoning(dec func(string, func(Event)) error, from, actual provider.P
 			case ev.Kind == KSealed && ev.Name == sealResponses && ev.Text != "":
 				held = append(held, json.RawMessage(ev.Text))
 			case ev.Kind == KToolStart && len(held) > 0:
-				ev.ID = reasonedID(ev.ID, held)
+				ev.ID = reasonedID(ev.ID, held, who)
 				held = nil
 			}
 			emit(ev)
@@ -127,15 +137,16 @@ func unreasonCalls(r *Request) {
 		var parts, lead []Part
 		for j, p := range m.Parts {
 			var items []json.RawMessage
+			from := ""
 			switch p.Kind {
 			case ToolCall:
-				id, its := unreasonedID(p.ID)
+				id, its, by := unreasonedID(p.ID)
 				if id == p.ID {
 					continue
 				}
-				p.ID, items = id, its
+				p.ID, items, from = id, its, by
 			case ToolResult:
-				id, _ := unreasonedID(p.CallID)
+				id, _, _ := unreasonedID(p.CallID)
 				if id == p.CallID {
 					continue
 				}
@@ -148,7 +159,7 @@ func unreasonCalls(r *Request) {
 			}
 			parts[j] = p
 			for _, it := range items {
-				lead = append(lead, Part{Kind: Thinking, Sealed: it, SealedBy: sealResponses})
+				lead = append(lead, Part{Kind: Thinking, Sealed: it, SealedBy: sealResponses, SealedFrom: from})
 			}
 		}
 		if parts != nil {
@@ -202,6 +213,43 @@ func carriedSeal(p Part) ([sha256.Size]byte, bool) {
 		return [sha256.Size]byte{}, false
 	}
 	return sha256.Sum256([]byte(it.Enc)), true
+}
+
+// sealWho is the key or account of ctx's try, as sealScope holds it ("" for
+// a try that set no scope).
+func sealWho(ctx context.Context) string {
+	if sc, ok := ctx.Value(sealScopeKey{}).(sealScope); ok {
+		return sc.who
+	}
+	return ""
+}
+
+// withoutForeignMinted leaves out of req the carried reasoning a key or
+// account other than ctx's try minted, for a vendor that binds what it
+// seals to the connection that minted it: GitHub Copilot answers another
+// key's item 401 "input item ID does not belong to this connection", every
+// key alike, so a conversation that moves to another key paid one refused
+// upload of its whole history for the switch. Leaving the item out up
+// front costs neither. An item whose minter owl doesn't know goes as it
+// was, and a refusal of it is asked again without (refuseCarried). Only
+// that vendor is read so: OpenAI's API seals reasoning to the organization,
+// and a conversation moves between its keys freely. Nothing else changes.
+func withoutForeignMinted(ctx context.Context, p provider.Provider, to provider.Protocol, req *Request) {
+	if !copilotServed(p, to) {
+		return
+	}
+	sc, ok := ctx.Value(sealScopeKey{}).(sealScope)
+	if !ok || sc.id != p.ID {
+		return
+	}
+	for i, m := range req.Messages {
+		gone := func(p Part) bool {
+			return p.Kind == Thinking && p.sealedBy(sealResponses) && p.SealedFrom != "" && p.SealedFrom != sc.who
+		}
+		if slices.ContainsFunc(m.Parts, gone) {
+			req.Messages[i].Parts = slices.DeleteFunc(slices.Clone(m.Parts), gone)
+		}
+	}
 }
 
 // withoutRefusedCarry leaves out of req the carried reasoning the key or

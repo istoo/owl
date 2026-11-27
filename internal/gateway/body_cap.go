@@ -50,7 +50,12 @@ import (
 
 // bodyCapWords are a vendor's words for a request body over its byte
 // cap, not a conversation over the model's window (tooLong) nor a rate.
-var bodyCapWords = lazyre.New(`(?i)request[ _](body|entity|payload)( size)?( is| was)? (too large|too big|over|larger than|exceeds?|exceeded)|request body is [\d.]+ ?[kmg]i?b|payload too large|entity too large|request_too_large|(body|request|payload) (size )?(exceeds?|exceeded|is over|is larger than) (the )?(max|limit|\d)|length limit exceeded|maximum allowed number of bytes|limit for one request|(max(imum)?|request) (request |body )*size (limit )?(exceeded|of)`)
+// The last is Copilot's answer to a slow, multi-MB upload: HTTP 408
+// "Timed out reading request body. Try again, or use a smaller request
+// size." — the vendor asking for fewer bytes, in so many words. Read as a
+// plain 408, owl re-sent the same body to key after key; read as a cap, it
+// is fitted (or said as a 413 for the agent to compact) as any other.
+var bodyCapWords = lazyre.New(`(?i)request[ _](body|entity|payload)( size)?( is| was)? (too large|too big|over|larger than|exceeds?|exceeded)|request body is [\d.]+ ?[kmg]i?b|payload too large|entity too large|request_too_large|(body|request|payload) (size )?(exceeds?|exceeded|is over|is larger than) (the )?(max|limit|\d)|length limit exceeded|maximum allowed number of bytes|limit for one request|(max(imum)?|request) (request |body )*size (limit )?(exceeded|of)|timed out reading (the )?request body`)
 
 // byteCapRefusal is a provider's refusal of a request for its bytes: a
 // 413 that doesn't say the model's window is full, or any other refusal

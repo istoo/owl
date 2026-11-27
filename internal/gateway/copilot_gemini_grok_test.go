@@ -421,14 +421,14 @@ func TestCopilotGeminiKeepsNullableUnionsUntyped(t *testing.T) {
 func TestGeminiTypesOtherVendorsKeepTheirs(t *testing.T) {
 	body := []byte(`{"model":"gemini-3.8-flash","tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object","properties":{"p":{"anyOf":[{"type":"string"},{"type":"null"}]}}}}}]}`)
 	other := provider.Provider{Account: &provider.Account{Agent: "claude"}}
-	if copilotGemini(other, body) {
+	if copilotGemini(other, provider.Chat, body) {
 		t.Fatal("another provider counted as Copilot")
 	}
-	if got := geminiTypes(body, copilotGemini(other, body)); !strings.Contains(string(got), `"p":{"type":"string","anyOf"`) {
+	if got := geminiTypes(body, copilotGemini(other, provider.Chat, body)); !strings.Contains(string(got), `"p":{"type":"string","anyOf"`) {
 		t.Errorf("another vendor's union lost its type: %s", got)
 	}
 	cp := provider.Provider{Account: &provider.Account{Agent: "copilot"}}
-	if got := geminiTypes(body, copilotGemini(cp, body)); strings.Contains(string(got), `"type":"string","anyOf"`) {
+	if got := geminiTypes(body, copilotGemini(cp, provider.Chat, body)); strings.Contains(string(got), `"type":"string","anyOf"`) {
 		t.Errorf("Copilot's union was typed: %s", got)
 	}
 }

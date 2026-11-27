@@ -1194,8 +1194,23 @@ func unanswered(key string, c candidate) {
 // encrypted_content (zminds #4412) — "Could not decode the compaction
 // blob", which names no item and says nothing of encrypted content,
 // where the #3392 shaping (xaiBody's) never runs because the relay's
-// host isn't api.x.ai.
-var foreignReasoning = lazyre.New(`(?i)invalid_encrypted_content|invalid[ _]encrypted[ _](summary|content)|encrypted[ _]content.{0,80}could not be (verified|decrypted)|could not (decrypt|verify).{0,40}encrypted[ _]content|could not (decode|decrypt).{0,20}compaction[ _]blob`)
+// host isn't api.x.ai; and GitHub Copilot's "input item ID does not belong
+// to this connection", which it answers for a sealed item minted by
+// another of its keys or accounts (every key alike: the item is bound to
+// the connection that made it).
+var foreignReasoning = lazyre.New(`(?i)invalid_encrypted_content|invalid[ _]encrypted[ _](summary|content)|encrypted[ _]content.{0,80}could not be (verified|decrypted)|could not (decrypt|verify).{0,40}encrypted[ _]content|could not (decode|decrypt).{0,20}compaction[ _]blob|input item id does not belong to this connection`)
+
+// copilotForeignSeal is Copilot's refusal of a request holding a sealed
+// item another of its connections minted, as a 401 (the report's) or a
+// 403. Its status alone would read as the key's failure: the item belongs
+// to the request's history, not to the key, and every key of the provider
+// refuses it alike, so nobody rests and no other key is sent the same body
+// (restAfterMarked, serve).
+var copilotForeignSeal = lazyre.New(`(?i)input item id does not belong to this connection`)
+
+func copilotForeignSealSaid(status int, body []byte) bool {
+	return (status == http.StatusUnauthorized || status == http.StatusForbidden) && copilotForeignSeal.Match(wordsOf(body))
+}
 
 // refusedSeals remembers, per conversation and the key or account that
 // refused it, what another one sealed: its reasoning, and the sealed copy

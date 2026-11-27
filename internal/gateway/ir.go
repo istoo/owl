@@ -84,9 +84,13 @@ type Part struct {
 	// summary and encrypted_content. Only that API's builder, encoder and
 	// renderer write it, byte for byte; to any other it is reasoning with
 	// no text, or Text's (#1445). SealedBy is the API (sealAnthropic,
-	// sealResponses).
-	Sealed   json.RawMessage
-	SealedBy string
+	// sealResponses). SealedFrom is the key or account that minted a
+	// carried item owl kept (reasoning_carry.go), "" when unknown: a
+	// vendor that binds a seal to that connection (Copilot) is sent no
+	// item of another's.
+	Sealed     json.RawMessage
+	SealedBy   string
+	SealedFrom string
 
 	// web_search: Text is the query
 	Hits []Hit

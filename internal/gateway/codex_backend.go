@@ -3351,7 +3351,8 @@ func itemIDsRefused(model string) string { return "item ids\x00" + model }
 // /responses in front of them.
 func validatesItemIDs(p provider.Provider) bool {
 	return strings.HasSuffix(p.VendorHost(), "openai.com") || p.IsAzure() ||
-		p.Account != nil && (p.Account.Agent == "codex" || p.Account.Agent == "copilot")
+		p.Account != nil && (p.Account.Agent == "codex" || p.Account.Agent == "copilot") ||
+		copilotServed(p, provider.Responses)
 }
 
 // itemIDCap is the most characters an input item's id may have: OpenAI's

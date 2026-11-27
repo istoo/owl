@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -181,7 +182,7 @@ func TestGrokReasoningGoesBackThroughOtherAPIs(t *testing.T) {
 				return rec.Body.Bytes()
 			}
 			id := askedCallID(t, from, ask(""), stream)
-			if own, items := unreasonedID(id); own != grokReasonedCallID || len(items) != 1 {
+			if own, items, _ := unreasonedID(id); own != grokReasonedCallID || len(items) != 1 {
 				t.Fatalf("%s stream=%v: the call's id %q carries %d items for %q", from, stream, id, len(items), own)
 			}
 			ask(id)
@@ -254,7 +255,7 @@ func TestSealedReasoningAskedOfGrokAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ids []string
-	dec := carryReasoning(decoder(provider.Responses), provider.Responses, provider.Responses)
+	dec := carryReasoning(context.Background(), decoder(provider.Responses), provider.Responses, provider.Responses)
 	for _, l := range strings.Split(string(reply), "\n") {
 		if d, ok := strings.CutPrefix(l, "data: "); ok {
 			dec(d, func(ev Event) {
@@ -274,19 +275,19 @@ func TestSealedReasoningAskedOfGrokAlone(t *testing.T) {
 // it came.
 func TestReasonedIDWithoutItsReasoning(t *testing.T) {
 	fresh(t)
-	id := reasonedID("call_1", []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"e"}`)})
-	if own, items := unreasonedID(id); own != "call_1" || len(items) != 1 {
+	id := reasonedID("call_1", []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"e"}`)}, "k1")
+	if own, items, _ := unreasonedID(id); own != "call_1" || len(items) != 1 {
 		t.Fatalf("%q: %q %v", id, own, items)
 	}
-	if own, items := unreasonedID(id[:len(id)-1]); own != id[:len(id)-1] || items != nil {
+	if own, items, _ := unreasonedID(id[:len(id)-1]); own != id[:len(id)-1] || items != nil {
 		t.Fatalf("cut short: %q %v", own, items)
 	}
 	os.RemoveAll(sigDir())
-	if own, items := unreasonedID(id); own != "call_1" || items != nil {
+	if own, items, _ := unreasonedID(id); own != "call_1" || items != nil {
 		t.Fatalf("forgotten: %q %v", own, items)
 	}
 	for _, plain := range []string{"toolu_01", grokReasonedCallID, "call__rk16__"} {
-		if own, items := unreasonedID(plain); own != plain || items != nil {
+		if own, items, _ := unreasonedID(plain); own != plain || items != nil {
 			t.Fatalf("%q came back %q %v", plain, own, items)
 		}
 	}

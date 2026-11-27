@@ -108,6 +108,63 @@ func pruneSignatures(dir string) {
 	}
 }
 
+// Which key or account minted a sealed reasoning item owl carries in a
+// call's id (reasoning_carry.go). GitHub Copilot binds what it seals to the
+// connection that minted it: a request replaying another key's item is
+// answered 401 "input item ID does not belong to this connection", even
+// when the rest of the conversation is the same. The minter is kept beside
+// the item, <key>.mint, as candidate.vendor names it, so a request going to
+// another key leaves the item out before it is sent.
+const minterExt = ".mint"
+
+// noteReasonMinter records that who minted the reasoning kept under key. A
+// record that couldn't be written leaves the minter unknown
+// (reasonMinter).
+func noteReasonMinter(key, who string) {
+	if key == "" || who == "" {
+		return
+	}
+	dir := sigDir()
+	path := filepath.Join(dir, key+minterExt)
+	if b, err := os.ReadFile(path); err == nil && string(b) == who {
+		now := time.Now()
+		os.Chtimes(path, now, now)
+		return
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return
+	}
+	_, werr := tmp.WriteString(who)
+	cerr := tmp.Close()
+	if werr != nil || cerr != nil || os.Rename(tmp.Name(), path) != nil {
+		os.Remove(tmp.Name())
+		return
+	}
+	pruneSignatures(dir)
+}
+
+// reasonMinter is the key or account that minted the reasoning kept under
+// key, or "" when owl doesn't know: one kept before minters were recorded,
+// or whose record couldn't be written or read. An unknown minter is sent
+// as it was, and its refusal is what asks again without it (refuseCarried).
+func reasonMinter(key string) string {
+	if key == "" {
+		return ""
+	}
+	path := filepath.Join(sigDir(), key+minterExt)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	now := time.Now()
+	os.Chtimes(path, now, now)
+	return string(b)
+}
+
 // Which provider gave a signature (a reply's tool call or text): a
 // signature goes back only to the provider that gave it (ownSignatures).
 // Vertex AI and AI Studio serve the same Gemini models, and a routing

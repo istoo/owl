@@ -38,7 +38,7 @@ import (
 // none of the six goes byte for byte as it came, and only Copilot's Gemini
 // on chat is touched.
 func copilotGeminiToolShapes(p provider.Provider, to provider.Protocol, body []byte) []byte {
-	if to != provider.Chat || !copilotGemini(p, body) {
+	if to != provider.Chat || !copilotGemini(p, to, body) {
 		return body
 	}
 	tools := gjson.GetBytes(body, "tools")

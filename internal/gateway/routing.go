@@ -1461,6 +1461,14 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 	now := time.Now()
 	d := fallbackCooldown
 	why := failureOf(c, status, body)
+	if copilotForeignSealSaid(status, body) {
+		// a sealed item minted by another of Copilot's connections: the
+		// request's history is what it refuses, not the key, and every key
+		// of the provider answers it alike. No key rests and no failure is
+		// counted; serve asks the same key again without the item
+		// (refuseCarried) and sends no other key the same body
+		return Rest{Why: failForeign, Status: status, By: "off", Until: now}
+	}
 	if why == failCut {
 		// a plugin ended the turn on purpose, its upstream's stream having
 		// died mid-call (plugins#38): the account is as good as it was, the

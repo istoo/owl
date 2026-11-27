@@ -203,7 +203,7 @@ func TestForeignCarriedReasoningAskedAgainWithout(t *testing.T) {
 			if code, body := c.ask(t, s); code != 200 {
 				t.Fatalf("first turn: %d %s", code, body)
 			}
-			if _, items := unreasonedID(c.calls[0]); len(items) != 1 {
+			if _, items, _ := unreasonedID(c.calls[0]); len(items) != 1 {
 				t.Fatalf("the call's id %q carries %d items", c.calls[0], len(items))
 			}
 			grok.taken()
