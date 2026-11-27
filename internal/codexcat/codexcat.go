@@ -123,6 +123,9 @@ func DefaultEffort(e []string) string {
 			return want
 		}
 	}
+	if len(e) == 0 {
+		return ""
+	}
 	return e[0]
 }
 

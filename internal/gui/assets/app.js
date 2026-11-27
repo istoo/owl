@@ -132,10 +132,16 @@ const readsSame = (path) => /^sessions(\?|$)|^sessions\/stats\?/.test(path);
 const readTags = new WeakMap();
 const sameRead = (a, b) => a === b || !(readTags.has(a) && readTags.has(b)) && JSON.stringify(a) === JSON.stringify(b);
 
+// isHTTP is whether u is an http(s) address: a market's homepage or an
+// update's link can otherwise carry javascript: or data: into this window.
+function isHTTP(u) { return /^https?:\/\//i.test(String(u || "")); }
+// openURL opens u in a new tab only when it is one (C5).
+function openURL(u) { if (!isHTTP(u)) return false; window.open(u, "_blank", "noopener"); return true; }
+
 // heads, when given, is shown the answer's headers (loadQuotas' X-Magpie-Reading);
 // signal, when given, cancels the request (a read the reader moved on from)
 async function api(path, body, heads, signal) {
-  if (web && path === "open") { window.open(body.url, "_blank", "noopener"); return null; }
+  if (web && path === "open") { openURL(body.url); return null; }
   // a segment may be an agent id, and omp's named profiles are omp#<name>:
   // left raw, the browser reads #work as the fragment and the request
   // reaches the default omp row (#1187). Only # is encoded: ? = & stay a
@@ -4658,7 +4664,7 @@ async function renderUpdateBadge() {
       label.textContent = t("Downloading…");
       return api("update/install", {}).then(renderUpdateBadge, renderUpdateBadge);
     }
-    if (web && u.url) return window.open(u.url, "_blank", "noopener");
+    if (web && u.url) { openURL(u.url); return; }
     api("update/install", {}).catch(() => {});
   };
 }
@@ -11650,6 +11656,7 @@ async function startSignIn(agent, risky, site, o = {}) {
 const openBlocked = "\u0000blocked";
 function openSignInPage(url) {
   if (!web) return api("open", { url });
+  if (!isHTTP(url)) return Promise.reject(new Error(openBlocked));
   let w = null;
   try { w = window.open(url, "_blank"); } catch {}
   if (!w) return Promise.reject(new Error(openBlocked));
@@ -21640,7 +21647,7 @@ async function renderUpdate(r, u) {
   const kept = val.querySelector("button.update-page");
   for (const b of val.querySelectorAll("button")) if (b !== kept) b.remove();
   let pageShown = false;
-  const open = () => (web ? window.open(u.url, "_blank", "noopener") : api("open", { url: u.url }).catch(() => {}));
+  const open = () => (web ? openURL(u.url) : api("open", { url: u.url }).catch(() => {}));
   const dim = () => { for (const b of val.querySelectorAll("button")) { b.disabled = true; b.classList.add("busy"); } };
   // where GitHub is slow to owl, the update can be fetched in the
   // browser instead, through its own proxy or accelerator (PapainTea on X)
@@ -21743,7 +21750,7 @@ async function renderUpdate(r, u) {
       sub.textContent = t("{v} is out", { v: u.latest });
       if (u.stuck) sub.textContent += " · " + updateStuck(u);
       if (u.packaged) { sub.classList.add("wraps"); btn(t("Check"), check); break; }
-      btn(t("Download"), () => (web && u.url ? window.open(u.url, "_blank", "noopener") : api("update/install", {})));
+      btn(t("Download"), () => (web && u.url ? openURL(u.url) : api("update/install", {})));
       if (!web) page();
       break;
     case "downloading":

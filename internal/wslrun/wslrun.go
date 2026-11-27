@@ -74,6 +74,12 @@ func Find(name string) (Tool, bool) {
 	if !On || settings.Shared().NoWSLAgents {
 		return Tool{}, false
 	}
+	// probeScript puts the name into a shell script unquoted: a name with
+	// a shell character in it is never looked for, or it would run there
+	// (#4133). In allows a path that isn't a plain name; Find is a name.
+	if !plainName.MatchString(name) {
+		return Tool{}, false
+	}
 	found.Lock()
 	defer found.Unlock()
 	if t, ok := found.at[name]; ok && time.Since(t) < findAge {
@@ -289,8 +295,12 @@ func parseProbe(distro, out string) (Tool, bool) {
 		case "lpath":
 			lpath = v
 		case "mount":
-			// /mnt/c/ → /mnt/
-			if m := strings.TrimSuffix(strings.TrimSuffix(v, "/"), "c"); strings.HasPrefix(m, "/") && m != v {
+			// /mnt/c/ → /mnt/, C too: wslpath spells the drive either way
+			m := strings.TrimSuffix(v, "/")
+			if n := len(m); n > 0 && (m[n-1] == 'c' || m[n-1] == 'C') {
+				m = m[:n-1]
+			}
+			if strings.HasPrefix(m, "/") && m != v {
 				t.Mount = m
 			}
 		case "route":
@@ -422,7 +432,9 @@ func Via() (via, trying []net.IP) {
 }
 
 // SetVia makes via the vias and trying those tried (Via); none of either
-// removes the file.
+// removes the file. The disk and what Via answers are one step: a write
+// that goes one way while the memory says the other left the run's route
+// and the file disagreeing until the next read (#4133).
 func SetVia(via, trying []string) error {
 	path := viaPath()
 	var lines []string
@@ -435,6 +447,8 @@ func SetVia(via, trying []string) error {
 		}
 		return out
 	}
+	viaState.Lock()
+	defer viaState.Unlock()
 	v, t := parse(via, ""), parse(trying, "try ")
 	var err error
 	if len(lines) == 0 {
@@ -447,9 +461,7 @@ func SetVia(via, trying []string) error {
 	if err != nil {
 		return err
 	}
-	viaState.Lock()
 	viaState.ips, viaState.trying, viaState.at, viaState.path = v, t, time.Now(), path
-	viaState.Unlock()
 	return nil
 }
 
@@ -511,12 +523,7 @@ func (t Tool) Probe(ctx context.Context, args ...string) *exec.Cmd {
 const runVar = "OWL_WSL_RUN"
 
 func (t Tool) cancelable(cmd *exec.Cmd) *exec.Cmd {
-	mark := cmd.Args[len(cmd.Args)-1]
-	for _, a := range cmd.Args {
-		if v, ok := strings.CutPrefix(a, runVar+"="); ok {
-			mark = v
-		}
-	}
+	mark := t.runMark(cmd.Args)
 	// then proc's own kill: wsl.exe with what it started on Windows (the
 	// Store's second wsl.exe), and a probe's group (#2341)
 	kill := cmd.Cancel
@@ -525,6 +532,27 @@ func (t Tool) cancelable(cmd *exec.Cmd) *exec.Cmd {
 		return kill()
 	}
 	return cmd
+}
+
+// runMark is the mark of a run among args (argv's): the OWL_WSL_RUN= in
+// the environment segment, between --exec and the command. A business
+// argument that spells one is the agent's own and is not the mark: a
+// command started with "OWL_WSL_RUN=other" as its own argument must not
+// cancel a run by another mark (#4133).
+func (t Tool) runMark(args []string) string {
+	start := 0
+	for i, a := range args {
+		if a == "--exec" {
+			start = i + 1
+			break
+		}
+	}
+	for i := start; i < len(args) && args[i] != t.Path; i++ {
+		if v, ok := strings.CutPrefix(args[i], runVar+"="); ok {
+			return v
+		}
+	}
+	return ""
 }
 
 // Stop ends the processes of the run marked mark in the distro.

@@ -204,6 +204,7 @@ type runSession struct {
 	mu      sync.Mutex
 	spec    runSpec
 	gone    bool            // the server is given no longer
+	deleted bool            // the client ended the session (DELETE)
 	init    json.RawMessage // the session's initialize params
 	child   *runChild
 	last    time.Time
@@ -303,7 +304,23 @@ func (s *runSession) ensure() (*runChild, json.RawMessage, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// the server started while the session was ended, or its server was
+	// changed, by a DELETE or a sync: the process made here is nobody's
+	// and is ended at once, never left as an orphan serving a deleted
+	// session (#H29)
 	s.mu.Lock()
+	if s.deleted || s.gone || s.spec.key() != spec.key() {
+		deleted, gone := s.deleted, s.gone
+		s.mu.Unlock()
+		c.end()
+		switch {
+		case deleted:
+			return nil, nil, fmt.Errorf("owl's session for %s has ended: start it again", s.name)
+		case gone:
+			return nil, nil, fmt.Errorf("owl gives Codex no server called %s now", s.name)
+		}
+		return nil, nil, fmt.Errorf("owl's server %s changed while it started: ask again", s.name)
+	}
 	s.child = c
 	s.mu.Unlock()
 	return c, res, nil
@@ -595,6 +612,10 @@ func ServeRun(w http.ResponseWriter, r *http.Request, name string) {
 		delete(runs.sessions, k)
 		runs.Unlock()
 		if s != nil {
+			// a start under way learns the session is gone after it returns
+			s.mu.Lock()
+			s.deleted = true
+			s.mu.Unlock()
 			s.stop()
 		}
 		w.WriteHeader(http.StatusOK)

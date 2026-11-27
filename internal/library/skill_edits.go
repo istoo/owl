@@ -256,6 +256,22 @@ func mirrorDir(from, to string) error {
 			if err != nil {
 				return nil
 			}
+			// a link that leads out of what is mirrored is left out, as
+			// copyDir leaves it out of a copy: the mirror would read the
+			// user's files through it (#46, #H25)
+			target := t
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			target = filepath.Clean(target)
+			if real, err := filepath.EvalSymlinks(target); err == nil {
+				target = real
+			} else {
+				target = realBelow(target)
+			}
+			if !within(target, realDir(from)) {
+				return nil
+			}
 			if cur, err := os.Readlink(dst); err == nil && cur == t {
 				return nil
 			}

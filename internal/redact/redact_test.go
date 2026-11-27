@@ -262,7 +262,9 @@ func TestMaskJSONNamedSecrets(t *testing.T) {
 					t.Errorf("%s %s: %d masked: %s", wire, c.key, n, out)
 					continue
 				}
-			} else if strings.Contains(string(out), c.value) || !strings.Contains(string(out), "{{SECRET_") {
+			} else if strings.Contains(string(out), c.value) || !HasPlaceholder(string(out)) {
+				// the kind is the finder's: a value a rule knows (an AKIA
+				// key) keeps that rule's kind, and its Action, as anywhere
 				t.Errorf("%s %s: not masked as a secret: %s", wire, c.key, out)
 				continue
 			}

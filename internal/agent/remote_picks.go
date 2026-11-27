@@ -145,7 +145,7 @@ func (a *Agent) connectRemote() (c Connection, ok bool, err error) {
 		if !found {
 			continue
 		}
-		if err := a.Apply(f.Key, o.Value); err != nil {
+		if err := a.apply(f.Key, o.Value); err != nil {
 			return Connection{}, false, err
 		}
 		if c.Field == "" {

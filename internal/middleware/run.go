@@ -387,8 +387,11 @@ func (rw *writer) finish() {
 		}
 		rw.w.Write(body)
 	case stream:
-		if rw.buf.Len() > 0 {
-			rw.w.Write(rw.buf.Bytes())
+		// the last event may come without the blank line that ends it:
+		// it goes through onEvent as any other does, not around it (M7)
+		if b := rw.buf.Bytes(); len(b) > 0 {
+			rw.buf.Reset()
+			rw.event(b)
 		}
 	}
 	rw.Flush()

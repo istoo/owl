@@ -7,6 +7,7 @@ package library
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,6 +118,9 @@ type Library struct {
 	// stored are the skills this sync made sure of in a WSL distro's
 	// store, by path (storeSkill), with what went wrong
 	stored map[string]error
+	// pluginSwaps are the plugin folders a change moved aside, kept
+	// until library.json names the new versions (plugin.go, #M37b)
+	pluginSwaps []*pluginSwap
 }
 
 // Instructions are one shared text, and for each agent whether it gets it
@@ -401,14 +405,19 @@ func changeLocked(f func(l *Library) error) (*Result, error) {
 		return nil, err
 	}
 	if err := f(l); err != nil {
-		return nil, err
+		// a plugin version f moved aside comes back: the library that
+		// names the new one was never saved (#M37b)
+		return nil, errors.Join(err, l.undoPluginSwaps())
 	}
 	l.foldBeside() // a skill that went in beside itself (skill_beside.go)
 	l.settleAway()
 	l.heal() // a server f brought in, from another computer too
 	if err := l.save(); err != nil {
-		return nil, err
+		return nil, errors.Join(err, l.undoPluginSwaps())
 	}
+	// library.json now names the new plugin versions, so the old ones the
+	// change moved aside may go
+	l.commitPluginSwaps()
 	res := l.sync()
 	return res, l.save()
 }

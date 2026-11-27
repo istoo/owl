@@ -40,7 +40,7 @@ func Shift(loc *time.Location, hour int) *time.Location {
 	if l, ok := made[k]; ok {
 		return l
 	}
-	l, err := time.LoadLocationFromTZData(loc.String()+"+"+string(rune('0'+hour)), tzif(loc, hour))
+	l, err := time.LoadLocationFromTZData(loc.String()+"+"+string(rune('0'+hour)), tzif(loc, hour, time.Now()))
 	if err != nil {
 		return loc // never: the data is made here
 	}
@@ -66,10 +66,11 @@ const (
 	yearsAhead = 4
 )
 
-// tzif writes loc's offsets, each hour hours less, as a version 1 zoneinfo
+// tzif writes loc's offsets, each hour hours less, as a version 2 zoneinfo
 // file Go reads back: the instants the offset changed in the span, and the
-// offset from each.
-func tzif(loc *time.Location, hour int) []byte {
+// offset from each. Version 2's 64-bit timestamps are what keeps a span
+// past 2038 from wrapping an int32 into a bogus transition.
+func tzif(loc *time.Location, hour int, now time.Time) []byte {
 	type kind struct {
 		off  int
 		dst  bool
@@ -88,11 +89,11 @@ func tzif(loc *time.Location, hour int) []byte {
 		kinds = append(kinds, k)
 		return len(kinds) - 1
 	}
-	y := time.Now().Year()
+	y := now.Year()
 	start := time.Date(y-yearsBack, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(y+yearsAhead, time.January, 1, 0, 0, 0, 0, time.UTC)
 	prev := at(start)
-	var times []int32
+	var times []int64
 	var idx []byte
 	same := func(a, b time.Time) bool { return at(a) == at(b) }
 	for t := start.Add(time.Hour); t.Before(end); t = t.Add(time.Hour) {
@@ -114,7 +115,7 @@ func tzif(loc *time.Location, hour int) []byte {
 			continue
 		}
 		prev = k
-		times = append(times, int32(hi))
+		times = append(times, hi)
 		idx = append(idx, byte(k))
 	}
 	var abbr []byte
@@ -125,13 +126,21 @@ func tzif(loc *time.Location, hour int) []byte {
 		abbr = append(abbr, 0)
 	}
 	out := []byte("TZif")
-	out = append(out, 0)
+	out = append(out, '2')
+	out = append(out, make([]byte, 15)...)
+	// the 32-bit block is left empty: a reader that knows version 2 skips
+	// it and reads the 64-bit one below
+	for range 6 {
+		out = binary.BigEndian.AppendUint32(out, 0)
+	}
+	out = append(out, "TZif"...)
+	out = append(out, '2')
 	out = append(out, make([]byte, 15)...)
 	for _, n := range []int{0, 0, 0, len(times), len(kinds), len(abbr)} {
 		out = binary.BigEndian.AppendUint32(out, uint32(n))
 	}
 	for _, t := range times {
-		out = binary.BigEndian.AppendUint32(out, uint32(t))
+		out = binary.BigEndian.AppendUint64(out, uint64(t))
 	}
 	out = append(out, idx...)
 	for i, k := range kinds {

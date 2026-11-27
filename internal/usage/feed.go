@@ -25,6 +25,7 @@ package usage
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -117,6 +118,11 @@ var feed struct {
 	memo    *feedMemo
 	timer   *time.Timer
 	failure error
+	// refreshing is the ledger read under way and refreshRows its answer,
+	// so a second reader takes it instead of scanning the ledger again
+	refreshing  chan struct{}
+	refreshRows map[string]*Row
+	refreshErr  error
 }
 
 // feedMemo is the rows of a read that left more behind it, for the page
@@ -139,6 +145,7 @@ func ResetFeedForTest() {
 	feed.Lock()
 	defer feed.Unlock()
 	feed.loaded, feed.entries, feed.memo = false, nil, nil
+	feed.refreshRows, feed.refreshErr = nil, nil
 }
 
 // feedAgent is the agent that made a row's call, as its record had it
@@ -211,21 +218,26 @@ func hexOf(v uint64) string { return strconv.FormatUint(v, 16) }
 // FeedRead answers one read of the feed.
 func FeedRead(req FeedRequest) (FeedPage, error) {
 	feed.Lock()
-	defer feed.Unlock()
 	if !feed.loaded {
 		feedLoad()
 	}
-	if feed.failure != nil {
-		return FeedPage{}, feed.failure
+	failure := feed.failure
+	feed.Unlock()
+	if failure != nil {
+		return FeedPage{}, failure
 	}
 	var follows int64 = -1
 	if _, seq, _, ok := feedParse(req.Cursor); ok {
 		follows = seq
 	}
+	// the ledger is read and merged outside the lock: a full history takes
+	// a second or more, and a reader must not wait on another's scan
 	rows, err := feedRefresh(follows)
 	if err != nil {
 		return FeedPage{}, err
 	}
+	feed.Lock()
+	defer feed.Unlock()
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 100
@@ -263,7 +275,7 @@ func FeedRead(req FeedRequest) (FeedPage, error) {
 			cands = append(cands, cand{id, e})
 		}
 	}
-	slices.SortFunc(cands, func(a, b cand) int { return int(a.e.seq - b.e.seq) })
+	slices.SortFunc(cands, func(a, b cand) int { return cmp.Compare(a.e.seq, b.e.seq) })
 	out := FeedPage{Items: []FeedItem{}}
 	last := after
 	i := 0
@@ -331,16 +343,43 @@ func feedParse(c string) (epoch string, seq int64, fp string, ok bool) {
 }
 
 // feedRefresh reads the ledger and journals what changed in it since the
-// last read, answering the rows by id.
+// last read, answering the rows by id. The ledger is read before the lock:
+// a reader that asks while it is worked out waits for that one read
+// (refreshing) instead of reading the whole history beside it.
 func feedRefresh(follows int64) (map[string]*Row, error) {
+	feed.Lock()
 	if m := feed.memo; m != nil && m.next == follows && time.Since(m.at) < feedMemoFor {
-		return m.rows, nil
+		rows := m.rows
+		feed.Unlock()
+		return rows, nil
 	}
+	if ch := feed.refreshing; ch != nil {
+		feed.Unlock()
+		<-ch
+		feed.Lock()
+		rows, err := feed.refreshRows, feed.refreshErr
+		feed.Unlock()
+		return rows, err
+	}
+	feed.refreshing = make(chan struct{})
+	feed.refreshRows, feed.refreshErr = nil, nil
+	feed.Unlock()
+
 	now := Clock()
 	rows := LedgerOfAt(All, Filter{}, now).Rows
 	byID := make(map[string]*Row, len(rows))
 	seen := map[string]int{}
 	var changes []feedLine
+
+	feed.Lock()
+	defer func() {
+		ch := feed.refreshing
+		feed.refreshing = nil
+		feed.Unlock()
+		if ch != nil {
+			close(ch)
+		}
+	}()
 	next := feed.seq
 	stamp := func(l feedLine) {
 		next++
@@ -367,8 +406,9 @@ func feedRefresh(follows int64) (map[string]*Row, error) {
 	}
 	// the journal first, then the memory: a cursor never gets ahead of it
 	if len(changes) > 0 {
-		slices.SortFunc(changes, func(a, b feedLine) int { return int(a.Seq - b.Seq) })
+		slices.SortFunc(changes, func(a, b feedLine) int { return cmp.Compare(a.Seq, b.Seq) })
 		if err := feedAppend(changes); err != nil {
+			feed.refreshErr = err
 			return nil, err
 		}
 		for _, l := range changes {
@@ -379,6 +419,7 @@ func feedRefresh(follows int64) (map[string]*Row, error) {
 	}
 	feedPrune(now)
 	feed.memo = &feedMemo{at: time.Now(), rows: byID, next: -1}
+	feed.refreshRows, feed.refreshErr = byID, nil
 	if feed.timer != nil {
 		feed.timer.Stop()
 	}

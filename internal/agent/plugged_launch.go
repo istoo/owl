@@ -103,12 +103,14 @@ func psQuote(v string) string { return "'" + strings.ReplaceAll(v, "'", "''") + 
 // model, in PowerShell or a POSIX shell.
 func (l *launchSpec) command(gw, key, model string, powershell bool) string {
 	var b strings.Builder
+	// a variable's value is owl's address or key, but a shell breaks on
+	// a space or a quote in either: it is quoted as every argument is
 	for _, kv := range l.vars(gw, key) {
 		k, v, _ := strings.Cut(kv, "=")
 		if powershell {
-			b.WriteString(`$env:` + k + `="` + v + `"; `)
+			b.WriteString("$env:" + k + "=" + psQuote(v) + "; ")
 		} else {
-			b.WriteString(k + "=" + v + " ")
+			b.WriteString(k + "=" + posixQuote(v) + " ")
 		}
 	}
 	b.WriteString(l.bin)

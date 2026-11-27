@@ -166,13 +166,16 @@ func kiroCrewJoinedNow() (kiroCrewJoined, bool) {
 
 // kiroCrewJoin connects the harness agent id to owl for Kiro Crew, and
 // says whether it could: false, with no error, for one not installed here.
+// It runs inside Kiro Crew's own connect or pick, which holds the
+// explicit-write lock: the harness's unlocked body is used, or its lock
+// would wait on itself (#4133).
 var kiroCrewJoin = func(id string) (bool, error) {
 	a := kiroCrewAgent(id)
 	if a == nil || !a.Detected() {
 		return false, nil
 	}
 	off := a.Disconnected()
-	if _, err := a.ConnectHow(); err != nil {
+	if _, err := a.connectHow(); err != nil {
 		return false, err
 	}
 	b, _ := json.Marshal(kiroCrewJoined{Agent: id, Off: off})
@@ -182,7 +185,9 @@ var kiroCrewJoin = func(id string) (bool, error) {
 
 // kiroCrewLeave takes the harness agent owl connected along with Kiro
 // Crew off owl again, the user's own disconnect of it, from before,
-// kept as it was.
+// kept as it was. It runs inside Kiro Crew's own disconnect or set, which
+// holds the explicit-write lock: the harness's unlocked body is used, or
+// its lock would wait on itself (#4133).
 var kiroCrewLeave = func() error {
 	j, ok := kiroCrewJoinedNow()
 	forget(kiroCrewJoinedKey)
@@ -193,7 +198,7 @@ var kiroCrewLeave = func() error {
 	if a == nil || !a.Wired() {
 		return nil
 	}
-	if err := a.Disconnect(); err != nil {
+	if err := a.disconnect(); err != nil {
 		return err
 	}
 	if !j.Off {

@@ -3,6 +3,7 @@ package plugin
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -1156,12 +1157,14 @@ func startOn(ctx context.Context, bun string) (*host, bool, error) {
 	// child is reaped when it ends, whatever holds a copy of them
 	output, err := proc.NewOutput(cmd)
 	if err != nil {
+		in.Close()
 		return nil, false, err
 	}
 	// started and counted live under one lock, so EndHosts misses none
 	live.Lock()
 	if live.ended {
 		live.Unlock()
+		in.Close()
 		output.Close()
 		return nil, false, errHostsEnded
 	}
@@ -1169,6 +1172,8 @@ func startOn(ctx context.Context, bun string) (*host, bool, error) {
 	tree, waited, err := output.StartTree(cmd)
 	if err != nil {
 		live.Unlock()
+		in.Close()
+		output.Close()
 		return nil, false, err
 	}
 	hctx, hcancel := context.WithCancel(context.Background())
@@ -2073,6 +2078,9 @@ func netLine(env []string) string {
 	var parts []string
 	for _, k := range keys {
 		v := strings.TrimSpace(got[k])
+		if strings.HasSuffix(k, "_PROXY") {
+			v = strings.TrimSpace(hostProxyValue(env, k))
+		}
 		if v == "" {
 			continue
 		}
@@ -2114,6 +2122,26 @@ func hostAddr(env []string) string {
 	return a
 }
 
+// 与宿主的 proxyVar 一致：先取非空大写，再取小写，最后兼容混合大小写。
+func hostProxyValue(env []string, key string) string {
+	var upper, lower, mixed string
+	for _, e := range env {
+		k, v, _ := strings.Cut(e, "=")
+		if !strings.EqualFold(k, key) || v == "" {
+			continue
+		}
+		switch {
+		case k == key:
+			upper = v
+		case k == strings.ToLower(key):
+			lower = v
+		default:
+			mixed = v
+		}
+	}
+	return cmp.Or(upper, lower, mixed)
+}
+
 // hostEnv is env for the host, OWL_ADDR the gateway's (hostAddr), its
 // *_PROXY named OWL_*_PROXY: Bun
 // reads *_PROXY once and puts every fetch through them, so a provider set
@@ -2123,16 +2151,20 @@ func hostEnv(env []string) []string {
 	out := make([]string, 0, len(env)+1)
 	addr := hostAddr(env)
 	for _, e := range env {
-		k, v, _ := strings.Cut(e, "=")
+		k, _, _ := strings.Cut(e, "=")
 		switch strings.ToUpper(k) {
-		case "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY":
-			out = append(out, "OWL_"+k+"="+netproxy.ForBun(v))
-		case "NO_PROXY":
-			out = append(out, "OWL_"+k+"="+v)
-		case "OWL_ADDR":
-			// an empty one is Settings' (hostAddr)
+		case "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "OWL_ADDR":
+			// 后面统一写入，避免空的小写别名盖掉已设置的大写值。
 		default:
 			out = append(out, e)
+		}
+	}
+	for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY"} {
+		if v := hostProxyValue(env, k); v != "" {
+			if k != "NO_PROXY" {
+				v = netproxy.ForBun(v)
+			}
+			out = append(out, "OWL_"+k+"="+v)
 		}
 	}
 	return append(out, "OWL_ADDR="+addr)

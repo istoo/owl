@@ -40,7 +40,11 @@ const quotas = () => [
     windows: [{ name: "5 hours", used: 60, resetsAt: inHours(2) }] },
 ];
 
-function serve(lang, posts, panel = false) {
+// a promise the test resolves; the allowance's answer waits on it, so the
+// editor's second draw can be waited for instead of raced
+const defer = () => { let done; const promise = new Promise((r) => { done = r; }); return { promise, done }; };
+
+function serve(lang, posts, panel = false, allowance = null) {
   const settings = { theme: "light", lang, tray: "panel", quotaLeft: false, currency: "usd" };
   const providers = { providers: [fresh()], presets: [], excluded: [], gateway: { running: true, window: true } };
   return async (route) => {
@@ -54,7 +58,10 @@ function serve(lang, posts, panel = false) {
     if (url.pathname === "/api/usage/quotas") return json(quotas());
     if (url.pathname === "/api/groups") return json({ groups: [], models: [] });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
-    if (url.pathname === "/api/login/usage") return json({});
+    if (url.pathname === "/api/login/usage") {
+      if (allowance) await allowance;
+      return json({});
+    }
     if (url.pathname === "/api/provider/accountname" && route.request().method() === "POST") {
       const body = route.request().postDataJSON();
       posts.push(body);
@@ -94,11 +101,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         const errors = [], posts = [];
         page.on("pageerror", (e) => errors.push(e.message));
-        await page.route("**/*", serve(lang, posts));
+        const allowance = defer();
+        const answered = page.waitForResponse((r) => r.url().includes("/api/login/usage"));
+        await page.route("**/*", serve(lang, posts, false, allowance.promise));
         await page.goto("http://owl.test/?view=providers");
         await page.locator(".row.provider", { hasText: "ZCode" }).first().click();
         const row = (id) => page.locator(`.editor .accts .acc[data-account-id="${id}"]`);
         await row(TEAM).locator(".acct-who").waitFor();
+        // the editor draws again once the account's allowance is in
+        // (loginUsageOf -> renderProviders(true)), replacing every row: draw
+        // the first ones, let that answer in, and wait for the rows drawn
+        // after it, so a measurement never holds one about to go
+        await row(TEAM).evaluate((e) => { e.dataset.firstDraw = "1"; });
+        allowance.done();
+        await answered;
+        await page.waitForFunction((id) => {
+          const e = document.querySelector(`.editor .accts .acc[data-account-id="${id}"]`);
+          return e && e.dataset.firstDraw !== "1";
+        }, TEAM);
 
         // unnamed: its address, and the key plan it is the same seat as
         const team = row(TEAM).locator(".acct-who");

@@ -178,6 +178,9 @@ func (s *signInFlow) pluginBegin(id string, method int, inputs map[string]string
 	s.st.State, s.st.Installing = "waiting", ""
 	s.st.URL, s.st.Instructions, s.st.Code, s.st.Opened = a.URL, a.Instructions, codeIn(a.Instructions), a.Opened
 	s.stop = stop
+	// the waiting callback and a pasted code share this lifetime: canceling
+	// the sign-in aborts whichever is in flight (#H9/M23)
+	s.pluginCtx = wait
 	if a.Method == "code" {
 		s.st.PasteCode, s.plugin = true, a.Session
 	} else if PluginPastesCallback(id, a.URL) {
@@ -232,13 +235,20 @@ func (s *signInFlow) pluginCode(code string) error {
 	session := s.plugin
 	s.plugin = ""
 	waiting := s.st.State == "waiting"
+	sessionCtx := s.pluginCtx
 	s.mu.Unlock()
 	if session == "" || !waiting {
 		return errors.New("this sign-in is over; start it again")
 	}
+	// on the sign-in's own lifetime, not a fresh one: canceling the sign-in
+	// aborts this call with it, so its callback doesn't save after the user
+	// gave up (#H9/M23)
+	if sessionCtx == nil {
+		sessionCtx = context.Background()
+	}
 	// through the proxy the sign-in goes through, as its other requests
 	// (#M23)
-	ctx, cancel := context.WithTimeout(s.via(context.Background()), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(s.via(sessionCtx), 2*time.Minute)
 	defer cancel()
 	saved, err := plugin.Finish(ctx, session, code)
 	s.pluginDone(saved, err)

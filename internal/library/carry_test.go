@@ -104,10 +104,31 @@ func TestCarry(t *testing.T) {
 	if len(iv.Sets) != 2 || iv.Shared != "Company rules." {
 		t.Errorf("sets: %+v", iv.Sets)
 	}
-	// …and it carries back what it was given; putting it again changes nothing
+	// …and it carries back what it was given; putting it again changes
+	// nothing. The file too big to carry stayed on the first computer: a
+	// bundle's folder is written as its files here, never linked to a
+	// folder another computer names (#M37c), so it is neither carried
+	// nor missed.
 	back, _ := Collect()
-	if mustJSON(t, back) != carried {
-		t.Errorf("carried back differs:\n%s\n%s", mustJSON(t, back), carried)
+	if len(back.Skills) != 1 || len(back.Skills[0].Left) != 0 {
+		t.Errorf("the too-big file a computer that hasn't the skill can't have: %+v", back.Skills)
+	}
+	if _, err := os.Stat(filepath.Join(SkillPath("pdf"), "big.bin")); !os.IsNotExist(err) {
+		t.Error("a file the bundle left out was written here")
+	}
+	withoutLeft := func(b *Bundle) string {
+		c := *b
+		skills := make([]*CarriedSkill, len(b.Skills))
+		for i, s := range b.Skills {
+			x := *s
+			x.Left = nil
+			skills[i] = &x
+		}
+		c.Skills = skills
+		return mustJSON(t, &c)
+	}
+	if withoutLeft(back) != withoutLeft(&in) {
+		t.Errorf("carried back differs:\n%s\n%s", withoutLeft(back), withoutLeft(&in))
 	}
 	r := ok(t)(Put(&in))
 	if len(r.Changed) != 0 {

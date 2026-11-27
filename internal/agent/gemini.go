@@ -49,19 +49,22 @@ func geminiIn(at place) *Agent {
 		}
 		return ""
 	}
-	// unroute puts back what routing through the gateway replaced
+	// unroute puts back what routing through the gateway replaced. What it
+	// takes from the stash is peeked, not consumed: a write that fails
+	// below leaves the originals for the next try (#4258)
 	unroute := func() error {
 		if !routed() {
 			return nil
 		}
+		took := peek(at.key("gemini.base_url"), at.key("gemini.api_key"), at.key("gemini.auth"), at.key("gemini.model"))
 		if err := edit.DelEnvFile(envPath, "GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY"); err != nil {
 			return err
 		}
 		var env []edit.KV
-		if u := unstash(at.key("gemini.base_url")); u != "" {
+		if u := took[at.key("gemini.base_url")]; u != "" {
 			env = append(env, edit.KV{Path: "GOOGLE_GEMINI_BASE_URL", Value: u})
 		}
-		if k := unstash(at.key("gemini.api_key")); k != "" {
+		if k := took[at.key("gemini.api_key")]; k != "" {
 			env = append(env, edit.KV{Path: "GEMINI_API_KEY", Value: k})
 		}
 		if len(env) > 0 {
@@ -69,17 +72,22 @@ func geminiIn(at place) *Agent {
 				return err
 			}
 		}
-		if a := unstash(at.key("gemini.auth")); a != "" {
+		if a := took[at.key("gemini.auth")]; a != "" {
 			if err := edit.SetJSON(path, edit.KV{Path: "security.auth.selectedType", Value: a}); err != nil {
 				return err
 			}
 		} else if err := edit.DelJSON(path, "security.auth.selectedType"); err != nil {
 			return err
 		}
-		if m := unstash(at.key("gemini.model")); m != "" {
-			return edit.SetJSON(path, edit.KV{Path: "model.name", Value: m})
+		if m := took[at.key("gemini.model")]; m != "" {
+			if err := edit.SetJSON(path, edit.KV{Path: "model.name", Value: m}); err != nil {
+				return err
+			}
+		} else if err := delModelName(path); err != nil {
+			return err
 		}
-		return delModelName(path)
+		forgetValues(took)
+		return nil
 	}
 	setModel := func(v string) error {
 		if v == "" {

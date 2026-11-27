@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -39,8 +40,10 @@ func TestPiOwlExtensionTakesOverTheBlock(t *testing.T) {
 	if strings.Contains(got, `"owl"`) || !strings.Contains(got, `"mine"`) {
 		t.Fatalf("block not dropped or mine lost: %s", got)
 	}
-	if _, err := os.Stat(models + ".before-pi-owl"); err != nil {
+	if st, err := os.Stat(models + ".before-pi-owl"); err != nil {
 		t.Fatalf("no backup: %v", err)
+	} else if runtime.GOOS != "windows" && st.Mode().Perm()&^0o600 != 0 {
+		t.Fatalf("backup mode %v", st.Mode())
 	}
 	if msg := pi(home).Check(); msg != "" {
 		t.Fatalf("check: %s", msg)

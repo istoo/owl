@@ -464,6 +464,126 @@ func TestDoBodyReplayedWithGetBody(t *testing.T) {
 	}
 }
 
+// countedBody counts its Close calls: the request's own body and each copy
+// GetBody makes are closed once each (#H14).
+type countedBody struct {
+	r      io.Reader
+	closes atomic.Int32
+}
+
+func (b *countedBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+func (b *countedBody) Close() error               { b.closes.Add(1); return nil }
+
+// waitClosed waits for the body's Close, then says how many there were:
+// the transport closes the body it was given before the answer comes back.
+func waitClosed(t *testing.T, b *countedBody) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(time.Millisecond) {
+		if b.closes.Load() > 0 {
+			break
+		}
+	}
+	if n := b.closes.Load(); n != 1 {
+		t.Fatalf("the body was closed %d times, want 1", n)
+	}
+}
+
+// A replay's bodies follow http.Client's contract: the caller's body goes
+// with the first try and is closed once by the transport, every copy
+// GetBody makes goes with a later try and is closed once, and a body with
+// no copy (no GetBody, or GetBody failing) is neither leaked nor closed
+// twice (#H14).
+func TestDoClosesBodiesOnce(t *testing.T) {
+	serve := func(t *testing.T, code int, seen *[]string, mu *sync.Mutex) *httptest.Server {
+		t.Helper()
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			*seen = append(*seen, string(b))
+			mu.Unlock()
+			w.WriteHeader(code)
+		}))
+		t.Cleanup(s.Close)
+		return s
+	}
+
+	t.Run("the caller's body and each copy once", func(t *testing.T) {
+		var seen []string
+		var mu sync.Mutex
+		first := serve(t, http.StatusBadGateway, &seen, &mu)
+		second := serve(t, http.StatusOK, &seen, &mu)
+		original := &countedBody{r: strings.NewReader("hello")}
+		req, err := http.NewRequest(http.MethodPost, first.URL+"/x", original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var copies []*countedBody
+		req.GetBody = func() (io.ReadCloser, error) {
+			c := &countedBody{r: strings.NewReader("hello")}
+			copies = append(copies, c)
+			return c, nil
+		}
+		resp, err := do(http.DefaultClient, req, []string{first.URL + "/x", second.URL + "/x"})
+		if err != nil {
+			t.Fatalf("the request didn't fall back: %v", err)
+		}
+		resp.Body.Close()
+		waitClosed(t, original)
+		if len(copies) != 1 {
+			t.Fatalf("GetBody was asked %d times, want 1", len(copies))
+		}
+		waitClosed(t, copies[0])
+		mu.Lock()
+		defer mu.Unlock()
+		if fmt.Sprint(seen) != "[hello hello]" {
+			t.Fatalf("bodies sent = %q, want hello twice", seen)
+		}
+	})
+
+	t.Run("GetBody failing leaves no copy to close", func(t *testing.T) {
+		var seen []string
+		var mu sync.Mutex
+		first := serve(t, http.StatusBadGateway, &seen, &mu)
+		second := serve(t, http.StatusOK, &seen, &mu)
+		original := &countedBody{r: strings.NewReader("hello")}
+		req, err := http.NewRequest(http.MethodPost, first.URL+"/x", original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.GetBody = func() (io.ReadCloser, error) { return nil, errors.New("cannot rewind") }
+		if _, err := do(http.DefaultClient, req, []string{first.URL + "/x", second.URL + "/x"}); err == nil ||
+			!strings.Contains(err.Error(), "cannot rewind") {
+			t.Fatalf("error = %v, want GetBody's", err)
+		}
+		waitClosed(t, original)
+		mu.Lock()
+		defer mu.Unlock()
+		if fmt.Sprint(seen) != "[hello]" {
+			t.Fatalf("bodies sent = %q, want the official one alone", seen)
+		}
+	})
+
+	t.Run("a body sent once is not closed twice", func(t *testing.T) {
+		var seen []string
+		var mu sync.Mutex
+		first := serve(t, http.StatusBadGateway, &seen, &mu)
+		original := &countedBody{r: strings.NewReader("hello")}
+		req, err := http.NewRequest(http.MethodPost, first.URL+"/x", original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if req.GetBody != nil {
+			t.Fatal("the test needs a body with no GetBody")
+		}
+		resp, err := do(http.DefaultClient, req, []string{first.URL + "/x"})
+		if err != nil {
+			t.Fatalf("the official source's answer: %v", err)
+		}
+		resp.Body.Close()
+		waitClosed(t, original)
+	})
+}
+
 // A body that can't be made again (no GetBody) is sent once, to the
 // official source alone: no mirror is sent an empty body in its place and
 // nothing is read into memory to replay it (#H14).

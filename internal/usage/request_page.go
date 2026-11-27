@@ -755,6 +755,12 @@ type pageKey struct {
 	// state's key turns with this computer's day, and a reader in another
 	// zone has a today of their own
 	Date string
+	// DayStart and Zone are the day boundary the rows were cut by: a
+	// change to either (Settings' dayStart, a daylight-saving shift) makes
+	// a page of the same Date another page, since its days and hours moved
+	DayStart   int
+	Zone       string
+	ZoneOffset int
 }
 type requestIndex struct {
 	sync.Mutex
@@ -934,7 +940,11 @@ func readRequestState(now time.Time) requestState {
 	meta += "|" + provider.UsageNamesKey()
 	h.Reset()
 	snapshot := readLogSnapshot()
-	fmt.Fprint(h, meta, snapshot.version, now.In(time.Local).Format("2006-01-02 MST"))
+	zone, zoneOff := now.Zone()
+	// the logical date, in the reader's (possibly shifted) zone, as the day
+	// the page is of; a change to dayStart or to the zone's offset is part
+	// of the key too, so a page cut by the old boundary is never reused
+	fmt.Fprintf(h, "%s|%d|%s|%d|%s|%d", meta, snapshot.version, now.Format("2006-01-02"), zoneOff, zone, cfg.DayStart)
 	hashCodexIdentities(h, codexIdentities)
 	for _, s := range sources {
 		fmt.Fprintf(h, "%s:%d:%d;", s.Path, s.Size, s.Modified.UnixNano())
@@ -1016,7 +1026,9 @@ func queryPageOf(p Period, f Filter, offset, limit int, readSource func(sessions
 	idx.Lock()
 	idx.keepWhileAsked()
 	idx.adopt(st)
-	q := pageKey{p, f, offset, limit, now.Format(time.DateOnly)}
+	zone, zoneOff := now.Zone()
+	q := pageKey{Period: p, Filter: f, Offset: offset, Limit: limit, Date: now.Format(time.DateOnly),
+		DayStart: st.cfg.DayStart, Zone: zone, ZoneOffset: zoneOff}
 	if page, ok := idx.pages[q]; ok {
 		idx.Unlock()
 		return page

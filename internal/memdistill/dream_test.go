@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/memory"
 )
 
@@ -115,6 +116,50 @@ func TestDreamSetsAsideUnreviewed(t *testing.T) {
 	cs, err := Dream(context.Background(), "", nil)
 	if err != nil || len(cs) != 1 || cs[0].Why != memory.Unreviewed || status(t, "m_old") != memory.Archived {
 		t.Fatalf("%+v %v", cs, err)
+	}
+}
+
+// Stop ends a tidy going: the request in flight is dropped, it isn't
+// recorded as a failure to try again from, and nothing is changed.
+func TestDreamStops(t *testing.T) {
+	newSandbox(t)
+	a := note(t, "One", memory.Global, memory.FromInferred)
+	note(t, "Two", memory.Global, memory.FromInferred)
+	asked := false
+	_, err := Dream(context.Background(), "a/m", func(ctx context.Context, _, _, _, _ string) (string, error) {
+		asked = true
+		Stop()
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	if err != nil || !asked {
+		t.Fatalf("stopped tidy: %v, asked %v", err, asked)
+	}
+	if status(t, a.ID) != memory.Candidate {
+		t.Fatal("a stopped tidy changed a memory")
+	}
+	st, _ := Load()
+	if st.DreamError != "" || !st.Dreamt.IsZero() || len(st.Changes) != 0 {
+		t.Fatalf("state: %+v", st)
+	}
+}
+
+// Undo and Dream write the same files: one owl must not undo while
+// another is tidying.
+func TestUndoWaitsForTheRunLock(t *testing.T) {
+	newSandbox(t)
+	if _, err := change(func(s *State) {
+		s.Changes = []memory.Change{{Action: memory.Merged, IDs: []string{"m_1", "m_2"}, Was: []string{memory.Active, memory.Active}}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unlock, held := filelock.Lock(Path()+".run", 0)
+	if !held {
+		t.Fatal("the run lock wasn't ours")
+	}
+	defer unlock()
+	if n, err := Undo(); err != ErrRunning || n != 0 {
+		t.Fatalf("undo beside another run: %d %v", n, err)
 	}
 }
 

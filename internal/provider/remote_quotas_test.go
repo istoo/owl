@@ -782,3 +782,163 @@ func TestRemoteUsageOnlyProviderStillShowsItsCard(t *testing.T) {
 		t.Fatalf("nothing picked: every card of the remote is told: %v", got)
 	}
 }
+
+// gatePeer is a remote owl whose refresh the test holds: each POST refresh
+// says which turn it is on starts and waits for that turn's release, so a
+// read asked while the refresh is out is answered before it on purpose.
+type gatePeer struct {
+	posts   atomic.Int32
+	starts  chan int
+	release []chan struct{}
+	answers []SubscriptionQuota // the n-th POST's answer
+	held    atomic.Bool
+}
+
+func (g *gatePeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method + " " + r.URL.Path {
+	case "POST " + RemoteRefreshPath:
+		n := int(g.posts.Add(1))
+		g.starts <- n
+		<-g.release[n-1]
+		gateCards(w, g.answers[n-1:n])
+	case "GET " + RemoteCardsPath:
+		if g.held.Load() {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":{"message":"held","type":"permission_error","code":"` + KeyHeldCode + `"}}`))
+			return
+		}
+		gateCards(w, nil)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func gateCards(w http.ResponseWriter, cs []SubscriptionQuota) {
+	json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": cs})
+}
+
+// An explicit refresh's own answer is kept though an ordinary read asked
+// while it was out answered what was there before: routing asks such a read
+// in the background, and its empty answer used to replace the refresh's
+// (#M24). The POST's answer carries the reset metadata here, as the
+// gateway's does, and it is what RemoteCards shows.
+func TestRemoteRefreshBeatsAReadAskedWhileItWasOut(t *testing.T) {
+	g := &gatePeer{
+		starts:  make(chan int, 1),
+		release: []chan struct{}{make(chan struct{})},
+		answers: []SubscriptionQuota{{Provider: "codex", Name: "Codex", User: "a@x.com",
+			Windows: []QuotaWindow{{Name: "5 hours", Used: 2}}, Resets: &ResetCredits{Count: 1}}},
+	}
+	remoteQuotaHome(t, g)
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		RefreshUsage(ctx, "office", "")
+		close(done)
+	}()
+	if n := <-g.starts; n != 1 {
+		t.Fatalf("refresh %d started, want 1", n)
+	}
+	// asked while the refresh is out, and answered with what was there before
+	remoteCards(ctx, remoteOwls()[0], false)
+	close(g.release[0])
+	<-done
+	cs := peerCards(RemoteCards(ctx))
+	if len(cs) != 1 || cs[0].Provider != "office/codex" || len(cs[0].Windows) == 0 || cs[0].Windows[0].Used != 2 {
+		t.Fatalf("after the refresh: %+v", cs)
+	}
+	if cs[0].Resets == nil || cs[0].Resets.Count != 1 {
+		t.Fatalf("the refresh's reset metadata wasn't kept: %+v", cs[0].Resets)
+	}
+}
+
+// A held answer is the exception: asked while a refresh is out, it still
+// clears the cards, and the refresh's slower success doesn't fill them back.
+func TestRemoteHeldIsKeptOverASlowRefresh(t *testing.T) {
+	g := &gatePeer{
+		starts:  make(chan int, 1),
+		release: []chan struct{}{make(chan struct{})},
+		answers: []SubscriptionQuota{{Provider: "codex", Name: "Codex", User: "a@x.com",
+			Windows: []QuotaWindow{{Name: "5 hours", Used: 2}}}},
+	}
+	remoteQuotaHome(t, g)
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		RefreshUsage(ctx, "office", "")
+		close(done)
+	}()
+	<-g.starts
+	g.held.Store(true)
+	if got := remoteCards(ctx, remoteOwls()[0], true); len(got) != 1 || got[0].Provider != "office" || got[0].Error != errRemoteHeld {
+		t.Fatalf("held read: %+v", got)
+	}
+	close(g.release[0])
+	<-done
+	if cs := peerCards(RemoteCards(ctx)); len(cs) != 1 || cs[0].Provider != "office" || cs[0].Error != errRemoteHeld {
+		t.Fatalf("a slow refresh refilled the held cards: %+v", cs)
+	}
+}
+
+// A refresh asked before the cards were forgotten isn't kept after: the
+// forget outranks it, as it does any read from before it.
+func TestRemoteForgetDropsARefreshAskedBeforeIt(t *testing.T) {
+	g := &gatePeer{
+		starts:  make(chan int, 1),
+		release: []chan struct{}{make(chan struct{})},
+		answers: []SubscriptionQuota{{Provider: "codex", Name: "Codex", User: "a@x.com",
+			Windows: []QuotaWindow{{Name: "5 hours", Used: 2}}}},
+	}
+	remoteQuotaHome(t, g)
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		RefreshUsage(ctx, "office", "")
+		close(done)
+	}()
+	<-g.starts
+	ForgetRemoteCardsForTest()
+	close(g.release[0])
+	<-done
+	if cs := peerCards(RemoteCards(ctx)); len(cs) != 1 || cs[0].Provider != "office" || cs[0].Error != errRemoteNothingRead {
+		t.Fatalf("a refresh from before the forget was kept: %+v", cs)
+	}
+}
+
+// Of two explicit refreshes, the newer is kept though the older answers
+// after it: the start order, not the order the answers come back in.
+func TestRemoteNewerRefreshIsNotOverwrittenByASlowerOlderOne(t *testing.T) {
+	g := &gatePeer{
+		starts:  make(chan int, 2),
+		release: []chan struct{}{make(chan struct{}), make(chan struct{})},
+		answers: []SubscriptionQuota{
+			{Provider: "codex", Name: "Codex", User: "a@x.com", Windows: []QuotaWindow{{Name: "5 hours", Used: 1}}},
+			{Provider: "codex", Name: "Codex", User: "a@x.com", Windows: []QuotaWindow{{Name: "5 hours", Used: 2}}},
+		},
+	}
+	remoteQuotaHome(t, g)
+	ctx := context.Background()
+	older, newer := make(chan struct{}), make(chan struct{})
+	go func() {
+		RefreshUsage(ctx, "office", "")
+		close(older)
+	}()
+	if n := <-g.starts; n != 1 {
+		t.Fatalf("refresh %d started, want the older 1", n)
+	}
+	go func() {
+		RefreshUsage(ctx, "office", "")
+		close(newer)
+	}()
+	if n := <-g.starts; n != 2 {
+		t.Fatalf("refresh %d started, want the newer 2", n)
+	}
+	close(g.release[1]) // the newer answers first
+	<-newer
+	close(g.release[0]) // the older answers after it
+	<-older
+	cs := peerCards(RemoteCards(ctx))
+	if len(cs) != 1 || cs[0].Provider != "office/codex" || len(cs[0].Windows) == 0 || cs[0].Windows[0].Used != 2 {
+		t.Fatalf("the slower older refresh overwrote the newer: %+v", cs)
+	}
+}

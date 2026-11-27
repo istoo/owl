@@ -111,7 +111,7 @@ func TestWSLAgyPick(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dhome, ".config", "fish")); !os.IsNotExist(err) {
 		t.Fatal("a fish config for a distro without fish")
 	}
-	if a.Typed() != "agy" || !strings.Contains(a.Launch(), "GOOGLE_GEMINI_BASE_URL="+gw+" ") {
+	if a.Typed() != "agy" || !strings.Contains(a.Launch(), "GOOGLE_GEMINI_BASE_URL='"+gw+"' ") {
 		t.Fatalf("typed %q, launch %q", a.Typed(), a.Launch())
 	}
 	if msg := a.Check(); msg != "" {

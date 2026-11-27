@@ -1119,21 +1119,28 @@ func WSLOpen(a *Agent, path string) (string, error) {
 // sync or migrate (Path and Dir are empty); setting a field goes to the
 // files, which starts the distro.
 func asleep(live *Agent, k wslKind, d distro) *Agent {
+	// warm is read by every Get and written by a wake, on whichever
+	// goroutine the window or a pick runs: it is one under mu
+	var mu sync.Mutex
 	started := false
 	var warm *Agent
+	woken := func() (*Agent, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		return warm, started
+	}
 	// wake starts the distro and reads it again: what its files are, and
 	// the address it reaches Windows at now, which a NAT address changes
 	// with a WSL restart. Read-only looks never wake it.
 	wake := func() (*Agent, error) {
-		if warm != nil {
-			return warm, nil
+		if w, _ := woken(); w != nil {
+			return w, nil
 		}
 		// opening a stopped distro's files is aborted rather than waiting
 		// for it to start, so it is started first
 		if _, err := wslRun(time.Minute, "-d", d.Name, "-e", "true"); err != nil {
 			return nil, fmt.Errorf("start WSL %s: %w", d.Name, err)
 		}
-		started = true
 		// probed again while it runs: its gateway, links and networking
 		// mode may have changed while it was stopped
 		w := d
@@ -1148,8 +1155,30 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 		// the agent itself, at the refreshed place: its files can now be
 		// looked at, and a set's reads and writes go to them, not to
 		// what was remembered while it was stopped
-		warm = k.in(w.place(live.ID))
-		return warm, nil
+		wp := w.place(live.ID)
+		wa := k.in(wp)
+		// a folder the distro couldn't resolve is no agent's files to
+		// write, as wslAgentsOf makes it (#4133): the woken row says why,
+		// rather than writing where nothing can be reached
+		if err := *wp.unreached; err != nil {
+			wa = unreached(wa, err)
+		}
+		mu.Lock()
+		started, warm = true, wa
+		mu.Unlock()
+		return wa, nil
+	}
+	// remember reads the woken agent's fields anew, for while it is stopped
+	// again: what a change left, not what owl saw before it
+	remember := func() {
+		w, _ := woken()
+		if w == nil {
+			return
+		}
+		for _, f := range w.Fields {
+			wslRemember(d.Name, k.memo(f.Key), f.Get())
+		}
+		wslSave()
 	}
 	a := &Agent{ID: live.ID, Name: live.Name, Icon: live.Icon, WSL: d.Name,
 		// what the row is called and how its models are spelled doesn't
@@ -1157,7 +1186,10 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 		Plugin: live.Plugin, SplitSuffix: live.SplitSuffix, OwnVia: live.OwnVia,
 		detect: live.detect, Spelled: live.Spelled, ModelAliases: live.ModelAliases, NoNames: live.NoNames,
 		Notice: func() string {
-			if started {
+			if w, ok := woken(); ok {
+				if w != nil && w.Notice != nil {
+					return w.Notice()
+				}
 				return live.Notice()
 			}
 			return noticeWSLAsleep.say("distro", d.Name)
@@ -1165,7 +1197,18 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 	for _, lf := range live.Fields {
 		key := lf.Key
 		f := Field{Key: key, Label: lf.Label, Quiet: lf.Quiet, Live: lf.Live, Closed: lf.Closed, Follows: lf.Follows, Own: lf.Own, Options: lf.Options,
-			Get: func() string { return wslLastSeen(d.Name, k.memo(key)) },
+			// woken, the agent's own file is what the row reads: what
+			// owl remembered while it was stopped is no longer what is
+			// there, and Disconnect took the user's originals back into
+			// it (#4133)
+			Get: func() string {
+				if w, ok := woken(); ok && w != nil {
+					if wf := w.Field(key); wf != nil && wf.Get != nil {
+						return wf.Get()
+					}
+				}
+				return wslLastSeen(d.Name, k.memo(key))
+			},
 			Set: func(v string) error {
 				warm, err := wake()
 				if err != nil {
@@ -1208,7 +1251,11 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 			if err != nil {
 				return err
 			}
-			return w.Unwire()
+			err = w.Unwire()
+			if err == nil {
+				remember()
+			}
+			return err
 		}
 	}
 	if live.Restore != nil {
@@ -1217,7 +1264,11 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 			if err != nil {
 				return err
 			}
-			return w.Restore()
+			err = w.Restore()
+			if err == nil {
+				remember()
+			}
+			return err
 		}
 	}
 	if live.Join != nil {
@@ -1226,7 +1277,11 @@ func asleep(live *Agent, k wslKind, d distro) *Agent {
 			if err != nil {
 				return false, err
 			}
-			return w.Join()
+			ok, err := w.Join()
+			if err == nil {
+				remember()
+			}
+			return ok, err
 		}
 	}
 	// Sync stays nil: a stopped row has no files to sync, as the live one

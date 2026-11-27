@@ -370,10 +370,16 @@ func (f *mcpToolsFilter) finish() {
 		f.w.WriteHeader(f.status)
 		f.w.Write(out)
 	case mcpFilterEvents:
-		for _, l := range f.event {
-			f.w.Write(l)
+		// a stream that ended without its blank line: the last line (or
+		// the event so far) is still the event's data, and goes through
+		// keepTools as any other, not around it (H5)
+		if rest := f.buf.Bytes(); len(rest) > 0 {
+			f.event = append(f.event, bytes.Clone(rest))
+			f.buf.Reset()
 		}
-		f.w.Write(f.buf.Bytes())
+		if len(f.event) > 0 {
+			f.endEvent(nil)
+		}
 	}
 }
 

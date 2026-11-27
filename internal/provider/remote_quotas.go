@@ -228,6 +228,10 @@ func ReadAllCards(ctx context.Context) {
 var remoteCardCache struct {
 	sync.Mutex
 	m map[string]remoteCardsRead
+	// refreshing is id → the newest explicit refresh of it still out: an
+	// ordinary read asked while one is out read what that refresh replaces,
+	// so its answer isn't kept over the refresh's (#M24)
+	refreshing map[string]*refreshMark
 	// gen counts the times the cards were forgotten (a test's
 	// ForgetRemoteCardsForTest): a read asked before isn't kept after
 	gen int
@@ -247,12 +251,56 @@ func remoteCardsID(p Provider) string {
 	return p.ID + "\x00" + keyID(p.Key)
 }
 
+// refreshMark is an explicit refresh that is out: its own mark, so one
+// started in the same instant as another, or after it, is told apart.
+type refreshMark struct {
+	at time.Time
+}
+
+// refreshStart marks an explicit refresh of id as out, and gives the mark
+// with when it began, and the generation it began in: a read asked
+// meanwhile is kept under its start, so a held answer or a newer refresh
+// still outranks it, and one asked before a forget is discarded.
+// refreshDone takes this refresh's mark back out, unless a newer refresh
+// has taken its place.
+func refreshStart(id string) (*refreshMark, int) {
+	c := &remoteCardCache
+	c.Lock()
+	m := &refreshMark{at: time.Now()}
+	if c.refreshing == nil {
+		c.refreshing = map[string]*refreshMark{}
+	}
+	c.refreshing[id] = m
+	gen := c.gen
+	c.Unlock()
+	return m, gen
+}
+
+func refreshDone(id string, m *refreshMark) {
+	c := &remoteCardCache
+	c.Lock()
+	if c.refreshing[id] == m {
+		delete(c.refreshing, id)
+	}
+	c.Unlock()
+}
+
+// refreshOut is whether an explicit refresh of id is out now.
+func refreshOut(id string) bool {
+	c := &remoteCardCache
+	c.Lock()
+	defer c.Unlock()
+	_, out := c.refreshing[id]
+	return out
+}
+
 // ForgetRemoteCardsForTest drops the remote owls' cards kept here, for
 // a test run again (-count) to ask its own fake remote afresh.
 func ForgetRemoteCardsForTest() {
 	c := &remoteCardCache
 	c.Lock()
 	c.m = nil
+	c.refreshing = nil
 	c.gen++
 	c.Unlock()
 	k := &remoteKeyCache
@@ -311,8 +359,11 @@ func remoteCards(ctx context.Context, p Provider, fresh bool) []SubscriptionQuot
 	c.Unlock()
 	if !ok || fresh || time.Since(r.at) >= remoteCardsFor {
 		asked := time.Now()
+		// a read asked while an explicit refresh is out may read what it is
+		// replacing: the refresh's answer (or failure) is kept instead
+		shadowed := refreshOut(id)
 		cards, err := askRemote(ctx, p, http.MethodGet, RemoteCardsPath, remoteWait)
-		r = keepRemoteCards(id, asked, cards, err)
+		r = keepRemoteCardsOf(id, -1, asked, cards, err, shadowed)
 	}
 	name := remoteName(p)
 	if len(r.cards) == 0 || r.held {
@@ -409,12 +460,18 @@ func refreshRemote(ctx context.Context, p Provider, card, user string) {
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
-	asked := time.Now()
+	id := remoteCardsID(p)
+	// marked out before it is asked, and kept under the time it was asked:
+	// a read asked meanwhile reads what it replaces and isn't kept over it,
+	// while a held answer or a newer refresh still is (#M24). A forget
+	// while it is out discards its answer with the generation.
+	start, gen := refreshStart(id)
+	defer refreshDone(id, start)
 	// the answer to the refresh is the cards read again: kept as they are,
 	// and a failure kept as the failure. A GET after it would ask a second
 	// time, and one that answered would hide why the refresh failed (#M24)
 	cards, err := askRemote(ctx, p, http.MethodPost, path, remoteRefreshWait)
-	keepRemoteCards(remoteCardsID(p), asked, cards, err)
+	keepRemoteCardsOf(id, gen, start.at, cards, err, false)
 }
 
 // keepRemoteCards keeps what a read of a remote's cards asked at asked
@@ -423,18 +480,23 @@ func refreshRemote(ctx context.Context, p Provider, card, user string) {
 // that comes back after one asked later is not kept over it, so a slow
 // answer from before the key was held can't bring its cards back.
 func keepRemoteCards(id string, asked time.Time, cards []SubscriptionQuota, err error) remoteCardsRead {
-	return keepRemoteCardsOf(id, -1, asked, cards, err)
+	return keepRemoteCardsOf(id, -1, asked, cards, err, false)
 }
 
 // keepRemoteCardsOf is keepRemoteCards for a read asked while the cards
 // were of generation gen (remoteCardCache.gen; -1, whichever): one asked
-// before they were forgotten isn't kept.
-func keepRemoteCardsOf(id string, gen int, asked time.Time, cards []SubscriptionQuota, err error) remoteCardsRead {
+// before they were forgotten isn't kept. shadowed marks a read asked while
+// an explicit refresh was out: it read what that refresh replaces, so only
+// a held answer (the key turned away meanwhile) is kept of it (#M24).
+func keepRemoteCardsOf(id string, gen int, asked time.Time, cards []SubscriptionQuota, err error, shadowed bool) remoteCardsRead {
 	c := &remoteCardCache
 	c.Lock()
 	defer c.Unlock()
 	r := c.m[id]
 	if asked.Before(r.at) || gen >= 0 && gen != c.gen {
+		return r
+	}
+	if shadowed && !errors.Is(err, errKeyHeld) {
 		return r
 	}
 	r.at = asked

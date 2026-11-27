@@ -199,6 +199,12 @@ func TestGooseKeyNamesGoose(t *testing.T) {
 	if got, _ := edit.GetJSON(file, "headers.Authorization"); got != want {
 		t.Fatalf("Authorization = %q, want %q", got, want)
 	}
+	// the file carries the gateway's key: it is the user's alone
+	if st, err := os.Stat(file); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
+		t.Fatalf("provider file mode %v", st.Mode())
+	}
 	if c := a.Check(); c != "" {
 		t.Fatalf("check: %s", c)
 	}

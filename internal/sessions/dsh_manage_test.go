@@ -144,6 +144,48 @@ func TestDshDeleteRestore(t *testing.T) {
 	}
 }
 
+// A subagent's session may be in another project's folder, as dsh writes
+// one whose own cwd is elsewhere: it goes with its parent and comes back
+// to that folder.
+func TestDshRestoresASubagentInAnotherProject(t *testing.T) {
+	manageSetup(t)
+	home := filepath.Join(t.TempDir(), "dsh")
+	t.Setenv("DSH_HOME", home)
+	parent := dshSession(t, home, dshP, `{"type":"session","version":4,"id":"`+dshP+`","createdAt":1790503200000,"cwd":"`+dshCwd+`","isSeeded":false,"delegationDepth":0}`, "Tidy the build script")
+	otherProj := "--Users-me-other--"
+	sub := filepath.Join(home, "sessions", otherProj, dshC)
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "session.v4.jsonl.zstd"), dshFrames(t,
+		`{"type":"session","version":4,"id":"`+dshC+`","createdAt":1790503230000,"cwd":"/Users/me/other","isSeeded":false,"delegationDepth":1,"parentSession":"`+dshP+`","origin":"subagent"}`,
+		`{"type":"user/message","seq":0,"time":1790503231000,"data":{"content":[{"type":"text","text":"Find it"}],"source":{"kind":"user"},"role":"user"}}`), 0o600)
+	cache := filepath.Join(home, "storages", "session_projcache", "sessions")
+	os.WriteFile(filepath.Join(cache, dshC+".json"), []byte(`{"version":7,"record":{}}`), 0o600)
+	ageDsh(home)
+	Reset()
+	tr, err := Delete("dsh", dshP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.Items) != 4 {
+		t.Fatalf("trashed %+v, want the two folders and their cached rows", tr.Items)
+	}
+	for _, p := range []string{parent, sub, filepath.Join(cache, dshP+".json"), filepath.Join(cache, dshC+".json")} {
+		if _, err := os.Lstat(p); err == nil {
+			t.Fatalf("%s is still there", p)
+		}
+	}
+	if _, err := Restore(tr.Key); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{parent, sub, filepath.Join(cache, dshP+".json"), filepath.Join(cache, dshC+".json")} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Fatalf("%s isn't back: %v", p, err)
+		}
+	}
+}
+
 // A session file that isn't in the folder dsh names by its id is no folder
 // of its own to take: nothing is moved.
 func TestDshDeleteOnlyItsOwnFolder(t *testing.T) {

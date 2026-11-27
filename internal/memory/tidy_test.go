@@ -2,6 +2,7 @@ package memory
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,6 +24,23 @@ func get(t *testing.T, id string) *Memory {
 		t.Fatalf("%s: %v", id, err)
 	}
 	return m
+}
+
+// A memory's MaxText is characters, as Save checks it: a merge in Chinese
+// of exactly that many must not be refused for being three times as many
+// bytes.
+func TestTidyMergesLongCJKText(t *testing.T) {
+	fresh(t)
+	a := infer(t, "first", Global)
+	b := infer(t, "second", Global)
+	text := strings.Repeat("字", MaxText)
+	cs, err := Tidy(Plan{Merges: []Merge{{IDs: []string{a.ID, b.ID}, Text: text, Kind: Fact}}})
+	if err != nil || len(cs) != 1 || !cs[0].New {
+		t.Fatalf("%+v %v", cs, err)
+	}
+	if m := get(t, cs[0].Into); m.Text != text {
+		t.Fatalf("merged text has %d runes, want %d", len([]rune(m.Text)), MaxText)
+	}
 }
 
 // Two memories that say the same thing become one, which carries both

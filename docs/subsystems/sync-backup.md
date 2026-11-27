@@ -143,6 +143,8 @@ longer interval or manual sync only. Saving in Settings syncs immediately.
 Each operation holds the sync lock, so configuration changes cannot race a
 sync's state write.
 
+设置写入必须拿到跨进程文件锁；拿不到锁时保留原文件并报错。恢复中途失败时，[`backup.Restore`](../../internal/backup/backup.go) 只在当前设置仍等于本次恢复写下的内容时回退，不覆盖用户在此期间另存的修改。
+
 A first computer creates a remote backup. Another computer joining takes
 the remote setup and keeps displaced local parts in its sync folder. A
 part the file holds nothing of its own in (`unset`: no providers or

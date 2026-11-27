@@ -61,6 +61,52 @@ func TestDroppedServerEndedOnceNoAgentRunsIt(t *testing.T) {
 	}
 }
 
+// A server with no arguments is told by its program, never by another
+// program's last argument: vim /path/my-mcp does not run my-mcp (#H30).
+func TestLaunchedByReadsOnlyTheCommandPosition(t *testing.T) {
+	bare := launchedBy(&Server{Command: "my-mcp"})
+	for line, want := range map[string]bool{
+		`vim /path/my-mcp`:      false,
+		`/usr/local/bin/my-mcp`: true,
+		`C:\WINDOWS\system32\cmd.exe /d /s /c "C:\tools\my-mcp.exe"`: true,
+		`sh -c my-mcp`:         true,
+		`less /var/log/my-mcp`: false,
+		`my-mcp`:               true,
+	} {
+		if got := bare(line); got != want {
+			t.Errorf("%s: %v, want %v", line, got, want)
+		}
+	}
+}
+
+// A server a project gives its agents is in use there, and is not ended
+// when another agent drops it (#H30).
+func TestUnusedKeepsAProjectsServer(t *testing.T) {
+	sandbox(t)
+	proj := filepath.Join(t.TempDir(), "shop")
+	write(t, filepath.Join(proj, ".gitignore"), "node_modules/\n")
+	gitInit(t, proj)
+	ok(t)(AddProject(proj))
+	ok(t)(SaveServer("", Server{Name: "project-docs", Transport: "stdio", Command: "docs-mcp"}))
+	ok(t)(ProjectServer(proj, "project-docs", []string{"claude"}))
+	l, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := l.server("project-docs")
+	if s == nil {
+		t.Fatal("no server")
+	}
+	if got := unused([]*Server{s}, Targets()); len(got) != 0 {
+		t.Errorf("a project's server was ended: %v", got)
+	}
+	// with the project's give taken away it is ended again
+	ok(t)(ProjectServer(proj, "project-docs", nil))
+	if got := unused([]*Server{s}, Targets()); len(got) != 1 {
+		t.Errorf("a server no project gives is kept: %v", got)
+	}
+}
+
 // launchedBy reads the processes a server's command line starts, from the
 // lines of #3885's Windows machine and their macOS and Linux forms.
 func TestLaunchedBy(t *testing.T) {

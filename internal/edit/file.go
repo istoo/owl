@@ -149,8 +149,25 @@ func writeAtomic(path string, data []byte, explicit *fs.FileMode) error {
 	data = keepBOM(path, data)
 	// A file that already holds these bytes is left alone: a new mtime
 	// wakes every watcher of it, and a rename swaps the file under an
-	// agent reading it, for nothing (#3870).
+	// agent reading it, for nothing (#3870). A secret file still too wide
+	// is narrowed here all the same: the bytes matching is no reason to
+	// keep 0644 on a file written for 0600 (#4133). Only bits are taken
+	// away (a mode the user made stricter stays), and a file that can't be
+	// looked at is an error, not a write reported as done.
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
+		if explicit != nil {
+			st, serr := os.Stat(path)
+			if serr != nil {
+				return serr
+			}
+			if !st.Mode().IsRegular() {
+				return fmt.Errorf("%s is no longer a regular file", path)
+			}
+			want := st.Mode().Perm() & *explicit
+			if want != st.Mode().Perm() {
+				return os.Chmod(path, want)
+			}
+		}
 		return nil
 	}
 	// read again, where a request holds it; a file left alone above keeps
@@ -161,9 +178,16 @@ func writeAtomic(path string, data []byte, explicit *fs.FileMode) error {
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {
 			// a secret written in place keeps the mode it had, which can
-			// be wider: narrow it before the bytes go in
+			// be wider: narrow it before the bytes go in, never adding a
+			// bit it didn't have
 			if explicit != nil {
-				if err := f.Chmod(*explicit); err != nil {
+				st, serr := f.Stat()
+				if serr != nil {
+					f.Close()
+					return serr
+				}
+				want := st.Mode().Perm() & *explicit
+				if err := f.Chmod(want); err != nil {
 					f.Close()
 					return err
 				}
@@ -188,10 +212,12 @@ func writeAtomic(path string, data []byte, explicit *fs.FileMode) error {
 	}
 	st, statErr := os.Stat(path)
 	if statErr == nil {
+		// a file that was stricter than what is asked for stays stricter:
+		// a write takes bits away, it never adds ones the user removed
 		mode = st.Mode().Perm()
-	}
-	if explicit != nil {
-		mode = *explicit
+		if explicit != nil {
+			mode &= *explicit
+		}
 	}
 	dir := filepath.Dir(path)
 	// a folder an agent's variable names is never made again once gone
@@ -398,6 +424,15 @@ func Atomically(fn func() error, paths ...string) error {
 			// secret file is never left at the 0644 a new one gets
 			if e := WriteAtomicMode(s.path, s.data, s.mode); e != nil {
 				err = errors.Join(err, fmt.Errorf("put %s back: %w", s.path, e))
+			}
+		}
+		// the bytes are back; a failed change that only widened the mode
+		// (a chmod with no write, say) is put back too
+		if s.exists {
+			if st, serr := os.Stat(s.path); serr == nil && st.Mode().IsRegular() && st.Mode().Perm() != s.mode {
+				if e := os.Chmod(s.path, s.mode); e != nil {
+					err = errors.Join(err, fmt.Errorf("put %s back: %w", s.path, e))
+				}
 			}
 		}
 	}

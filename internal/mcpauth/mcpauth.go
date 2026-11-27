@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -37,6 +38,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/istoo/owl/internal/edit"
@@ -49,14 +51,244 @@ import (
 	"github.com/istoo/owl/internal/steady"
 )
 
+// signInTransport is Client's own transport, a type of its own so that
+// the client can tell it from one a test put there without comparing
+// interfaces that may not be comparable.
+type signInTransport struct{ http.RoundTripper }
+
 // Client makes the sign-in's requests, through the proxy owl's others
 // take; tests point it elsewhere.
-var Client = &http.Client{Timeout: 30 * time.Second, Transport: proxied()}
+var Client = &http.Client{Timeout: 30 * time.Second, Transport: signInTransport{proxied()}}
 
 func proxied() http.RoundTripper {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.Proxy = netproxy.Func
 	return netproxy.Dispatch(t)
+}
+
+// errPrivatePeer is a sign-in's connection to an address off the open
+// internet, refused after it resolved and before it dialled.
+var errPrivatePeer = errors.New("it leads to an address on a private network, not the open internet")
+
+// signInProxyFor is where a sign-in's request would go through a proxy;
+// netproxy's own choice, and a test points it at its own (#H28).
+var signInProxyFor = netproxy.Func
+
+// signInProxy is a proxy one request may dial: url is the proxy with its
+// Host already pinned to addr, the address the socket connects to, and ip
+// is the address the request's own name answered here, which the request
+// is sent to. It is held by the one request's own transport, so no other
+// request's dial is excused by it.
+type signInProxy struct {
+	url  *url.URL
+	addr string
+	ip   netip.Addr
+}
+
+// protectedTransport is the transport a sign-in to a server on the open
+// internet uses: a name may answer a public address when it is checked and
+// a private one when it is dialled (DNS rebinding), so the address the
+// socket is about to connect to is checked too (#H28).
+//
+// A proxy would resolve the name itself, where owl can't see, so a proxied
+// request is pinned: both the proxy's own name and the target's are
+// resolved here once, and the address the standard library sends is that
+// address, not the name. An https target is carried: CONNECT names the
+// pinned address (the URL's canonicalAddr), the tunnel's Host header keeps
+// the name for the server, and the request's own TLS config checks the
+// certificate for that name. A plain http target is carried only when it
+// is an IP literal: the library makes a proxy's request line from the
+// Host header (net/http/request.go), so the address the proxy connects to
+// and the host it serves are one value there, and a domain's name would
+// be looked up by the proxy itself. A proxy elsewhere, another scheme, or
+// a fake-IP or non-local answer are refused with a message, never let
+// through by their own address.
+func protectedTransport() http.RoundTripper {
+	peer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			return guardPeer(address)
+		},
+	}
+	directT := http.DefaultTransport.(*http.Transport).Clone()
+	directT.Proxy = nil
+	directT.DialContext = peer.DialContext
+	return &guardedSignInTransport{direct: netproxy.Dispatch(directT), plain: &net.Dialer{Timeout: 30 * time.Second}, peer: peer}
+}
+
+// signInTLSConfig is the TLS check a proxied sign-in's transport makes:
+// the certificate for the name the sign-in asks for, against the system's
+// roots. A test puts its own CA here. The name never comes from the pinned
+// address the socket connects to.
+var signInTLSConfig = func(serverName string) *tls.Config {
+	return &tls.Config{ServerName: serverName}
+}
+
+// signInLookup resolves a name a sign-in checks; net.DefaultResolver unless
+// a test answers for its own fixture.
+var signInLookup = net.DefaultResolver.LookupNetIP
+
+// guardPeer is the address a direct connection may be made to: one on the
+// open internet. A fake-IP resolver's answer is not one: only the user's
+// TUN knows where it really leads, so it can't be confirmed here.
+func guardPeer(address string) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil || !netguard.Public(ap.Addr()) {
+		return errPrivatePeer
+	}
+	return nil
+}
+
+type guardedSignInTransport struct {
+	direct http.RoundTripper
+	plain  *net.Dialer // the request's own proxy, on this computer or the user's network
+	peer   *net.Dialer // everything else: a public address only
+}
+
+func (t *guardedSignInTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	proxy, err := signInProxyFor(req)
+	if err != nil {
+		return nil, err
+	}
+	if proxy == nil {
+		return t.direct.RoundTrip(req)
+	}
+	p, err := pinnedProxy(req.Context(), proxy, req.URL)
+	if err != nil {
+		return nil, err
+	}
+	out := req.Clone(req.Context())
+	pin := pinHost(p.ip, req.URL.Port())
+	out.URL.Host = pin
+	if strings.EqualFold(req.URL.Scheme, "http") {
+		// a proxy's plain-http request line is written from the Host
+		// header, and an IP literal target is the one case whose address
+		// and host are the same value, so the line carries the pinned
+		// address itself
+		out.Host = pin
+	} else if out.Host == "" {
+		out.Host = req.URL.Host // the Host header stays the name's
+	}
+	return t.proxied(p, req.URL.Hostname()).RoundTrip(out)
+}
+
+// proxied is the transport of one proxied sign-in request: its own, with
+// no connection kept (a sign-in is a handful of requests) and the name its
+// certificate is checked for fixed to this request's, so neither a TLS
+// check nor a connection is ever reused for another name.
+func (t *guardedSignInTransport) proxied(p *signInProxy, serverName string) http.RoundTripper {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = func(*http.Request) (*url.URL, error) { return p.url, nil }
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if addr == p.addr {
+			return t.plain.DialContext(ctx, network, addr) // this request's proxy
+		}
+		return t.peer.DialContext(ctx, network, addr)
+	}
+	tr.DisableKeepAlives = true
+	tr.TLSClientConfig = signInTLSConfig(serverName)
+	return tr
+}
+
+// pinnedProxy settles both addresses a proxied request uses: the proxy's,
+// which the socket dials, and the target's, which the request asks for. It
+// returns an error for any combination whose target the standard library
+// wouldn't send where it says.
+func pinnedProxy(ctx context.Context, proxy, target *url.URL) (*signInProxy, error) {
+	if !strings.EqualFold(proxy.Scheme, "http") {
+		return nil, fmt.Errorf("the sign-in would go through a %s proxy (%s), and owl can't confirm the address it connects to: give this server a direct connection, turning the proxy off in Settings", proxy.Scheme, netproxy.Redact(proxy.String()))
+	}
+	if !strings.EqualFold(target.Scheme, "http") && !strings.EqualFold(target.Scheme, "https") {
+		return nil, fmt.Errorf("the sign-in would go to a %s address through %s, which owl carries only for http and https: give this server a direct connection, turning the proxy off in Settings", target.Scheme, netproxy.Redact(proxy.String()))
+	}
+	if strings.EqualFold(target.Scheme, "http") {
+		// the request line a proxy reads is made from the Host header, so
+		// the address it connects to and the host it asks for are one
+		// value: an IP literal, never a name it would look up itself
+		if _, err := netip.ParseAddr(target.Hostname()); err != nil {
+			return nil, fmt.Errorf("the sign-in would go through %s as plain http to %s, and a proxy would look that name up itself: give this server a direct connection, turning the proxy off in Settings", netproxy.Redact(proxy.String()), netproxy.Redact(target.Host))
+		}
+	}
+	addr, err := pinnedProxyAddr(ctx, proxy)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := publicAddrs(ctx, target.Hostname())
+	if err != nil {
+		return nil, err
+	}
+	u := *proxy
+	u.Host = addr // the proxy is dialled by the address resolved here
+	return &signInProxy{url: &u, addr: addr, ip: ips[0]}, nil
+}
+
+// pinnedProxyAddr is the address the proxy is dialled at: its own name
+// resolved here, every answer one of this computer's or the user's
+// network. A proxy elsewhere, or one that can't be resolved, is refused.
+func pinnedProxyAddr(ctx context.Context, u *url.URL) (string, error) {
+	h := u.Hostname()
+	if h == "" {
+		return "", fmt.Errorf("the proxy %s names no host", netproxy.Redact(u.String()))
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}[strings.ToLower(u.Scheme)]
+	}
+	var addrs []netip.Addr
+	if strings.EqualFold(h, "localhost") {
+		addrs = []netip.Addr{netip.MustParseAddr("127.0.0.1")}
+	} else if a, err := netip.ParseAddr(h); err == nil {
+		addrs = []netip.Addr{a.Unmap()}
+	} else {
+		l, err := net.DefaultResolver.LookupNetIP(ctx, "ip", h)
+		if err != nil || len(l) == 0 {
+			return "", fmt.Errorf("couldn't check where the proxy %s is: %w", netproxy.Redact(u.String()), err)
+		}
+		addrs = l
+	}
+	for _, a := range addrs {
+		a = a.Unmap()
+		if !a.IsValid() || !(a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast()) {
+			return "", fmt.Errorf("the proxy %s is at an address owl can't confirm is this computer's or the user's network: give this server a direct connection, turning the proxy off in Settings, or use a proxy on this computer", netproxy.Redact(u.String()))
+		}
+	}
+	return net.JoinHostPort(addrs[0].Unmap().String(), port), nil
+}
+
+// pinHost is host at ip, with host's port when it names one.
+func pinHost(ip netip.Addr, port string) string {
+	if port != "" {
+		return net.JoinHostPort(ip.String(), port)
+	}
+	if ip.Is6() {
+		return "[" + ip.String() + "]"
+	}
+	return ip.String()
+}
+
+// publicAddrs is host's answers, all on the open internet: the address a
+// proxied request is pinned to. A fake-IP resolver's answer is not one:
+// no proxy can be asked to reach it.
+func publicAddrs(ctx context.Context, host string) ([]netip.Addr, error) {
+	if a, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")); err == nil {
+		a = a.Unmap()
+		if !netguard.Public(a) {
+			return nil, errPrivatePeer
+		}
+		return []netip.Addr{a}, nil
+	}
+	addrs, err := signInLookup(ctx, "ip", host)
+	if err != nil || len(addrs) == 0 {
+		return nil, fmt.Errorf("couldn't check where the sign-in's %s is: %w", host, err)
+	}
+	for i, a := range addrs {
+		if !netguard.Public(a) {
+			return nil, errPrivatePeer
+		}
+		addrs[i] = a.Unmap()
+	}
+	return addrs, nil
 }
 
 // Changed is called when a server is signed in or out, for the library to
@@ -483,8 +715,18 @@ func renew(ctx context.Context, name string, still func(Record) bool) (string, e
 	mu.Lock()
 	defer mu.Unlock()
 	// one renewal at a time across owls as well: a server that rotates
-	// its refresh tokens takes each once
-	unlock, _ := filelock.Lock(path()+".renew.lock", filelock.Wait)
+	// its refresh tokens takes each once. The wait outlasts the client's
+	// own timeout, so a lock held by a renewal still in flight is waited
+	// for; one let go only because a stuck holder outlasted it is not
+	// renewed without it (#M36a)
+	unlock, held := filelock.Lock(path()+".renew.lock", 35*time.Second)
+	if !held {
+		if cur, ok := Get(name); ok && !cur.Dead && !still(cur) {
+			// it was renewed meanwhile: the new token is the answer
+			return cur.Access, nil
+		}
+		return "", fmt.Errorf("another owl is renewing the sign-in to %s; try again", name)
+	}
 	defer unlock()
 	r, ok := Get(name)
 	if !ok {
@@ -750,6 +992,14 @@ func privateTarget(serverURL string, u *url.URL) error {
 // only to an address targetAllowed allows.
 func clientFor(ctx context.Context, serverURL string) *http.Client {
 	c := *Client
+	// a server on the open internet connects only to public addresses,
+	// checked on the peer itself (protectedTransport); one on this
+	// computer or the user's network keeps Client's transport as it is
+	if !serverLocal(ctx, serverURL) {
+		if _, ours := Client.Transport.(signInTransport); ours {
+			c.Transport = protectedTransport()
+		}
+	}
 	prev := Client.CheckRedirect
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if err := targetAllowed(ctx, serverURL, req.URL); err != nil {
@@ -1137,6 +1387,36 @@ type flow struct {
 	done     chan struct{}
 	claimed  bool
 	finished bool
+	// name and port are the server and the callback port the sign-in
+	// waits on: a new one for either ends this one, which would hold the
+	// port for its whole timeout (#M36b)
+	name string
+	port int
+}
+
+// stopFlows ends the sign-ins still waiting for the server called name or
+// for port, and waits for each listener to close: the callback port a
+// fixed app names was otherwise held by a forgotten flow for its ten
+// minutes.
+func stopFlows(name string, port int) {
+	flows.Lock()
+	var old []*flow
+	for _, f := range flows.m {
+		f.mu.Lock()
+		waiting := !f.finished
+		f.mu.Unlock()
+		if waiting && (f.name == name || port != 0 && f.port == port) {
+			old = append(old, f)
+		}
+	}
+	flows.Unlock()
+	for _, f := range old {
+		f.finish(State{State: "failed", Error: "the sign-in was started again; this one ended"})
+		<-f.done
+		if f.srv != nil {
+			f.srv.Close()
+		}
+	}
 }
 
 var flows = struct {
@@ -1206,6 +1486,10 @@ func start(ctx context.Context, name, serverURL string, app *App, add *string) (
 	if app != nil {
 		port = app.CallbackPort
 	}
+	// a flow still waiting for this server or this callback port is
+	// ended first: it would hold the port for up to ten minutes and make
+	// this one fail (#M36b)
+	stopFlows(name, port)
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		if port != 0 {
@@ -1262,7 +1546,8 @@ func start(ctx context.Context, name, serverURL string, app *App, add *string) (
 	}
 	au.RawQuery = aq.Encode()
 
-	f := &flow{done: make(chan struct{}), st: State{ID: randomToken(9), Server: name, URL: au.String(), State: "waiting"}}
+	f := &flow{done: make(chan struct{}), name: name, port: ln.Addr().(*net.TCPAddr).Port,
+		st: State{ID: randomToken(9), Server: name, URL: au.String(), State: "waiting"}}
 	rec := Record{URL: serverURL, Resource: m.Resource, Issuer: m.Issuer, TokenURL: m.TokenURL, ClientID: id, Secret: secret, AuthMethod: method, Scope: m.Scope}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {

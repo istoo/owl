@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -186,19 +187,20 @@ func TestFreeSkillName(t *testing.T) {
 		{"pdf", Source{Kind: "folder", Dir: "/Users/me/work/kit"}, "pdf-work"},
 		{strings.Repeat("a", 64), gh, strings.Repeat("a", 64-len("-openai")) + "-openai"},
 	} {
-		if got := l.freeSkillName(c.name, c.src); got != c.want || !nameRe.MatchString(got) {
-			t.Errorf("%s from %+v: %q, want %q", c.name, c.src, got, c.want)
+		got, err := l.freeSkillName(c.name, c.src)
+		if err != nil || got != c.want || !nameRe.MatchString(got) {
+			t.Errorf("%s from %+v: %q %v, want %q", c.name, c.src, got, err, c.want)
 		}
 	}
 	// every other name taken: a number
 	l.Skills = append(l.Skills, &Skill{Name: "pdf-openai-skills"}, &Skill{Name: "pdf-skills"})
-	if got := l.freeSkillName("pdf", gh); got != "pdf-openai-2" {
-		t.Errorf("all taken: %q", got)
+	if got, err := l.freeSkillName("pdf", gh); err != nil || got != "pdf-openai-2" {
+		t.Errorf("all taken: %q %v", got, err)
 	}
 	// a folder in the library's that it doesn't list is taken too
 	write(t, filepath.Join(skillDir("docx"), "SKILL.md"), "mine")
-	if got := l.freeSkillName("docx", gh); got != "docx-openai" {
-		t.Errorf("unlisted folder: %q", got)
+	if got, err := l.freeSkillName("docx", gh); err != nil || got != "docx-openai" {
+		t.Errorf("unlisted folder: %q %v", got, err)
 	}
 }
 
@@ -231,5 +233,43 @@ func TestRenamedMeta(t *testing.T) {
 	}
 	if got := read(t, other); got != "---\nname: a\n---\n" {
 		t.Errorf("written through the link: %q", got)
+	}
+}
+
+// A list with no free name left, or one that can't be looked at, comes
+// back as an error: freeSkillName never answers a name it didn't check
+// (#H26).
+func TestFreeSkillNameSaysWhenItCannot(t *testing.T) {
+	sandbox(t)
+	old := maxSkillNameTries
+	maxSkillNameTries = 3
+	t.Cleanup(func() { maxSkillNameTries = old })
+	l := &Library{Skills: []*Skill{{Name: "a"}, {Name: "a-2"}, {Name: "a-3"}}}
+	if got, err := l.freeSkillName("a", Source{}); err == nil {
+		t.Fatalf("a name that wasn't checked: %q", got)
+	}
+	l = &Library{Skills: []*Skill{{Name: "a"}, {Name: "a-2"}}}
+	if got, err := l.freeSkillName("a", Source{}); err != nil || got != "a-3" {
+		t.Errorf("free name: %q %v", got, err)
+	}
+}
+
+// A skills folder that can't be looked at is an error, not a name taken.
+func TestFreeSkillNameRefusesAnUnreadableFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("folder permissions don't keep Lstat from an answer")
+	}
+	sandbox(t)
+	if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(skillDir("a"), "SKILL.md"), "---\nname: a\n---\n")
+	if err := os.Chmod(skillsDir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(skillsDir(), 0o755) })
+	l := &Library{Skills: []*Skill{{Name: "a"}}}
+	if got, err := l.freeSkillName("a", Source{}); err == nil {
+		t.Fatalf("an unreadable folder was passed over: %q", got)
 	}
 }

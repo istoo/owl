@@ -11,15 +11,19 @@
 
 // the gateway tab's choices, kept per machine
 const gwParams = new URLSearchParams(location.search);
-let flavor = gwParams.get("flavor") || localStorage.getItem("owl.flavor") || "openai"; // which API the snippets speak
-let lang = gwParams.get("lang") || localStorage.getItem("owl.lang") || "shell";        // which snippet
-let snipOS = localStorage.getItem("owl.snipOS") || "";                               // the shell the Shell and curl snippets are for (#1514)
-let exampleModel = localStorage.getItem("owl.model") || "";  // the model in the snippets
-let decideModel = localStorage.getItem("owl.decideModel") || ""; // the System One snippets' decision model
+// A browser in private mode throws on localStorage itself: reading or
+// writing one choice must not white-screen the whole tab (M41).
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+let flavor = gwParams.get("flavor") || lsGet("owl.flavor") || "openai"; // which API the snippets speak
+let lang = gwParams.get("lang") || lsGet("owl.lang") || "shell";        // which snippet
+let snipOS = lsGet("owl.snipOS") || "";                               // the shell the Shell and curl snippets are for (#1514)
+let exampleModel = lsGet("owl.model") || "";  // the model in the snippets
+let decideModel = lsGet("owl.decideModel") || ""; // the System One snippets' decision model
 // Connect folded away under its heading: folded until it is opened, as it
 // is set up once and seldom read again (the owner)
 let connectFolded = true;
-try { connectFolded = localStorage.getItem("owl.gwConnectFolded") !== "0"; } catch {}
+connectFolded = lsGet("owl.gwConnectFolded") !== "0";
 const expandedCalls = new Set(); // recent-call ids whose wire bodies are open
 const callBodies = new Map(); // callRow → its bodies, read when it is opened (#1521)
 const wireOpen = new Set(); // recent-call ids whose HTTP headers are open
@@ -497,7 +501,7 @@ function renderConnect() {
   if (connectFolded) note.append(el("code", "", base), copyBtn(base, "Base URL"));
   else note.textContent = t(remote ? "Local network · an enabled gateway key is required" : g.lan && gatewayKeys?.length ? "Use a gateway key to track usage" : "Loopback only · the key can be anything");
 
-  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; localStorage.setItem("owl.flavor", id); renderConnect(); }), t(f.note)));
+  box.append(...field("API", segs(Object.entries(FLAVORS).map(([k, v]) => [k, v.name]), flavor, (id) => { flavor = id; lsSet("owl.flavor", id); renderConnect(); }), t(f.note)));
 
   const b = el("div", "val");
   if (urls.length > 1) b.append(connectPick("connectAddress", "Address", base,
@@ -531,7 +535,7 @@ function renderConnect() {
 
   const ex = el("div", "stack");
   const tabs = el("div", "snip-tabs");
-  tabs.append(segs(langs, snipLang, (id) => { lang = id; localStorage.setItem("owl.lang", id); renderConnect(); }));
+  tabs.append(segs(langs, snipLang, (id) => { lang = id; lsSet("owl.lang", id); renderConnect(); }));
   // the shell the Shell and curl snippets are for; Python and Node read the same everywhere
   if (snipLang === "shell" || snipLang === "curl") {
     const os = segs(SNIP_OSES.map(([id, name]) => [id, t(name)]), snipWin() ? "windows" : "unix", (id) => {
@@ -623,9 +627,9 @@ function renderGatewayModels() {
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed && row.contains(selection.anchorNode)) return;
       const so = decideEntry(m);
-      if (so) { decideModel = m.id; localStorage.setItem("owl.decideModel", m.id); }
-      else { exampleModel = m.id; localStorage.setItem("owl.model", m.id); }
-      if (so !== !!FLAVORS[flavor]?.decide) { flavor = so ? "systemone" : "openai"; localStorage.setItem("owl.flavor", flavor); }
+      if (so) { decideModel = m.id; lsSet("owl.decideModel", m.id); }
+      else { exampleModel = m.id; lsSet("owl.model", m.id); }
+      if (so !== !!FLAVORS[flavor]?.decide) { flavor = so ? "systemone" : "openai"; lsSet("owl.flavor", flavor); }
       renderConnect(); renderGatewayModels();
     };
     list.append(row);

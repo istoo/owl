@@ -13,6 +13,7 @@ import (
 	"github.com/istoo/owl/internal/agent"
 	"github.com/istoo/owl/internal/appdir"
 	"github.com/istoo/owl/internal/edit"
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/lastgood"
 	"github.com/istoo/owl/internal/library"
 	"github.com/istoo/owl/internal/provider"
@@ -143,7 +144,22 @@ func store(ps map[string]Profile) error {
 	if err := lastgood.Keep(Path(), validProfiles, 0o600); err != nil {
 		return err
 	}
-	return edit.WriteAtomic(Path(), append(b, '\n'))
+	// profiles name keys and models, and the file is the one all three
+	// changes below rewrite: it is kept to its user alone
+	return edit.WriteAtomicMode(Path(), append(b, '\n'), 0o600)
+}
+
+// 配置的读改写共用进程内及文件锁，拿不到文件锁就保留原文件。
+var (
+	profilesMu       = filelock.Mutex{Path: func() string { return Path() + ".lock" }}
+	profilesLockWait = filelock.Wait
+)
+
+func lockProfiles() (func(), error) {
+	if err := profilesMu.LockStrictTimeout(profilesLockWait); err != nil {
+		return nil, fmt.Errorf("could not lock profiles.json; nothing was written: %w", err)
+	}
+	return profilesMu.Unlock, nil
 }
 
 // Fields captures the current value of every detected agent's fields,
@@ -193,6 +209,11 @@ func Save(name string, p Profile) error {
 	if name == "" {
 		return fmt.Errorf("profile name is empty")
 	}
+	profilesUnlock, err := lockProfiles()
+	if err != nil {
+		return err
+	}
+	defer profilesUnlock()
 	ps, err := Load()
 	if err != nil {
 		return err
@@ -203,6 +224,11 @@ func Save(name string, p Profile) error {
 
 // Delete removes a profile.
 func Delete(name string) error {
+	profilesUnlock, err := lockProfiles()
+	if err != nil {
+		return err
+	}
+	defer profilesUnlock()
 	ps, err := Load()
 	if err != nil {
 		return err
@@ -224,6 +250,11 @@ func Rename(old, to string) error {
 	if to == "" {
 		return fmt.Errorf("profile name is empty")
 	}
+	profilesUnlock, err := lockProfiles()
+	if err != nil {
+		return err
+	}
+	defer profilesUnlock()
 	ps, err := Load()
 	if err != nil {
 		return err

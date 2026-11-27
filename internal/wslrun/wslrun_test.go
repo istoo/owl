@@ -3,7 +3,9 @@ package wslrun
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +185,74 @@ func TestFind(t *testing.T) {
 	}
 	if tool, ok := Known("claude"); !ok || tool.Distro != "Fedora" {
 		t.Fatalf("Known = %+v %v", tool, ok)
+	}
+}
+
+// Find is a name: a name with a shell character in it is never put into
+// the probe script, and never starts a distro to look (#4133).
+func TestFindRefusesShellName(t *testing.T) {
+	oldOn, oldRun := On, Run
+	t.Cleanup(func() { On, Run = oldOn, oldRun; Forget() })
+	On = true
+	Forget()
+	Run = func(_ time.Duration, args ...string) ([]byte, error) {
+		t.Fatalf("Find ran wsl.exe for a shell name: %v", args)
+		return nil, nil
+	}
+	for _, name := range []string{"x; touch /tmp/pwn", "$(id)", "a b", "x'y"} {
+		if _, ok := Find(name); ok {
+			t.Errorf("Find(%q) found something", name)
+		}
+	}
+}
+
+// A mark is the one in the environment segment: a business argument that
+// spells OWL_WSL_RUN= is the agent's own, not the run's (#4133).
+func TestRunMarkIgnoresBusinessArgs(t *testing.T) {
+	tool := Tool{Distro: "Ubuntu", Path: "/usr/bin/claude", PATH: "/usr/bin"}
+	args := tool.argv([]string{runVar + "=business", "--model", "m"})
+	mark := tool.runMark(args)
+	if mark == "" || mark == "business" {
+		t.Fatalf("mark %q, args %v", mark, args)
+	}
+	if !strings.HasPrefix(mark, strconv.Itoa(os.Getpid())+"-") {
+		t.Fatalf("mark %q is not this run's", mark)
+	}
+	// no marker at all leaves no mark, rather than the last business argument
+	if got := tool.runMark([]string{"-d", "Ubuntu", "--exec", "/usr/bin/env", "/usr/bin/claude", "x"}); got != "" {
+		t.Fatalf("no marker: %q", got)
+	}
+}
+
+// Via answers what SetVia wrote, at once and after a read.
+func TestSetViaWritesAndReads(t *testing.T) {
+	Forget()
+	if err := SetVia([]string{"10.1.2.3", "10.1.2.3"}, []string{"10.4.5.6"}); err != nil {
+		t.Fatal(err)
+	}
+	via, trying := Via()
+	if len(via) != 1 || via[0].String() != "10.1.2.3" || len(trying) != 1 || trying[0].String() != "10.4.5.6" {
+		t.Fatalf("Via = %v %v", via, trying)
+	}
+	b, err := os.ReadFile(viaPath())
+	if err != nil || string(b) != "10.1.2.3\ntry 10.4.5.6\n" {
+		t.Fatalf("file %q, %v", b, err)
+	}
+	if err := SetVia(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if via, trying := Via(); len(via) != 0 || len(trying) != 0 {
+		t.Fatalf("after clearing: %v %v", via, trying)
+	}
+	if _, err := os.Stat(viaPath()); !os.IsNotExist(err) {
+		t.Fatalf("file left: %v", err)
+	}
+}
+
+func TestParseProbeUppercaseDrive(t *testing.T) {
+	tool, _ := parseProbe("d", "bin:/usr/bin/claude\nlpath:/usr/bin\nmount:/mnt/C/\n")
+	if tool.Mount != "/mnt/" {
+		t.Fatalf("Mount = %q, want /mnt/", tool.Mount)
 	}
 }
 

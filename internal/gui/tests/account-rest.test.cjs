@@ -32,7 +32,11 @@ const fresh = (until) => ({
   },
 });
 
-function serve(lang, until, lifted) {
+// a promise the test resolves; the allowance's answer waits on it, so the
+// editor's second draw can be waited for instead of raced
+const defer = () => { let done; const promise = new Promise((r) => { done = r; }); return { promise, done }; };
+
+function serve(lang, until, lifted, allowance = null) {
   const settings = { theme: "light", lang, tray: "panel", quotaLeft: false, currency: "usd" };
   const providers = { providers: [fresh(until)], presets: [], excluded: [], gateway: { running: true, window: true },
     plugins: [{ id: "workbuddy-ai", pid: "workbuddy", name: "WorkBuddy AI", icon: "", spec: "@magpie-community/opencode-workbuddy-auth" }] };
@@ -48,7 +52,10 @@ function serve(lang, until, lifted) {
     if (url.pathname === "/api/usage/quotas") return json([]);
     if (url.pathname === "/api/groups") return json({ groups: [], models: [] });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
-    if (url.pathname === "/api/login/usage") return json({});
+    if (url.pathname === "/api/login/usage") {
+      if (allowance) await allowance;
+      return json({});
+    }
     if (url.pathname.startsWith("/api/")) return json({});
     const file = path.join(assets, url.pathname === "/" ? "index.html" : url.pathname);
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
@@ -70,11 +77,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultNavigationTimeout(60000);
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
-        await page.route("**/*", serve(lang, until, lifted));
+        const allowance = defer();
+        const answered = page.waitForResponse((r) => r.url().includes("/api/login/usage"));
+        await page.route("**/*", serve(lang, until, lifted, allowance.promise));
         await page.goto("http://owl.test/?view=providers");
         await page.locator(".row.provider", { hasText: "WorkBuddy AI" }).first().click();
         const row = (id) => page.locator(`.editor .accts .acc[data-account-id="${id}"]`);
         await row(USER).waitFor();
+        // the editor draws again once the account's allowance is in
+        // (loginUsageOf -> renderProviders(true)), replacing every row: draw
+        // the first ones, let that answer in, and wait for the rows drawn
+        // after it, so the rest line measured is not one about to go
+        await row(USER).evaluate((e) => { e.dataset.firstDraw = "1"; });
+        allowance.done();
+        await answered;
+        await page.waitForFunction((id) => {
+          const e = document.querySelector(`.editor .accts .acc[data-account-id="${id}"]`);
+          return e && e.dataset.firstDraw !== "1";
+        }, USER);
         const tr = (k, v) => page.evaluate(([k, v]) => t(k, v), [k, v]);
         const back = await page.evaluate((u) => restBack(u), until);
         const why = "429 " + (await tr("quota used up"));

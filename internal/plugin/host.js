@@ -264,7 +264,11 @@ function proxied(env) {
   if (Object.keys(env).some((k) => PROXY_VARS.includes(k.toUpperCase()) && env[k])) return env
   const mine = via.getStore()
   if (mine === "direct") return env
-  const set = mine ? { HTTPS_PROXY: mine, HTTP_PROXY: mine } : { HTTPS_PROXY: globalProxy.https, HTTP_PROXY: globalProxy.http, NO_PROXY: proxyVar("NO_PROXY") }
+  // NO_PROXY goes with either proxy: a program a plugin starts must reach
+  // the hosts owl was told to reach directly, as its own env says
+  const set = mine
+    ? { HTTPS_PROXY: mine, HTTP_PROXY: mine, NO_PROXY: proxyVar("NO_PROXY") }
+    : { HTTPS_PROXY: globalProxy.https, HTTP_PROXY: globalProxy.http, NO_PROXY: proxyVar("NO_PROXY") }
   if (set.HTTPS_PROXY || set.HTTP_PROXY) set.NODE_USE_ENV_PROXY = "1"
   for (const [k, v] of Object.entries(set)) {
     if (!v || Object.keys(env).some((e) => e.toUpperCase() === k)) continue
@@ -356,6 +360,14 @@ function forgetAccount(key) {
   infoGen++
 }
 const sessions = new Map() // oauth sign-in in progress → its authorize result
+// SESSIONS_TTL is how long a sign-in nobody finished is kept: a user who
+// closed the window left a callback and its tokens in the map for ever
+const SESSIONS_TTL = 15 * 60 * 1000
+const sessionsSweep = setInterval(() => {
+  const now = Date.now()
+  for (const [k, s] of sessions) if (now - (s.at ?? now) > SESSIONS_TTL) sessions.delete(k)
+}, 60 * 1000)
+sessionsSweep.unref?.()
 const inflight = new Map() // fetch id → its lifecycle and owned resources
 const renewing = new Map() // account → its sign-in's renewal under way
 const unrenewed = new Map() // account → its last renewal that failed: {at, secret, gone, error, n}
@@ -702,7 +714,8 @@ function proxyRefuses(p, input) {
     sock.on("error", (e) => done(`dial tcp ${host}:${port}: ${e?.message ?? e}`))
     sock.once(pu.protocol === "https:" ? "secureConnect" : "connect", () => {
       let req = `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n`
-      if (pu.username) {
+      // a proxy may carry its user with an empty password, or none at all
+      if (pu.username || pu.password) {
         const cred = `${decodeURIComponent(pu.username)}:${decodeURIComponent(pu.password)}`
         req += `Proxy-Authorization: Basic ${Buffer.from(cred).toString("base64")}\r\n`
       }
@@ -866,10 +879,22 @@ function tunnel(which, host, port) {
   let gone = false
   const queued = []
   const conn = new Duplex({
-    read() {},
+    // the reader took what was pushed: the upstream may write again
+    read() {
+      sock?.resume()
+    },
     write(chunk, enc, cb) {
-      if (ready) sock.write(chunk, cb)
-      else queued.push([chunk, cb])
+      // once: a write failed by closed() below may have its callback
+      // called again when the stream is destroyed
+      let done = false
+      const one = (e) => {
+        if (!done) {
+          done = true
+          cb(e)
+        }
+      }
+      if (ready) sock.write(chunk, one)
+      else queued.push([chunk, one])
     },
     final(cb) {
       if (ready) sock.end()
@@ -882,9 +907,25 @@ function tunnel(which, host, port) {
       cb(err)
     },
   })
+  // write a chunk to the reader, pausing the upstream while it holds more
+  // than the reader took: one that stopped left the whole tunnel in memory
+  const push = (d) => {
+    if (!conn.push(d)) sock?.pause()
+  }
+  // the upstream ended before the tunnel was ready: fail it, and let every
+  // write waiting for the tunnel hear it, rather than park for ever
+  const closed = () => {
+    if (ready) {
+      conn.push(null)
+      return
+    }
+    const err = new Error(`proxyconnect tcp: ${target} ended before the tunnel was ready`)
+    for (const [, cb] of queued.splice(0)) cb(err)
+    conn.destroy(err)
+  }
   const open = () => {
     ready = true
-    sock.on("data", (d) => conn.push(d))
+    sock.on("data", push)
     for (const [c, cb] of queued.splice(0)) sock.write(c, cb)
     if (ended) sock.end()
   }
@@ -893,7 +934,7 @@ function tunnel(which, host, port) {
     if (!p) {
       sock = net.connect({ host, port })
       sock.once("connect", open)
-      sock.on("end", () => conn.push(null))
+      sock.on("end", closed)
       sock.on("error", (e) => conn.destroy(e))
       return
     }
@@ -903,7 +944,8 @@ function tunnel(which, host, port) {
     sock = pu.protocol === "https:" ? tls.connect({ host: ph, port: pp, servername: net.isIP(ph) ? undefined : ph }) : net.connect({ host: ph, port: pp })
     sock.once(pu.protocol === "https:" ? "secureConnect" : "connect", () => {
       let req = `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n`
-      if (pu.username) {
+      // a proxy may carry its user with an empty password, or none at all
+      if (pu.username || pu.password) {
         const cred = `${decodeURIComponent(pu.username)}:${decodeURIComponent(pu.password)}`
         req += `Proxy-Authorization: Basic ${Buffer.from(cred).toString("base64")}\r\n`
       }
@@ -923,11 +965,11 @@ function tunnel(which, host, port) {
         const body = got.subarray(end + 4, end + 304).toString("utf8").trim()
         return conn.destroy(new Error(`proxyconnect tcp: ${body ? `${status}: ${body}` : status}`))
       }
-      if (got.length > end + 4) conn.push(got.subarray(end + 4))
+      if (got.length > end + 4) push(got.subarray(end + 4))
       open()
     }
     sock.on("data", head)
-    sock.on("end", () => conn.push(null))
+    sock.on("end", closed)
     sock.on("error", (e) => conn.destroy(ready ? e : new Error(`proxyconnect tcp: dial tcp ${ph}:${pp}: ${e?.message || e?.code || e}`)))
   }).catch((e) => conn.destroy(e))
   return conn
@@ -1188,26 +1230,32 @@ const AUTH_LOCK_STALE = 10 * 1000
 
 async function lockAuth() {
   const lock = authPath + ".lock"
+  // who holds it, as lockRenew writes it: a holder that timed out and
+  // took the file away removes only its own, never the next holder's
+  const me = JSON.stringify({ pid: process.pid, token: randomUUID() })
   fs.mkdirSync(path.dirname(authPath), { recursive: true })
   let tries = 0
   for (const start = Date.now(); ; ) {
     try {
-      fs.closeSync(fs.openSync(lock, "wx", 0o600))
+      fs.writeFileSync(lock, me, { flag: "wx", mode: 0o600 })
       return () => {
         try {
-          fs.unlinkSync(lock)
+          if (fs.readFileSync(lock, "utf8") === me) fs.unlinkSync(lock)
         } catch {}
       }
     } catch (e) {
       if (e?.code !== "EEXIST" && e?.code !== "EPERM" && e?.code !== "EACCES") throw e
     }
     let old = false
+    let raw = null
     try {
+      raw = fs.readFileSync(lock, "utf8")
       old = Date.now() - fs.statSync(lock).mtimeMs > AUTH_LOCK_STALE
     } catch {}
     if (old || Date.now() - start > 2 * AUTH_LOCK_STALE) {
       try {
-        fs.unlinkSync(lock)
+        // one written meanwhile (a new holder's token) stays
+        if (raw !== null && fs.readFileSync(lock, "utf8") === raw) fs.unlinkSync(lock)
       } catch {}
     }
     await sleep(Math.min(50, 5 + 5 * tries++))
@@ -2889,7 +2937,7 @@ async function authorize({ provider, method, inputs, account, proxy }, signal) {
   if (a?.type === "failed") return failed(a)
   if (typeof a?.callback !== "function") return { ok: false, error: `${provider}'s sign-in gave nothing to finish it with` }
   const session = String(nextSession++)
-  sessions.set(session, { provider, key, a, inputs, proxy: proxy ?? "" })
+  sessions.set(session, { provider, key, a, inputs, proxy: proxy ?? "", at: Date.now() })
   // opened (not OpenCode's) is a page the plugin's own CLI opened already:
   // Grok Build's `grok login` opens it on macOS and Windows, and owl's
   // opening it too showed it twice (andyfmyth on X)
@@ -3549,6 +3597,39 @@ async function doFetch(id, record, params) {
   return via.run(params.proxy ?? "", () => inScope(params.provider, key, () => fetchAs(id, record, key, params)))
 }
 
+// 第三方钩子只拿到这里列出的字段。每一层都重新构造，不遍历配置或模型目录。
+const hookOptions = { baseURL: "origin" }
+const hookProvider = { id: "string", name: "string", source: "string", npm: "string", env: "names", api: "origin", decide: "boolean", searches: "boolean" }
+const hookMedia = Object.fromEntries(MODALITIES.map(k => [k, "boolean"]))
+const hookMetadata = {
+  id: "string", providerID: "string", name: "string", family: "string", status: "string", release_date: "string",
+  api: { id: "string", npm: "string", url: "origin" }, limit: { context: "number", input: "number", output: "number" },
+  cost: { input: "number", output: "number", cache: { read: "number", write: "number" } },
+  capabilities: { temperature: "boolean", reasoning: "boolean", attachment: "boolean", toolcall: "boolean", input: hookMedia, output: hookMedia },
+  searches: "boolean", decides: "boolean", temperature: "boolean",
+}
+
+function hookFields(value, fields) {
+  const out = {}
+  if (!value || typeof value !== "object") return out
+  for (const [key, type] of Object.entries(fields)) {
+    const v = value[key]
+    if (v == null) continue
+    if (typeof type === "object") {
+      if (typeof v === "object" && !Array.isArray(v)) out[key] = hookFields(v, type)
+    } else if (type === "origin" && typeof v === "string") {
+      // 地址的用户信息、路径和查询串都可能带凭据；这里只公开 HTTP(S) 源。
+      try {
+        const u = new URL(v)
+        if (u.protocol === "https:" || u.protocol === "http:") out[key] = u.origin + "/"
+      } catch {}
+    } else if (type === "names" && Array.isArray(v)) {
+      out[key] = v.filter(s => typeof s === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s))
+    } else if (typeof v === type) out[key] = v
+  }
+  return out
+}
+
 // staleAccess is what a bare 401 says of the OAuth sign-in at key that
 // had a refresh token when the request began (before): "kept" when the
 // access token alone was turned away, so the next request renews it, and
@@ -3604,19 +3685,31 @@ async function fetchAs(id, record, key, params) {
       checkFetch(record)
       m = p.models[model] ?? { id: model, providerID: provider, api: { id: model, npm } }
     }
+    // the plugin serving this provider is the one the options and the
+    // sign-in belong to. Any other plugin's hook is told a copy without
+    // the key, the vendor headers or the fetch: a hook given the shared
+    // object could read every provider's plaintext key and change the
+    // cached options in place (H40).
+    const serving = auths().get(provider)?.spec
     for (const x of said) {
       const fn = x.hooks["chat.headers"]
       const out = { headers: {} }
+      const own = serving != null && x.spec === serving
+      const info = own ? p : hookFields(p, hookProvider)
+      const mdl = own ? m : hookFields(m, hookMetadata)
       try {
-        await fn(
-          {
-            sessionID: session ?? "",
-            agent: "build",
-            model: m,
-            provider: { source: "custom", info: p, options: o },
-            message: { id: "", sessionID: session ?? "", role: "user", time: { created: Date.now() }, agent: "build", model: { providerID: provider, modelID: model } },
-          },
-          out,
+        // the hook runs as its own plugin, whatever the caller's scope was
+        await pluginALS.run(x.spec, () =>
+          fn(
+            {
+              sessionID: session ?? "",
+              agent: "build",
+              model: mdl,
+              provider: { source: "custom", info, options: own ? o : hookFields(o, hookOptions) },
+              message: { id: "", sessionID: session ?? "", role: "user", time: { created: Date.now() }, agent: "build", model: { providerID: provider, modelID: model } },
+            },
+            out,
+          ),
         )
       } catch (e) {
         send({ event: "log", level: "error", message: `${x.spec}: chat.headers: ${e?.message ?? e}` })
@@ -3650,6 +3743,7 @@ async function fetchAs(id, record, key, params) {
       throw new Error(`the reply's headers are past the host's head envelope (${HEAD_MAX} bytes or ${HEAD_ENTRIES} entries)`)
     }
     await sendForFetch(record, { id, event: "head", status: res.status, headers: rh })
+    record.headSent = true
     checkFetch(record)
     if (res.body) {
       record.unconsumedBody = undefined
@@ -3677,7 +3771,6 @@ async function fetchAs(id, record, key, params) {
     transitionFetch(record, "finishing")
     await sendForFetch(record, { id, result: null })
   } catch (e) {
-    transitionFetch(record, "finishing")
     // a proxy's own 502 to a CONNECT (owl's SOCKS bridge, when its proxy
     // is down) is the proxy's answer, as it is over HTTP; Bun reports it as
     // an error, so it goes on as the 502 whose body is the bridge's words,
@@ -3685,15 +3778,28 @@ async function fetchAs(id, record, key, params) {
     const said = String(e?.message ?? e)
     const proxy502 = /^proxyconnect tcp: 502 Bad Gateway: ([\s\S]*)$/.exec(said)
     if (proxy502 && record.state !== "cancelled" && record.state !== "finished") {
-      await sendForFetch(record, { id, event: "head", status: 502, headers: {} })
-      const body = Buffer.from(proxy502[1], "utf8")
-      for (let off = 0; off < body.length; off += MAX_FRAME) {
-        const data = body.subarray(off, Math.min(off + MAX_FRAME, body.length)).toString("base64")
-        await sendForFetch(record, chunkLine(id, data))
+      // the gate stays open until the body is written: finishing stops it
+      if (!record.headSent) {
+        await sendForFetch(record, { id, event: "head", status: 502, headers: {} })
+        record.headSent = true
       }
-      await sendForFetch(record, { id, result: null })
+      const body = Buffer.from(proxy502[1], "utf8")
+      for (let off = 0; off < body.length; ) {
+        // as the streamed body: one frame at a time, no more than the
+        // reader credited (M40a)
+        const n = await gate.take(Math.min(MAX_FRAME, body.length - off))
+        if (record.state === "cancelled" || record.state === "finished" || n <= 0) break
+        const data = body.subarray(off, off + n).toString("base64")
+        gate.spend(n + FRAME_OVERHEAD)
+        await sendForFetch(record, chunkLine(id, data))
+        off += n
+      }
+      if (record.state !== "cancelled" && record.state !== "finished") {
+        await sendForFetch(record, { id, result: null })
+      }
       return
     }
+    transitionFetch(record, "finishing")
     // a fetch hook that threw on its sign-in (a refresh the vendor turned
     // away) marks the account, as a built-in's refused refresh marked it
     if (["expired", "kept", "renewed"].includes(e?.signIn) && key) send({ event: "signIn", provider, account: key, said: e.signIn })
@@ -3929,7 +4035,7 @@ rl.on("line", (line) => {
     const record = {
       state: "setup", controller: new AbortController(),
       gate: makeGate(msg.params?.window > 0 ? msg.params.window : 512 << 10),
-      pendingSend: null, readyCleanup: null, unconsumedBody: undefined,
+      pendingSend: null, readyCleanup: null, unconsumedBody: undefined, headSent: false,
     }
     inflight.set(id, record)
     // waiting for the host to be ready is the host's own await: an abort must

@@ -551,7 +551,7 @@ func providerCmd(args []string) error {
 		}
 		return nil
 	case "key":
-		if len(rest) != 2 {
+		if len(rest) != 2 || flagValue(rest[1]) {
 			return fmt.Errorf("owl provider key <id> <key>")
 		}
 		p, err := provider.Find(rest[0])

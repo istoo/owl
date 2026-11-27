@@ -84,6 +84,23 @@ const (
 	socketErrMax = 1 << 20
 )
 
+// The socket's bounds: what a client queues while a reply is in flight,
+// and what its previous_response_id chain may grow to. A socket is one
+// low-privilege key's, and neither a flood of frames nor a chain of
+// warmups (generate false) with ever more input may grow the heap without
+// end (H2). Variables, so a test can reach them cheaply.
+var (
+	// socketQueueFrames/socketQueueBytes bound the frames received while
+	// a turn is being served: more are answered with an error frame and
+	// the socket closed.
+	socketQueueFrames = 16
+	socketQueueBytes  = int64(16 << 20)
+	// socketConversationBytes bounds the conversation one reply a socket
+	// holds: every turn adds to the one before it, and the last reply
+	// alone holds the whole chain.
+	socketConversationBytes = int64(64 << 20)
+)
+
 // clientSockets are the sockets being served, which end with the gateway.
 type clientSockets struct {
 	mu      sync.Mutex
@@ -266,10 +283,12 @@ func (rs *responsesSocket) serve() {
 		}
 	}()
 	var queued []socketMsg
+	queuedBytes := 0
 	for {
 		var m socketMsg
 		if len(queued) > 0 {
 			m, queued = queued[0], queued[1:]
+			queuedBytes -= len(m.data)
 		} else {
 			select {
 			case m = <-in:
@@ -314,7 +333,21 @@ func (rs *responsesSocket) serve() {
 					return
 				}
 				if gjson.GetBytes(n.data, "type").String() != "response.interrupt" {
+					// a turn in flight is no reason to hold every frame
+					// a client sends: the queue is bounded by count and
+					// bytes, and the flood is ended rather than held (H2)
+					if len(queued) >= socketQueueFrames || int64(queuedBytes)+int64(len(n.data)) > socketQueueBytes {
+						// the turn in flight ends with the socket; the
+						// error goes first, and nothing waits on the
+						// provider to notice
+						rs.writeError(ctx, http.StatusBadRequest, "invalid_request_error", "too_many_queued_messages",
+							"too many messages were queued while a reply was in flight; send them once it ends", "")
+						stop()
+						rs.c.CloseNow()
+						return
+					}
 					queued = append(queued, n)
+					queuedBytes += len(n.data)
 					continue
 				}
 				id := gjson.GetBytes(n.data, "response_id").String()
@@ -471,6 +504,16 @@ func (rs *responsesSocket) turn(ctx context.Context, t *socketTurnRun, frame []b
 		held, input = prior, append(prior[:len(prior):len(prior)], fresh...)
 		rs.continued++
 	}
+	// a chain of previous_response_id turns holds the whole conversation
+	// in its last reply, with no reply to trim it: bound it before the
+	// input is copied again, and say so as an invalid request (H2). A
+	// warmup (generate false) with large input is the shape that grew
+	// the heap without a provider ever being asked.
+	if itemsBytes(held)+itemsBytes(fresh) > socketConversationBytes {
+		rs.writeError(ctx, http.StatusBadRequest, "invalid_request_error", "previous_response_too_large",
+			"the conversation a socket keeps is over owl's limit; open a new socket and send it whole", "previous_response_id")
+		return
+	}
 	// a warmup (generate false) asks for no reply: Codex sends it with
 	// the conversation ahead of its first turn, and that turn follows it
 	var generate bool
@@ -530,8 +573,23 @@ func (rs *responsesSocket) turn(ctx context.Context, t *socketTurnRun, frame []b
 		rs.stateTurn, rs.turnState = turnID, v
 	}
 	if out.id != "" && out.completed {
-		rs.keep(out.id, held, fresh, out.items)
+		// its reply may take the conversation past the bound: it isn't
+		// kept then, and the next turn naming it is told not found (a
+		// new socket, sent whole, is the way on) rather than the heap
+		// growing again (H2)
+		if itemsBytes(held)+itemsBytes(fresh)+itemsBytes(out.items) <= socketConversationBytes {
+			rs.keep(out.id, held, fresh, out.items)
+		}
 	}
+}
+
+// itemsBytes is how many bytes items come to.
+func itemsBytes(items []json.RawMessage) int64 {
+	var n int64
+	for _, it := range items {
+		n += int64(len(it))
+	}
+	return n
 }
 
 // socketTurnBody, set by the tests, is handed each body a turn is served
@@ -879,6 +937,15 @@ func (w *socketTurnWriter) finish() {
 	}
 	// a whole reply: what its stream would have said
 	body := bytes.TrimSpace(w.buf.Bytes())
+	// what isn't JSON whole can't be put into an event as its response,
+	// or the client reads a frame it can't parse (L3)
+	if !json.Valid(body) {
+		w.status = http.StatusBadGateway
+		w.buf.Reset()
+		w.buf.WriteString(`{"error":{"type":"server_error","message":"the reply was neither a stream nor a response"}}`)
+		w.sendHTTPError()
+		return
+	}
 	r := gjson.ParseBytes(body)
 	if r.Get("object").String() != "response" || r.Get("id").String() == "" {
 		w.status = http.StatusBadGateway

@@ -24,7 +24,7 @@ func TestHostJSCancellation(t *testing.T) {
 	if err != nil {
 		t.Skip("no node on PATH")
 	}
-	for _, name := range []string{"stopped-gate", "split-chunk", "terminal", "blocked-head", "blocked-head-cancel-error", "ready-wait", "ready-success", "ready-error", "local-error", "local-error-cancel", "normal-reply", "held-window"} {
+	for _, name := range []string{"stopped-gate", "split-chunk", "terminal", "blocked-head", "blocked-head-cancel-error", "ready-wait", "ready-success", "ready-error", "local-error", "local-error-cancel", "normal-reply", "held-window", "chat-headers-options"} {
 		t.Run(name, func(t *testing.T) {
 			out, err := runHostJSCase(t, node, name)
 			if err != nil {
@@ -80,7 +80,8 @@ stdout.write = line => {
 }
 const rl = new EventEmitter()
 const context = vm.createContext({
-  Buffer, Headers, AbortController, DOMException, ReadableStream,
+  Buffer, URL, Headers, AbortController, DOMException, ReadableStream,
+  AsyncLocalStorage: require('node:async_hooks').AsyncLocalStorage,
   process: { stdout, stdin: {}, exit: () => { throw Error('unexpected exit') } },
   readline: { createInterface: () => rl },
   options: async () => ({ fetch: async () => context.reply }),
@@ -88,10 +89,13 @@ const context = vm.createContext({
   sdkHeaders: () => ({}), bodyOf: () => undefined,
   accountKey: () => '',
   via: { run: (_, fn) => fn() }, inScope: (_, key, fn) => fn(),
+  auths: () => new Map(),
 })
 const run = code => vm.runInContext(code, context)
 run(section('const rpcWrite =', '// A plugin writing to stdout'))
+run('const pluginALS = new AsyncLocalStorage()')
 run('const hooks = []; const inflight = new Map(); const handlers = {}')
+run(section('const MODALITIES =', '// modalities is'))
 run(section('async function doFetch(', '// ---- the loop'))
 run(section('// Everything waits for init;'))
 const message = value => rl.emit('line', JSON.stringify(value))
@@ -313,6 +317,68 @@ async function main() {
     abortOne()
     await until(idle, 'cancel wakes a fetch waiting for credit')
     assert.equal(lines.filter(msg => msg.id === 1 && ('result' in msg || 'error' in msg)).length, 0)
+  } else if (name === 'chat-headers-options') {
+    // the sign-in is the serving plugin's: another plugin's chat.headers
+    // hook is told a copy without the key, the headers or the fetch (H40)
+    run('hooks.length = 0')
+    context.auths = () => new Map([['test', { spec: 'own', auth: {} }]])
+    context.options = async () => ({ baseURL: 'http://vendor/', apiKey: 'sk-secret', headers: { 'x-vendor': 'v' }, fetch: async () => context.reply, extra: { n: 1 } })
+    // the provider info as info() builds it: the user's config in options,
+    // and each model's headers and options from it too (H40)
+    context.infoOf = async () => ({
+      id: 'test', name: 'Test Provider', source: 'config', env: ['VENDOR_KEY'], api: 'https://example.invalid/configured/path', listError: 'fixture',
+      options: { secretConfig: 'PRIVATE-CFG' },
+      models: {
+        test: {
+          id: 'test', providerID: 'test', name: 'Test Model', family: 'test-family',
+          api: { id: 'test', url: 'https://example.invalid/model?sample=1', npm: '@ai-sdk/openai-compatible' },
+          headers: { 'x-model-secret': 'PRIVATE-HDR' }, options: { token: 'PRIVATE-OPT' }, variants: { test: {} },
+          limit: { context: 8192, input: 4096, output: 2048, extra: 'fixture' },
+          capabilities: { reasoning: true, toolcall: true, input: { text: true }, output: { text: true } },
+          cost: { input: 1, output: 2 },
+        },
+        others: { id: 'others', name: 'Other Model' },
+      },
+    })
+    run('hooks.push({ spec: "own", hooks: { "chat.headers": async (input) => { globalThis.ownSaw = { options: input.provider.options, info: input.provider.info, infoText: JSON.stringify(input.provider.info), model: input.model, modelText: JSON.stringify(input.model) } } } })')
+    run('hooks.push({ spec: "other", hooks: { "chat.headers": async (input) => { globalThis.otherSaw = { options: input.provider.options, info: input.provider.info, infoText: JSON.stringify(input.provider.info), model: input.model, modelText: JSON.stringify(input.model) } } } })')
+    fetchOne()
+    await until(idle, 'fetch with chat.headers settles')
+    // the serving plugin has the API it had before
+    assert.equal(run('ownSaw.options.apiKey'), 'sk-secret')
+    assert.equal(run('ownSaw.options.headers?.["x-vendor"]'), 'v')
+    assert.equal(run('typeof ownSaw.options.fetch'), 'function')
+    assert.ok(run('ownSaw.infoText.includes("PRIVATE-CFG")'), 'the owner lost its provider options')
+    assert.ok(run('ownSaw.modelText.includes("PRIVATE-HDR")'), 'the owner lost its model headers')
+    assert.ok(run('ownSaw.modelText.includes("PRIVATE-OPT")'), 'the owner lost its model options')
+    // another plugin gets the public fields only, by value
+    assert.equal(run('otherSaw.options.baseURL'), 'http://vendor/', 'another plugin keeps the harmless options')
+    assert.equal(run('otherSaw.options.apiKey'), undefined, 'another plugin is told no key')
+    assert.equal(run('otherSaw.options.headers'), undefined, 'another plugin is told no headers')
+    assert.equal(run('otherSaw.options.fetch'), undefined, 'another plugin is told no fetch')
+    assert.equal(run('otherSaw.infoText.includes("PRIVATE-CFG")'), false, 'the config is readable by another plugin')
+    assert.equal(run('otherSaw.infoText.includes("Other Model")'), false, 'the model catalog is readable by another plugin')
+    assert.equal(run('otherSaw.infoText.includes("Test Provider")'), true, 'the public provider name is gone')
+    assert.equal(run('otherSaw.infoText.includes("VENDOR_KEY")'), true, 'the public env names are gone')
+    assert.equal(run('otherSaw.modelText.includes("PRIVATE-HDR")'), false, 'config headers are readable by another plugin')
+    assert.equal(run('otherSaw.modelText.includes("PRIVATE-OPT")'), false, 'config model options are readable by another plugin')
+    assert.equal(run('otherSaw.modelText.includes("Test Model")'), true, 'the public model name is gone')
+    assert.ok(run('otherSaw.model.limit?.context === 8192'), 'ordinary model metadata is gone')
+    assert.ok(run('otherSaw.model.capabilities?.reasoning === true'), 'model capabilities are gone')
+    // and no reference is shared: changing its copies leaves the owner's be
+    assert.equal(run('otherSaw.options.extra'), undefined, '不向其他插件传递加载器扩展字段')
+    assert.equal(run('otherSaw.info.listError'), undefined, '不传递供应商原始错误')
+    assert.equal(run('otherSaw.model.variants'), undefined, '不传递任意模型配置')
+    assert.equal(run('otherSaw.model.limit.extra'), undefined, '嵌套对象也按公开字段取值')
+    assert.equal(run('otherSaw.info.api'), 'https://example.invalid/')
+    assert.equal(run('otherSaw.model.api.url'), 'https://example.invalid/')
+    assert.equal(run('otherSaw.info === ownSaw.info'), false, 'provider info is shared')
+    assert.equal(run('otherSaw.model === ownSaw.model'), false, 'the model is shared')
+    run('otherSaw.model.limit.context = 9; otherSaw.info.name = "changed"; otherSaw.model.name = "changed"')
+    assert.equal(run('ownSaw.model.limit.context'), 8192, '修改公开限额不能改变缓存')
+    assert.equal(run('ownSaw.options.extra.n'), 1, 'a nested option changed under the serving plugin')
+    assert.equal(run('ownSaw.info.name'), 'Test Provider', 'the provider info changed under the serving plugin')
+    assert.equal(run('ownSaw.model.name'), 'Test Model', 'the model changed under the serving plugin')
   } else if (name === 'normal-reply') {
     context.reply.body = (async function* () { yield Buffer.from('complete reply') })()
     fetchOne()

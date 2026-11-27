@@ -237,7 +237,7 @@ func isReset(args []string) bool {
 }
 
 func modelName(args []string) error {
-	if len(args) == 0 {
+	if len(args) == 0 || flagValue(args[0]) {
 		return fmt.Errorf("%s", modelUsage)
 	}
 	p, model, err := modelRef(args[0])
@@ -1070,6 +1070,9 @@ func modelUsageAlias(args []string) error {
 		fmt.Println(modelUsage)
 		return nil
 	}
+	if flagValue(args[0]) {
+		return fmt.Errorf("%s", modelUsage)
+	}
 	from := args[0]
 	if len(args) == 1 {
 		f, to, counted, ok, err := provider.UsageAliasFor(from)
@@ -1100,6 +1103,9 @@ func modelUsageAlias(args []string) error {
 		return nil
 	}
 	to := args[1]
+	if flagValue(to) {
+		return fmt.Errorf("%s", modelUsage)
+	}
 	changed, err := provider.SetUsageAlias(from, to)
 	if err != nil {
 		return err

@@ -100,12 +100,21 @@ func (x *Exporter) Serve() func() {
 		log.Printf("otel: %s", err)
 	}
 	watchCtx, stopWatch := context.WithCancel(e.ctx)
-	go e.watchSessions(watchCtx, time.Now(), OTelSessionsEvery)
+	watchDone := make(chan struct{})
+	// 以启用时刻而非后台协程第一次获调度的时刻为界，否则启动期间的会话行会被当作历史跳过。
+	started, every := time.Now(), OTelSessionsEvery
+	go func() {
+		defer close(watchDone)
+		e.watchSessions(watchCtx, started, every)
+	}()
 	go e.run(OTelEvery)
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			stopWatch()
+			// the watcher reads transcripts, and a stop that leaves it here
+			// writes into a test's home after the test is gone
+			<-watchDone
 			x.running.CompareAndSwap(e, nil)
 			close(e.stop)
 			timer := time.NewTimer(3 * time.Second)

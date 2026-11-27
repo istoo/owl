@@ -23,11 +23,14 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	xdraw "golang.org/x/image/draw"
@@ -87,13 +90,18 @@ func Script(claudeApp, exe, dir, claudeDir string) string {
 	if claudeDir != "" {
 		env = "export CLAUDE_CONFIG_DIR=" + q(claudeDir) + "\n"
 	}
+	// the folder is a regular expression to pgrep: '.' and '[', which a
+	// folder may carry, would match another folder without being quoted,
+	// and a Desktop on that one would keep a second one from starting
+	// (#4133)
+	pat := regexp.QuoteMeta(dir)
 	return "#!/bin/sh\n" +
 		"# Claude Desktop on owl, in a folder of its own; " + mark + ".\n" +
 		"# owl's Claude Desktop settings take it away again.\n" +
 		"dir=" + q(dir) + "\n" +
 		env +
 		"exe=" + q(exe) + "\n" +
-		"if /usr/bin/pgrep -f -- \"--user-data-dir=$dir( |\\$)\" >/dev/null 2>&1; then exit 0; fi\n" +
+		"if /usr/bin/pgrep -f -- " + q("--user-data-dir="+pat+"( |$)") + " >/dev/null 2>&1; then exit 0; fi\n" +
 		"for app in " + q(claudeApp) + " /Applications/Claude.app \"$HOME/Applications/Claude.app\"; do\n" +
 		"\tif [ -x \"$app/Contents/MacOS/$exe\" ]; then\n" +
 		"\t\texec \"$app/Contents/MacOS/$exe\" --user-data-dir=\"$dir\" \"$@\"\n" +
@@ -161,6 +169,10 @@ var register = func(p string) {
 	_ = proc.Command("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", p).Run()
 }
 
+// renameFile is os.Rename; a var so a test can make the new bundle's
+// rename fail, and its rollback too.
+var renameFile = os.Rename
+
 // ErrTheirs: a bundle by the app's name is there and isn't owl's.
 var ErrTheirs = errors.New(Name + ".app is there already and isn't owl's")
 
@@ -203,10 +215,37 @@ func Add(home, claudeApp, dir, claudeDir string) (string, error) {
 			return "", err
 		}
 	}
-	if err := os.RemoveAll(p); err != nil {
+	// one of owl's there is moved into a folder of its own, made for it, and
+	// the new bundle renamed in: a rename that fails puts the old one back,
+	// and one that fails to put it back keeps it there and says where, rather
+	// than deleting the only copy. The folder is never a fixed name removed
+	// first: another run's (or a crash's) copy is not this call's to delete
+	// (#4133).
+	if _, err := os.Lstat(p); err == nil {
+		oldDir, err := os.MkdirTemp(filepath.Dir(p), "."+Name+".app-old-")
+		if err != nil {
+			return "", err
+		}
+		backup := filepath.Join(oldDir, Name+".app")
+		if err := renameFile(p, backup); err != nil {
+			_ = os.RemoveAll(oldDir)
+			return "", err
+		}
+		if err := renameFile(tmp, p); err != nil {
+			if rerr := renameFile(backup, p); rerr != nil {
+				return "", errors.Join(err, fmt.Errorf("the app before this one is kept at %s: %w", backup, rerr))
+			}
+			_ = os.RemoveAll(oldDir)
+			return "", err
+		}
+		// the new app is in place: the one before it goes. A failure here
+		// leaves it, hidden, beside the app rather than losing it
+		if err := os.RemoveAll(oldDir); err != nil {
+			log.Printf("desktopiso: the app before this one is kept at %s: %v", backup, err)
+		}
+	} else if !os.IsNotExist(err) {
 		return "", err
-	}
-	if err := os.Rename(tmp, p); err != nil {
+	} else if err := renameFile(tmp, p); err != nil {
 		return "", err
 	}
 	register(p)

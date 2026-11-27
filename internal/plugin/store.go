@@ -153,22 +153,47 @@ const authLockStale = 10 * time.Second
 // the unlock.
 func lockAuth() func() {
 	lock := AuthPath() + ".lock"
+	// who holds it: the file says, so a holder that timed out and took the
+	// lock's file away removes its own and not the next holder's (host.js
+	// writes the same, and checks it the same way)
+	holder := fmt.Sprintf(`{"pid":%d,"token":%d-%d}`, os.Getpid(), time.Now().UnixNano(), authLockSeq.Add(1))
 	start := time.Now()
 	for {
 		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			f.Close()
-			return func() { os.Remove(lock) }
+			_, werr := f.WriteString(holder)
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				os.Remove(lock)
+				return func() {}
+			}
+			return func() {
+				if b, err := os.ReadFile(lock); err == nil && string(b) == holder {
+					os.Remove(lock)
+				}
+			}
 		}
 		if !os.IsExist(err) && !os.IsPermission(err) {
 			return func() {} // no folder to lock in: no file to change either
 		}
 		if fi, err := os.Stat(lock); err == nil && time.Since(fi.ModTime()) > authLockStale || time.Since(start) > 2*authLockStale {
-			os.Remove(lock)
+			// a holder gone or too long at it; one written meanwhile (its
+			// holder's new token) stays
+			if b, err := os.ReadFile(lock); err == nil {
+				if now, err := os.ReadFile(lock); err == nil && string(now) == string(b) {
+					os.Remove(lock)
+				}
+			}
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// authLockSeq makes each lockAuth holder's token its own, within one
+// process; the pid and a time are the rest.
+var authLockSeq atomic.Uint64
 
 func listPath() string { return filepath.Join(settings.Dir(), "plugins.json") }
 
@@ -359,6 +384,34 @@ var gitSpec = lazyre.New(`^(?:(?:github|gitlab|bitbucket):|git\+[a-z]+://|git://
 // package.json, not by spec.
 func IsGit(spec string) bool { return !IsPath(spec) && gitSpec.MatchString(spec) }
 
+// repoSegment is one part of a repository's owner/repo: letters, digits,
+// -, _ and . only, and not . or .., so a spec can't put a query, a
+// fragment, a drive or a path of its own into the URL built from it.
+func repoSegment(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// repoPath is "owner/repo" of s, the first two of its / parts, when both
+// are repoSegment; "" otherwise.
+func repoPath(s string) string {
+	p := strings.Split(strings.Trim(s, "/"), "/")
+	if len(p) < 2 || !repoSegment(p[0]) || !repoSegment(p[1]) {
+		return ""
+	}
+	return p[0] + "/" + p[1]
+}
+
 // gitName is the package bun installed from the git spec: the dependency
 // of plugins/package.json bun added it as (it keeps spec as given), ""
 // when there is none.
@@ -408,7 +461,21 @@ func Target(spec string) string {
 		}
 		return p
 	}
-	return filepath.Join(Dir(), "node_modules", filepath.FromSlash(Name(spec)))
+	root := filepath.Join(Dir(), "node_modules")
+	base := filepath.FromSlash(Name(spec))
+	at := filepath.Join(root, base)
+	// a package's own name comes from its package.json, which a git
+	// repository writes: one with .. or an absolute path in it must not
+	// name a folder outside node_modules (a folder Bun made under it is
+	// its base name, still inside)
+	if rel, err := filepath.Rel(root, at); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		safe := filepath.Base(base)
+		if safe == "" || safe == "." || safe == ".." || safe == string(filepath.Separator) {
+			safe = ".owl-invalid-name"
+		}
+		at = filepath.Join(root, safe)
+	}
+	return at
 }
 
 // Add installs a plugin and adds it to the list, in place of one of the
@@ -427,8 +494,16 @@ func Add(ctx context.Context, spec string) (Entry, error) {
 }
 
 // AddExact is Add of a spec that is a package's own (another computer's
-// plugins.json), installed as written, never taken for a name.
-func AddExact(ctx context.Context, spec string) (Entry, error) { return add(ctx, spec, "") }
+// plugins.json), installed as written, never taken for a name. A retired
+// package is turned away as Add does, unless the move of a user's own
+// accounts onto it (KeepWithdrawn) is what asks.
+func AddExact(ctx context.Context, spec string) (Entry, error) {
+	spec = strings.TrimSpace(spec)
+	if err := RefuseWithdrawn(ctx, spec); err != nil {
+		return Entry{}, err
+	}
+	return add(ctx, spec, "")
+}
 
 // add is Add, an npm package installed at the version given when there is
 // one (installAt), its spec kept as given.
@@ -456,6 +531,19 @@ func add(ctx context.Context, spec, version string) (Entry, error) {
 		}
 		if Name(spec) == spec {
 			return Entry{}, fmt.Errorf("bun installed %s but plugins/package.json doesn't list it", spec)
+		}
+		// the package's own name is known only once it is installed: a
+		// repository under a retired package's name is taken out again,
+		// not listed (H39)
+		if err := RefuseWithdrawn(ctx, Name(spec)); err != nil {
+			if bun, berr := Bun(ctx); berr == nil {
+				_ = removeDep(ctx, bun, Name(spec))
+			} else {
+				installMu.Lock()
+				_ = dropDeps(Name(spec))
+				installMu.Unlock()
+			}
+			return Entry{}, err
 		}
 	} else {
 		if !pkgName.MatchString(Name(spec)) {

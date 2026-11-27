@@ -1539,17 +1539,23 @@ func RetagLoadedCodexThreadsBut(home, from, to string, keep func(id string) bool
 			if err != nil {
 				fail(err)
 			} else {
+				failed := false
 				for _, id := range ids {
 					res, err := tx.Exec(`UPDATE threads SET model_provider = ? WHERE id = ? AND model_provider = ?`, to, id, from)
 					if err != nil {
 						fail(err)
+						failed = true
 						break
 					}
 					if c, _ := res.RowsAffected(); c > 0 {
 						moved = append(moved, id)
 					}
 				}
-				if err := tx.Commit(); err != nil {
+				if failed {
+					if err := tx.Rollback(); err != nil {
+						fail(err)
+					}
+				} else if err := tx.Commit(); err != nil {
 					fail(err)
 				}
 			}

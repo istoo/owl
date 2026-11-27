@@ -101,7 +101,7 @@ func withCaller(next http.Handler) http.Handler {
 			writeError(w, protoOfPath(r.URL.Path), http.StatusLoopDetected, "this request went round owls that are each other's Remote owl "+strconv.Itoa(c.hops)+" times: on one of them, turn off or remove the Remote owl provider that points back")
 			return
 		}
-		ctx := context.WithValue(r.Context(), callerCtx{}, c)
+		ctx := withBodyRoom(context.WithValue(r.Context(), callerCtx{}, c))
 		if searchingFrom(r) {
 			// another owl's search: only the model itself searches
 			ctx = context.WithValue(ctx, searchingKey{}, true)

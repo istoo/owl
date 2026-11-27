@@ -516,12 +516,9 @@ func Delete(agent, id string) (Trashed, error) {
 		m := moved{From: p, Name: strconv.Itoa(i) + "-" + filepath.Base(p)}
 		t.Size += sizeOf(p)
 		if err := move(p, filepath.Join(dir, "files", m.Name)); err != nil {
-			// what was moved goes back, and the session stays as it was
-			for _, back := range t.Items {
-				move(filepath.Join(dir, "files", back.Name), back.From)
-			}
-			os.RemoveAll(dir)
-			return Trashed{}, err
+			// what was moved goes back, and the session stays as it was;
+			// anything that can't go back stays here with a note of it
+			return Trashed{}, undoDelete(dir, t, err)
 		}
 		t.Items = append(t.Items, m)
 		// the note is kept as it grows, so a crash leaves it naming
@@ -529,7 +526,7 @@ func Delete(agent, id string) (Trashed, error) {
 		writeManifest(dir, t)
 	}
 	if err := writeManifest(dir, t); err != nil {
-		return Trashed{}, err
+		return Trashed{}, undoDelete(dir, t, err)
 	}
 	for _, f := range fs {
 		delete(cache, f.path)
@@ -714,6 +711,40 @@ func writeManifest(dir string, t Trashed) error {
 	return os.Rename(tmp, filepath.Join(dir, manifest))
 }
 
+// undoDelete is Delete's way back after a move or its note failed. It
+// records what the trash holds first, puts back what it moved, and removes
+// the trash folder only when every file is back. A copy it couldn't put
+// back is the only one left, so it stays in the folder with a note naming
+// it, and the error says that too.
+func undoDelete(dir string, t Trashed, cause error) error {
+	noteErr := writeManifest(dir, t)
+	left, backErr := rollbackMoves(dir, t.Items)
+	if backErr == nil {
+		if err := os.RemoveAll(dir); err != nil {
+			cause = errors.Join(cause, fmt.Errorf("removing the trash folder: %w", err))
+		}
+		return errors.Join(cause, noteErr)
+	}
+	t.Items = left
+	if err := writeManifest(dir, t); err != nil {
+		backErr = errors.Join(backErr, fmt.Errorf("the note of what is left: %w", err))
+	}
+	return errors.Join(cause, noteErr, backErr)
+}
+
+// rollbackMoves puts each moved item back, answering the ones that are
+// still in dir/files and why.
+func rollbackMoves(dir string, items []moved) (left []moved, err error) {
+	var errs []error
+	for _, m := range items {
+		if e := move(filepath.Join(dir, "files", m.Name), m.From); e != nil {
+			left = append(left, m)
+			errs = append(errs, fmt.Errorf("putting %s back: %w", m.From, e))
+		}
+	}
+	return left, errors.Join(errs...)
+}
+
 // move renames a file or folder, or copies it and then removes it when the
 // two are on different volumes.
 func move(from, to string) error {
@@ -827,6 +858,10 @@ func Purge(key string) error {
 	if !isGatewayKey(key) && ownOff() {
 		return ErrNotRead
 	}
+	// the same order Delete takes them: a scan or another change is not
+	// reading the store while this one moves or erases what it lists
+	storeMu.Lock()
+	defer storeMu.Unlock()
 	mu.Lock()
 	defer mu.Unlock()
 	for _, p := range []string{filepath.Dir(dir), dir} {
@@ -856,6 +891,8 @@ func Restore(key string) (Trashed, error) {
 	if !isGatewayKey(key) && ownOff() {
 		return Trashed{}, ErrNotRead
 	}
+	storeMu.Lock()
+	defer storeMu.Unlock()
 	mu.Lock()
 	defer mu.Unlock()
 	if isGatewayKey(key) {
@@ -876,11 +913,18 @@ func Restore(key string) (Trashed, error) {
 		return t, nil
 	}
 	for _, m := range t.Items {
+		if m.Name == "." || m.Name == ".." || m.Name != filepath.Base(m.Name) || m.Name == "" {
+			return Trashed{}, errors.New("the trash note is damaged")
+		}
+	}
+	// a note is a file owl wrote, but one tampered with must not move
+	// a file out of the agents' own folders to anywhere it names
+	if !restorablePaths(t.Agent, t.Items, t.Forgot) {
+		return Trashed{}, errors.New("the trash note is damaged")
+	}
+	for _, m := range t.Items {
 		if _, err := os.Lstat(m.From); err == nil {
 			return Trashed{}, fmt.Errorf("%s is there again; nothing was restored", m.From)
-		}
-		if m.Name != filepath.Base(m.Name) || m.Name == "" {
-			return Trashed{}, errors.New("the trash note is damaged")
 		}
 	}
 	for i, m := range t.Items {
@@ -900,6 +944,342 @@ func Restore(key string) (Trashed, error) {
 	os.RemoveAll(dir)
 	wslRelistNow(t.Items)
 	return t, nil
+}
+
+// sessionLayout is a folder an agent's own listing reads sessions from,
+// and the shape a session's paths have below it. The relative path is
+// checked against that shape, so a config folder's other files (Codex's
+// config.toml, a Claude folder's settings.json) are no session file, while
+// a copy kept in another folder or a subagent in another project folder is.
+type sessionLayout struct {
+	root string
+	ok   func(rel []string) bool
+}
+
+// holds says dest, resolved through any links of its parents, is one of
+// this layout's session paths.
+func (l sessionLayout) holds(dest string) bool {
+	r, ok := canonicalPath(l.root)
+	if !ok {
+		return false
+	}
+	rel, err := filepath.Rel(r, dest)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return l.ok(strings.Split(filepath.ToSlash(rel), "/"))
+}
+
+// restorablePaths says every path in a non-gateway trash note has the
+// shape a session of that agent really has, under a folder its own listing
+// reads (an external folder the user set included). The comparison is of
+// the path below that folder, never of a piece of the home folder, and
+// symlinked parents are resolved first. A path that can't be read is
+// refused, which keeps its copy in the trash: Restore moves nothing until
+// all of them are known.
+func restorablePaths(agent string, items []moved, forgot bool) bool {
+	if len(items) == 0 {
+		// only a forgotten agent's session moves no file; any other note
+		// with none would have Restore remove a folder it never emptied
+		return forgot
+	}
+	layouts := agentSessionLayouts(agent)
+	if len(layouts) == 0 {
+		return false
+	}
+	for _, m := range items {
+		p := m.From
+		if p == "" || !filepath.IsAbs(p) || filepath.Clean(p) != p || p == string(filepath.Separator) {
+			return false
+		}
+		for _, part := range strings.Split(filepath.ToSlash(p), "/") {
+			if part == ".." {
+				return false
+			}
+		}
+		dest, ok := canonicalPath(p)
+		if !ok {
+			return false
+		}
+		found := false
+		for _, l := range layouts {
+			if l.holds(dest) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// sessionName says name is a session's own file or folder: its id, with
+// the .jsonl such a file ends in.
+func sessionName(name string) bool {
+	return safeID.MatchString(strings.TrimSuffix(name, ".jsonl"))
+}
+
+// claudeLayout is a Claude Code folder: projects/<project>/<id>.jsonl and
+// the session's folder beside it, with the file history, environment and
+// todos it keeps by the id (a copy kept in this or another Claude folder
+// has the same shape, under its own id).
+func claudeLayout(rel []string) bool {
+	if len(rel) < 2 {
+		return false
+	}
+	switch rel[0] {
+	case "projects":
+		return len(rel) >= 3 && sessionName(rel[2])
+	case "file-history", "session-env":
+		return safeID.MatchString(rel[1])
+	case "todos":
+		return len(rel) == 2 && strings.HasSuffix(rel[1], ".json") &&
+			safeID.MatchString(strings.TrimSuffix(rel[1], ".json"))
+	}
+	return false
+}
+
+// projectsLayout is Qoder's, which writes Claude Code's projects folder
+// without the files Claude keeps by the id.
+func projectsLayout(rel []string) bool {
+	return len(rel) >= 3 && rel[0] == "projects" && sessionName(rel[2])
+}
+
+// buddyLayout is WorkBuddy's, CodeBuddy's and WorkBuddy AI's: sessions at
+// any depth under projects/, their subagents' under a session's own folder.
+func buddyLayout(rel []string) bool {
+	return len(rel) >= 2 && rel[0] == "projects"
+}
+
+// codexLayout is Codex's: a rollout, plain or compressed, under sessions/
+// or archived_sessions/, in a folder by day.
+func codexLayout(rel []string) bool {
+	if len(rel) < 2 || (rel[0] != "sessions" && rel[0] != "archived_sessions") {
+		return false
+	}
+	return rolloutName.MatchString(rel[len(rel)-1])
+}
+
+// droidLayout is Droid's: a transcript, its .settings.json beside it, or
+// the session's own folder, under sessions/, at any depth.
+func droidLayout(rel []string) bool {
+	if len(rel) < 2 || rel[0] != "sessions" {
+		return false
+	}
+	n := rel[len(rel)-1]
+	for _, suf := range []string{".settings.json", ".jsonl"} {
+		if b, ok := strings.CutSuffix(n, suf); ok {
+			return safeID.MatchString(b)
+		}
+	}
+	return safeID.MatchString(n) // the folder beside a transcript
+}
+
+// dshLayout is dsh's: a session's folder (a subagent's may be in another
+// project's folder) and the listing's cached row by its id.
+func dshLayout(rel []string) bool {
+	if len(rel) >= 3 && rel[0] == "sessions" {
+		return true
+	}
+	return len(rel) == 4 && rel[0] == "storages" && rel[1] == "session_projcache" &&
+		rel[2] == "sessions" && strings.HasSuffix(rel[3], ".json")
+}
+
+// agyLayout is agy's: a conversation's brain folder, its database with the
+// journal files beside it, and its annotations.
+func agyLayout(rel []string) bool {
+	if len(rel) < 2 {
+		return false
+	}
+	switch rel[0] {
+	case "brain":
+		return safeID.MatchString(rel[1])
+	case "conversations":
+		if len(rel) != 2 {
+			return false
+		}
+		n := rel[1]
+		for _, suf := range []string{"-wal", "-shm", "-journal"} {
+			n = strings.TrimSuffix(n, suf)
+		}
+		b, ok := strings.CutSuffix(n, ".db")
+		return ok && safeID.MatchString(b)
+	case "annotations":
+		return len(rel) == 2 && strings.HasSuffix(rel[1], ".pbtxt") &&
+			safeID.MatchString(strings.TrimSuffix(rel[1], ".pbtxt"))
+	}
+	return false
+}
+
+// cursorChatsLayout is a Cursor CLI chat's folder under chats/.
+func cursorChatsLayout(rel []string) bool {
+	return len(rel) >= 3 && rel[0] == "chats" && sessionName(rel[2])
+}
+
+// cursorTranscriptsLayout is the transcripts Cursor writes of a chat under
+// projects/<project>/agent-transcripts/.
+func cursorTranscriptsLayout(rel []string) bool {
+	if len(rel) < 4 || rel[0] != "projects" || rel[2] != "agent-transcripts" {
+		return false
+	}
+	n := strings.TrimSuffix(strings.TrimSuffix(rel[3], ".jsonl"), ".txt")
+	return safeID.MatchString(n)
+}
+
+// piSessionName is a Pi session file's name: <time>_<id>.jsonl, or the
+// session.jsonl pi-subagents writes inside a session's folder.
+func piSessionName(n string) bool { return n == "session.jsonl" || piFileID(n) != "" }
+
+// piLayout is Pi's sessions/ folder: <project>/<time>_<id>.jsonl and what
+// is under that file's own folder.
+func piLayout(rel []string) bool {
+	return len(rel) >= 3 && rel[0] == "sessions" && piSessionName(rel[len(rel)-1])
+}
+
+// piCustomLayout is a folder Pi was told to keep sessions in: a session
+// file at its top, or a subagent's at any depth below.
+func piCustomLayout(rel []string) bool {
+	return len(rel) >= 1 && piSessionName(rel[len(rel)-1])
+}
+
+// raftLayout is Raft's: the Pi sessions of each agent under
+// agents/<agent>/.pi-sessions or .builtin-sessions.
+func raftLayout(rel []string) bool {
+	if len(rel) < 4 || rel[0] != "agents" {
+		return false
+	}
+	if rel[2] != ".pi-sessions" && rel[2] != ".builtin-sessions" {
+		return false
+	}
+	return piSessionName(rel[len(rel)-1])
+}
+
+// cindyLayout is Cindy's sessions folder: a session file at its top, or a
+// subagent's under a session's folder.
+func cindyLayout(rel []string) bool {
+	return len(rel) >= 1 && piSessionName(rel[len(rel)-1])
+}
+
+// ompLayout is an omp sessions folder: <project>/<time>_<id>.jsonl, the
+// session's own folder beside it, and what is under that folder.
+func ompLayout(rel []string) bool {
+	if len(rel) < 2 {
+		return false
+	}
+	n := rel[len(rel)-1]
+	if strings.HasSuffix(n, ".jsonl") {
+		return true
+	}
+	_, id, ok := strings.Cut(strings.TrimSuffix(n, ".jsonl"), "_")
+	return ok && id != ""
+}
+
+// agentSessionLayouts are the folders the agent's own listing reads, each
+// with its session path shape, by the same functions that list them (so an
+// external folder the user set is here), and the agent's folder in each
+// WSL distro whose sessions can be deleted.
+func agentSessionLayouts(agent string) []sessionLayout {
+	var out []sessionLayout
+	add := func(root string, ok func([]string) bool) {
+		if root != "" {
+			out = append(out, sessionLayout{root, ok})
+		}
+	}
+	switch agent {
+	case "claude":
+		for _, d := range ClaudeDirs() {
+			add(d, claudeLayout)
+		}
+	case "qoder", "qoder-cn":
+		add(QoderDir(agent), projectsLayout)
+	case "workbuddy":
+		add(WorkBuddyDir(), buddyLayout)
+	case "workbuddy-ai":
+		add(WorkBuddyAIDir(), buddyLayout)
+	case "codebuddy":
+		add(CodeBuddyDir(), buddyLayout)
+	case "codex":
+		for _, d := range CodexDirs() {
+			add(d, codexLayout)
+		}
+	case "pi":
+		add(PiDir(), piLayout)
+		add(piSessionDir(), piCustomLayout)
+		add(piSubagentSessionDir(PiDir()), piCustomLayout)
+	case "raft":
+		add(SlockDir(), raftLayout)
+	case "cindy":
+		for _, d := range cindySessionDirs() {
+			add(d, cindyLayout)
+		}
+	case "omp":
+		for _, d := range ompSessionRoots() {
+			add(d, ompLayout)
+		}
+	case "cursor":
+		add(CursorDir(), cursorChatsLayout)
+		add(cursorDataDir(), cursorTranscriptsLayout)
+	case "dsh":
+		add(DshDir(), dshLayout)
+	case "droid":
+		add(FactoryDir(), droidLayout)
+	case "agy":
+		add(AgyDir(), agyLayout)
+	}
+	if WSLHomes != nil {
+		for _, h := range WSLHomes() {
+			switch agent {
+			case "claude":
+				add(filepath.Join(h.Home, ".claude"), claudeLayout)
+			case "codex":
+				add(filepath.Join(h.Home, ".codex"), codexLayout)
+			case "pi":
+				add(filepath.Join(h.Home, ".pi", "agent"), piLayout)
+			case "raft":
+				add(filepath.Join(h.Home, ".slock"), raftLayout)
+			case "omp":
+				add(filepath.Join(h.Home, ".omp", "agent"), ompLayout)
+				profiles, _ := filepath.Glob(filepath.Join(h.Home, ".omp", "profiles", "*", "agent", "sessions"))
+				for _, p := range profiles {
+					add(p, ompLayout)
+				}
+			case "agy":
+				add(filepath.Join(h.Home, ".gemini", "antigravity-cli"), agyLayout)
+			}
+		}
+	}
+	return out
+}
+
+// canonicalPath is p with the links of every folder that exists resolved;
+// the part that doesn't exist yet is kept as named (Restore puts a file
+// back where it was, so it is usually absent).
+func canonicalPath(p string) (string, bool) {
+	if p == "" {
+		return "", false
+	}
+	cur, rest := filepath.Clean(p), ""
+	for {
+		// 只有确实不存在的路径才能按原名补回。现有链接若已断开，不能跳过它再猜目标。
+		if _, err := os.Lstat(cur); err == nil {
+			r, err := filepath.EvalSymlinks(cur)
+			if err != nil {
+				return "", false
+			}
+			return filepath.Join(r, rest), true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", false
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // claudeDirOf is the Claude Code folder a session file at path is kept in

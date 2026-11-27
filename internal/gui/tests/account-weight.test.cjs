@@ -29,7 +29,11 @@ const claude = () => ({
   accountWeights: { "max@example.com": 3 },
 });
 
-function serve(lang, web, posts) {
+// a promise the test resolves; the allowance's answer waits on it, so the
+// editor's second draw can be waited for instead of raced
+const defer = () => { let done; const promise = new Promise((r) => { done = r; }); return { promise, done }; };
+
+function serve(lang, web, posts, allowance = null) {
   const p = claude();
   const providers = { providers: [p], presets: [], excluded: [], gateway: { running: true, window: true } };
   return async (route) => {
@@ -41,10 +45,13 @@ function serve(lang, web, posts) {
     if (url.pathname === "/api/providers") return json(providers);
     if (url.pathname === "/api/groups") return json({ groups: [] });
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
-    if (url.pathname === "/api/login/usage") return json({
-      "max@example.com": { windows: [{ label: "5h", used: 10, limit: 100 }] },
-      "pro@example.com": { windows: [{ label: "5h", used: 30, limit: 100 }] },
-    });
+    if (url.pathname === "/api/login/usage") {
+      if (allowance) await allowance;
+      return json({
+        "max@example.com": { windows: [{ label: "5h", used: 10, limit: 100 }] },
+        "pro@example.com": { windows: [{ label: "5h", used: 30, limit: 100 }] },
+      });
+    }
     if (url.pathname === "/api/provider/accountweight" && route.request().method() === "POST") {
       const body = route.request().postDataJSON();
       posts.push(body);
@@ -75,10 +82,24 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       const posts = [];
-      await page.route("**/*", serve(lang, web, posts));
+      const allowance = defer();
+      const answered = page.waitForResponse((r) => r.url().includes("/api/login/usage"));
+      await page.route("**/*", serve(lang, web, posts, allowance.promise));
       await page.goto("http://owl.test/?view=providers");
       await page.locator(".row.provider", { hasText: "Claude Code" }).first().click();
-      await page.locator('.editor .acc[data-account-id="off@example.com"]').waitFor();
+      const offRow = page.locator('.editor .acc[data-account-id="off@example.com"]');
+      await offRow.waitFor();
+      // the editor draws again once the accounts' allowance is in
+      // (loginUsageOf -> renderProviders(true)), replacing every row: draw
+      // the first ones, let that answer in, and wait for the rows drawn after
+      // it, so a chip a click holds is never one about to go
+      await offRow.evaluate((e) => { e.dataset.firstDraw = "1"; });
+      allowance.done();
+      await answered;
+      await page.waitForFunction(() => {
+        const e = document.querySelector('.editor .acc[data-account-id="off@example.com"]');
+        return e && e.dataset.firstDraw !== "1";
+      });
       const chip = (id) => page.locator(`.editor .acc[data-account-id="${id}"] .key-weight`);
       // what is scrolled and how far, by its place in the page: a class comes
       // and goes while a press holds the dialog (#4471)

@@ -24,8 +24,13 @@ type mcpExchangeKey struct{}
 type mcpExchange struct {
 	w         http.ResponseWriter
 	canStream bool
-	mu        sync.Mutex
-	streamed  bool
+	// key names who the request is (mcpCallerKey): a client's answer to
+	// what this exchange asked is taken only from the same caller on the
+	// same server and session (M11)
+	key string
+	mu  sync.Mutex
+	// streamed is whether the stream has begun
+	streamed bool
 }
 
 // send writes m as one event of the stream, beginning it.
@@ -44,15 +49,32 @@ func (x *mcpExchange) send(m any) {
 	http.NewResponseController(x.w).Flush()
 }
 
+// mcpAsked is a request made of a client, waiting for its answer: ch, and
+// key, who may answer it (mcpCallerKey).
+type mcpAsked struct {
+	ch  chan mcpMessage
+	key string
+}
+
 // clientAsked are the requests made of clients, by id, each waiting for its answer.
-var clientAsked sync.Map // string(id) -> chan mcpMessage
+var clientAsked sync.Map // string(id) -> mcpAsked
 
 // clientAnswered hands a client's answer to the request it is of; one of
-// nothing asked is let be.
-func clientAnswered(m mcpMessage) {
-	if ch, ok := clientAsked.LoadAndDelete(string(m.ID)); ok {
-		ch.(chan mcpMessage) <- m
+// nothing asked is let be. An answer from another caller, server or
+// session than the request was made to is not it, and is dropped (M11).
+func clientAnswered(m mcpMessage, key string) {
+	v, ok := clientAsked.Load(string(m.ID))
+	if !ok {
+		return
 	}
+	a, _ := v.(mcpAsked)
+	if a.key != key {
+		return
+	}
+	if _, ok := clientAsked.LoadAndDelete(string(m.ID)); !ok {
+		return // another answer took it first
+	}
+	a.ch <- m
 }
 
 var errCantAsk = errors.New("the client takes no event stream back")
@@ -66,7 +88,7 @@ func askClient(ctx context.Context, method string, params any, wait time.Duratio
 	}
 	id, _ := json.Marshal("owl-" + rand.Text())
 	ch := make(chan mcpMessage, 1)
-	clientAsked.Store(string(id), ch)
+	clientAsked.Store(string(id), mcpAsked{ch: ch, key: x.key})
 	defer clientAsked.Delete(string(id))
 	req := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id), "method": method}
 	if params != nil {

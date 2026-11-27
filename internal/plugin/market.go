@@ -464,6 +464,16 @@ func person(v any) string {
 }
 
 // repoURL is a package.json repository as a web address.
+// httpURL is u when it is an http(s) URL, "" for any other: a package's
+// homepage is shown as a link, and one of another scheme is not one.
+func httpURL(u string) string {
+	p, err := url.Parse(strings.TrimSpace(u))
+	if err != nil || p.Host == "" || p.Scheme != "http" && p.Scheme != "https" {
+		return ""
+	}
+	return p.String()
+}
+
 func repoURL(v any) string {
 	s, _ := v.(string)
 	if m, ok := v.(map[string]any); ok {
@@ -548,7 +558,7 @@ func npmAsk(ctx context.Context, name string) (NPM, error) {
 
 // npmOf is what a version's package.json says, as NPM has it.
 func npmOf(l npmLatest) NPM {
-	info := NPM{Version: l.Version, Description: l.Description, Homepage: l.Homepage}
+	info := NPM{Version: l.Version, Description: l.Description, Homepage: httpURL(l.Homepage)}
 	info.License, _ = l.License.(string)
 	info.Repository = repoURL(l.Repository)
 	info.Publisher = person(l.Author)
@@ -656,7 +666,7 @@ func searchNPM(ctx context.Context, text string, keep func(string, []string) boo
 		}
 		out = append(out, Hit{Package: p.Name, NPM: NPM{
 			Version: p.Version, Description: p.Description, Publisher: p.Publisher.Username, License: p.License,
-			Homepage: p.Links.Homepage, Repository: repoURL(p.Links.Repository), Weekly: o.Downloads.Weekly,
+			Homepage: httpURL(p.Links.Homepage), Repository: repoURL(p.Links.Repository), Weekly: o.Downloads.Weekly,
 		}})
 	}
 	return out, nil

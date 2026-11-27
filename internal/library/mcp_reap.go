@@ -49,6 +49,21 @@ func unused(dropped []*Server, all []*Target) []*Server {
 			held[launchKey(s)] = true
 		}
 	}
+	// a server a project gives its agents runs there too: the project's
+	// own files were read above as a target's, but one only a project
+	// names would otherwise be ended under it (#H30)
+	if l, err := load(); err == nil {
+		for _, p := range l.Projects {
+			for name, agents := range p.Servers {
+				if len(agents) == 0 {
+					continue
+				}
+				if s := l.server(name); s != nil {
+					held[launchKey(s)] = true
+				}
+			}
+		}
+	}
 	var out []*Server
 	for _, s := range dropped {
 		k := launchKey(s)
@@ -99,10 +114,45 @@ func launchedBy(s *Server) func(string) bool {
 		}
 		before := w[:len(w)-len(args)]
 		if len(args) == 0 {
-			return progName(before[len(before)-1]) == name
+			// the command is where a command line starts, or where a
+			// wrapper's own command begins: never its last word, which is
+			// another program's argument (vim /path/my-mcp, #H30)
+			at := commandAt(w)
+			return at >= 0 && at < len(w) && progName(w[at]) == name
 		}
 		return slices.ContainsFunc(before, func(x string) bool { return progName(x) == name })
 	}
+}
+
+// commandAt is where the command a line runs begins: at its first word,
+// or past a shell wrapper's flags (cmd /d /s /c "npx …", sh -c "…",
+// powershell -Command "…"); -1 for a wrapper with no command after it.
+func commandAt(w []string) int {
+	if len(w) == 0 {
+		return -1
+	}
+	after := func(flags ...string) int {
+		for i := 1; i < len(w); i++ {
+			for _, f := range flags {
+				if strings.EqualFold(w[i], f) {
+					if i+1 < len(w) {
+						return i + 1
+					}
+					return -1
+				}
+			}
+		}
+		return -1
+	}
+	switch progName(w[0]) {
+	case "cmd":
+		return after("/c", "/k")
+	case "sh", "bash", "zsh", "dash", "fish", "ksh":
+		return after("-c")
+	case "powershell", "pwsh":
+		return after("-command", "-c")
+	}
+	return 0
 }
 
 // words is a command line split at spaces, its quotes dropped.

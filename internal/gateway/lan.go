@@ -712,9 +712,13 @@ func ownCallback(r *http.Request) bool {
 	// while the owl this one took the gateway over from finishes, a
 	// token this one doesn't have may be one of that one's runs: it is
 	// passed on there (forwardCallback), and that owl judges it as it
-	// would its own
+	// would its own. Only this computer's own request goes on: the
+	// Claude Code helper runs here (local, or ownAddress for the
+	// non-loopback OWL_ADDR it may be told), so another machine's
+	// request with a made-up token can't use the handover window to
+	// reach the owl before this one past lanGuard (#M5)
 	if forwarding() {
-		return true
+		return local(r) || ownAddress(r)
 	}
 	callbacks.Lock()
 	defer callbacks.Unlock()

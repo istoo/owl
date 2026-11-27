@@ -58,6 +58,7 @@ import (
 	"time"
 
 	"github.com/istoo/owl/internal/access"
+	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/gwbudget"
 	"github.com/istoo/owl/internal/provider"
 	"github.com/istoo/owl/internal/settings"
@@ -225,38 +226,60 @@ func Forget() {
 
 // Append writes rec to usage.jsonl and, for a key's call, counts it
 // against the key's window. The two happen together so a window read from
-// the file meanwhile counts the call once.
-func Append(rec usage.Record) {
+// the file meanwhile counts the call once; a record the log didn't take is
+// not counted here either, and the error says why.
+func Append(rec usage.Record) error {
 	if rec.CallerKeyID == "" {
-		usage.Append(rec)
-		return
+		return usage.Append(rec)
 	}
 	state.Lock()
 	defer state.Unlock()
 	if rec.Time.IsZero() {
 		rec.Time = time.Now()
 	}
-	usage.Append(rec)
+	if err := usage.Append(rec); err != nil {
+		return err
+	}
 	if !counts(rec) {
-		return
+		return nil
 	}
 	var cost func(usage.Record) (float64, bool)
+	ver := usage.PriceVersion()
 	// the call counts for its key, and for the key that one was issued under
 	for _, id := range []string{rec.CallerKeyID, rec.CallerIssuerID} {
+		if id == "" {
+			continue
+		}
 		kept := state.sums[slot(id)]
-		if id == "" || len(kept) == 0 {
+		if len(kept) == 0 {
+			continue
+		}
+		// a sum read at prices that have changed since is not this call's
+		// to add to: its total would mix two price lists. Drop it, so the
+		// next read of the window costs the whole window at today's prices.
+		fresh := kept[:0]
+		for _, s := range kept {
+			if s.ver == ver {
+				fresh = append(fresh, s)
+			}
+		}
+		if len(fresh) != len(kept) {
+			state.sums[slot(id)] = fresh
+		}
+		if len(fresh) == 0 {
 			continue
 		}
 		if cost == nil {
 			cost = usage.NewCoster()
 		}
 		c, ok := cost(rec)
-		for _, s := range kept {
+		for _, s := range fresh {
 			if !rec.Time.Before(s.start) && s.counts(rec) {
 				s.add(rec, c, ok)
 			}
 		}
 	}
+	return nil
 }
 
 // Status is a key's limit and what it has used of it.
@@ -835,19 +858,34 @@ func windowsOf(keyID string, all []*access.Limit, allStarts, allResets []time.Ti
 	return ls, starts, resets, ss
 }
 
-// priceOf is the input price per token of model when it names its
-// provider ("provider/model").
+// priceOf is the input price per token of model: "provider/model", or a
+// bare model id a provider the user has configured serves, so the first
+// concurrent call of a key's bare model reserves a cost too rather than
+// nothing at all.
 func priceOf(model string) (float64, bool) {
-	p, m, ok := strings.Cut(model, "/")
-	if !ok || p == "" || m == "" {
-		return 0, false
+	s := settings.Load()
+	if p, m, ok := strings.Cut(model, "/"); ok {
+		if p == "" || m == "" {
+			return 0, false
+		}
+		pr, ok := provider.EffectivePriceIn(s, p, m)
+		if !ok {
+			return 0, false
+		}
+		// the call is made now, at this hour's price (Price.In)
+		return pr.In(time.Now()).Input / 1e6, true
 	}
-	pr, ok := provider.EffectivePriceIn(settings.Load(), p, m)
-	if !ok {
-		return 0, false
+	// no provider named: take the first configured one that prices it
+	for _, p := range provider.All() {
+		if pr, ok := provider.EffectivePriceIn(s, p.ID, model); ok {
+			return pr.In(time.Now()).Input / 1e6, true
+		}
 	}
-	// the call is made now, at this hour's price (Price.In)
-	return pr.In(time.Now()).Input / 1e6, true
+	// and the maker's own list price, for a provider not configured here
+	if pr, ok := catalog.MakerPriced(nil, model); ok {
+		return pr.In(time.Now()).Input / 1e6, true
+	}
+	return 0, false
 }
 
 // ModelOf is the model a JSON request body names, "" for none.

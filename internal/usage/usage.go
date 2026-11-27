@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"log"
 	"maps"
 	"math"
 	"os"
@@ -320,40 +322,62 @@ var mu sync.Mutex
 // reads the gateway's calls from its index instead.
 var loads int
 
-// Append writes one record. Errors are swallowed: accounting must never
-// break a call.
-func Append(r Record) {
+// Append writes one record and says whether it reached the log. A caller
+// that also keeps the call in memory (budget's windows) counts it only
+// when this is nil; the gateway may ignore it, since accounting must never
+// break a call, and the one log line here is how a failed write is seen.
+// The line carries the error and the log's own path only, never the call.
+func Append(r Record) (err error) {
+	defer func() {
+		if err != nil {
+			log.Printf("usage: the call wasn't written: %v", err)
+		}
+	}()
 	if r.Time.IsZero() {
 		r.Time = Clock()
 	}
-	if !r.IsProbe() { // owl's own test is no call to export
-		observeLedger(r)
-	}
-	defer codexUsedNew(r)
-	defer spentNew(r)
 	b, err := json.Marshal(r)
 	if err != nil {
-		return
+		return err
 	}
 	mu.Lock()
-	defer mu.Unlock()
 	path := Path()
-	f, before := openLog(path)
-	if f == nil {
-		return
-	}
-	if !holdLog {
-		defer f.Close()
+	f, before, err := openLog(path)
+	if err != nil {
+		mu.Unlock()
+		return err
 	}
 	if _, err := f.Write(append(b, '\n')); err != nil {
 		if holdLog {
 			f.Close()
 			heldLog.f = nil
+		} else if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, cerr)
 		}
-		return
+		mu.Unlock()
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	after, _ := statLogHandle(f)
+	if !holdLog {
+		// Windows: the file is closed here, and a close that failed may
+		// have lost what was written. The index is told of the write only
+		// when the close says it is on disk.
+		if err := f.Close(); err != nil {
+			mu.Unlock()
+			return fmt.Errorf("closing %s: %w", path, err)
+		}
+	}
 	noteLogAppend(path, before, after)
+	mu.Unlock()
+	// the record is on disk: only now does it reach the exporters and the
+	// in-memory sums, so a write that failed leaves neither counting a
+	// call nobody can read back
+	if !r.IsProbe() { // owl's own test is no call to export
+		observeLedger(r)
+	}
+	codexUsedNew(r)
+	spentNew(r)
+	return nil
 }
 
 // heldLog is the log Append keeps open between calls, under mu: every
@@ -369,9 +393,9 @@ var heldLog struct {
 
 const holdLog = runtime.GOOS != "windows"
 
-// openLog returns the log to append to and its state before the write,
-// or nil when it can't be opened.
-func openLog(path string) (*os.File, os.FileInfo) {
+// openLog returns the log to append to, its state before the write, and
+// why it can't be opened.
+func openLog(path string) (*os.File, os.FileInfo, error) {
 	if f := heldLog.f; f != nil {
 		heldLog.f = nil
 		if heldLog.path == path {
@@ -379,7 +403,7 @@ func openLog(path string) (*os.File, os.FileInfo) {
 			now, nerr := statLogFile(path)
 			if err == nil && nerr == nil && sameLogFile(before, now) {
 				heldLog.f = f
-				return f, before
+				return f, before, nil
 			}
 		}
 		f.Close()
@@ -387,17 +411,20 @@ func openLog(path string) (*os.File, os.FileInfo) {
 	// the folder is made only when it is missing: every request appends,
 	// and MkdirAll stat'ed it each time (#3725)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if errors.Is(err, fs.ErrNotExist) && os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+	if errors.Is(err, fs.ErrNotExist) {
+		if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
+			return nil, nil, fmt.Errorf("creating %s: %w", filepath.Dir(path), merr)
+		}
 		f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	}
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 	before, _ := statLogHandle(f)
 	if holdLog {
 		heldLog.path, heldLog.f = path, f
 	}
-	return f, before
+	return f, before, nil
 }
 
 // IsRejected also recognizes local rejections written before the explicit flag.
@@ -1284,6 +1311,9 @@ func listedVias(lists *viaLists, counted map[string]viaAcc) *viaLists {
 // Saw notes a request from an agent arriving now.
 func Saw(agent string) { seen.Store(agent, time.Now()) }
 
+// lastSeenTail is how much of the log's end LastSeen reads.
+const lastSeenTail = 256 << 10
+
 // LastSeen is when a request from the agent last reached the gateway: this
 // process's own, else the newest in the log's last stretch. Zero if none.
 func LastSeen(agent string) time.Time {
@@ -1298,13 +1328,26 @@ func LastSeen(agent string) time.Time {
 		return last
 	}
 	defer f.Close()
-	const tail = 256 << 10
+	const tail = lastSeenTail
+	partial := false
 	if st, err := f.Stat(); err == nil && st.Size() > tail {
-		f.Seek(st.Size()-tail, 0)
+		at := st.Size() - tail
+		if _, err := f.Seek(at, io.SeekStart); err == nil {
+			// the seek may land in the middle of a line: only then is the
+			// first line read a fragment. At a line's start it is whole.
+			var prev [1]byte
+			if _, err := f.ReadAt(prev[:], at-1); err != nil || prev[0] != '\n' {
+				partial = true
+			}
+		}
 	}
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	sc.Buffer(make([]byte, 64<<10), 8<<20)
 	for sc.Scan() {
+		if partial {
+			partial = false
+			continue // the rest of a line begun before the seek
+		}
 		var r Record
 		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Agent == agent && r.Via == "" && !r.IsProbe() && r.Time.After(last) {
 			last = r.Time

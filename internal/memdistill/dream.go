@@ -79,6 +79,17 @@ func Dream(ctx context.Context, auto string, complete Complete) ([]memory.Change
 		return nil, ErrRunning
 	}
 	defer unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	stopMu.Lock()
+	stop = cancel
+	stopped.Store(false)
+	stopMu.Unlock()
+	defer func() {
+		stopMu.Lock()
+		stop = nil
+		stopMu.Unlock()
+		cancel()
+	}()
 	st, err := Load()
 	if err != nil {
 		return nil, err
@@ -92,6 +103,11 @@ func Dream(ctx context.Context, auto string, complete Complete) ([]memory.Change
 	if err == nil {
 		plan.Before = now().Add(-Unreviewed)
 		cs, err = memory.Tidy(plan)
+	}
+	if err != nil && stopped.Load() && errors.Is(err, context.Canceled) {
+		// Stop ends the tidy: nothing changed and nothing is kept as a
+		// failure to try again from
+		return nil, nil
 	}
 	_, serr := change(func(s *State) {
 		if err != nil {
@@ -110,6 +126,13 @@ func Undo() (int, error) {
 		return 0, ErrRunning
 	}
 	defer running.Unlock()
+	// the tidy run lock is across owls too: a Dream in another process
+	// writes the same memory and state files
+	unlock, held := filelock.Lock(Path()+".run", 0)
+	if !held {
+		return 0, ErrRunning
+	}
+	defer unlock()
 	st, err := Load()
 	if err != nil || st.Undone || len(st.Changes) == 0 {
 		return 0, err

@@ -56,20 +56,89 @@ const (
 
 // MovedMark is the file owl writes in a folder it moved its files into. It
 // is what tells uninstall that the folder behind a link is owl's, not one
-// the user pointed the link at by hand (#H48).
+// the user pointed the link at by hand (#H48). Its content names the part
+// and the folder it belongs to, so a file of that name that isn't this
+// move's, or that sits elsewhere, is not taken as an owner's.
 const MovedMark = ".owl-moved"
 
-// MovedOwns says whether dir is a folder owl moved its files into: it holds
-// the marker Move writes. A folder without it is never deleted through a
-// link; only the link goes, and its files stay.
-func MovedOwns(dir string) bool {
-	fi, err := os.Stat(filepath.Join(dir, MovedMark))
-	return err == nil && fi.Mode().IsRegular()
+const (
+	movedFormat  = "owl-moved"
+	movedVersion = 1
+)
+
+// movedMarkFile is the marker's content.
+type movedMarkFile struct {
+	Format  string `json:"format"`
+	Version int    `json:"version"`
+	Part    string `json:"part"` // config or cache
+	Root    string `json:"root"` // the folder holding both, absolute
 }
 
-// markMoved writes the marker into dir, after a move into it succeeded.
-func markMoved(dir string) error {
-	return os.WriteFile(filepath.Join(dir, MovedMark), []byte("owl's files are kept here\n"), 0o600)
+// MovedOwns says whether dir is a folder owl moved its files into: its
+// marker is a regular file (not a link) whose content names dir as the
+// root's config or cache. Anything else is not ownership, and the folder
+// is never deleted through a link; only the link goes, and its files stay.
+func MovedOwns(dir string) bool {
+	p := filepath.Join(dir, MovedMark)
+	fi, err := os.Lstat(p)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	if di, err := os.Stat(abs); err != nil || !di.IsDir() {
+		return false
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	var m movedMarkFile
+	if json.Unmarshal(b, &m) != nil || m.Format != movedFormat || m.Version != movedVersion {
+		return false
+	}
+	part := filepath.Base(abs)
+	return (part == "config" || part == "cache") && m.Part == part &&
+		filepath.Clean(m.Root) == filepath.Dir(abs)
+}
+
+// markMoved writes the marker into dir, after a move into it succeeded. It
+// never writes over a file already there (O_EXCL, so a link is not
+// followed): a marker it didn't make is left as it is, and uninstall then
+// does not treat the folder as owl's.
+func markMoved(dir, root string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(abs) != filepath.Clean(root) {
+		return fmt.Errorf("%s is not under %s", abs, root)
+	}
+	part := filepath.Base(abs)
+	b, err := json.Marshal(movedMarkFile{
+		Format: movedFormat, Version: movedVersion,
+		Part: part, Root: filepath.Dir(abs),
+	})
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(abs, MovedMark)
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(append(b, '\n'))
+	cerr := f.Close()
+	if werr != nil || cerr != nil {
+		os.Remove(p) // the file this call made
+		if werr != nil {
+			return werr
+		}
+		return cerr
+	}
+	return nil
 }
 
 // Place is where owl's folders are.
@@ -304,7 +373,7 @@ func Move(root string) error {
 		// both folders are owl's now: the marker is what lets uninstall
 		// delete them through the links, and only them (#H48)
 		for _, d := range []string{cfgTo, cacheTo} {
-			if err := markMoved(d); err != nil {
+			if err := markMoved(d, root); err != nil {
 				log.Printf("appdir: couldn't mark %s as owl's: %v", d, err)
 			}
 		}

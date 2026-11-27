@@ -292,38 +292,69 @@ func SetDesktopIsolated(home string, on bool) (string, error) {
 		if app == "" {
 			return "", ErrDesktopNoApp
 		}
+		// undo holds what a step leaves behind, in the order it was done:
+		// a step that fails puts all of it back, so a half-made Claude
+		// Owl is never left with the user's Desktop shrunk to it (#4133)
+		var undo []func()
+		fail := func(e error) (string, error) {
+			for i := len(undo) - 1; i >= 0; i-- {
+				undo[i]()
+			}
+			return "", e
+		}
+		claudeOn, claudeChosen := desktopIsolatedClaudeOn(), desktopIsolatedClaudeChosen()
+		had3p, hadClaude := isDir(iso.dir3p), isDir(desktopIsolatedClaudeDir(home))
 		if err := desktopIsoClaudeDefault(iso); err != nil {
 			return "", err
 		}
+		if desktopIsolatedClaudeOn() != claudeOn || desktopIsolatedClaudeChosen() != claudeChosen {
+			undo = append(undo, func() { _ = saveDesktopIsolatedClaude(claudeOn, claudeChosen) })
+		}
+		if !had3p {
+			undo = append(undo, func() { _ = os.RemoveAll(iso.dir3p) })
+		}
 		if err := os.MkdirAll(iso.dir3p, 0o755); err != nil {
-			return "", err
+			return fail(err)
 		}
 		if desktopIsolatedClaudeOn() {
 			if err := desktopIsoClaudeMake(home); err != nil {
-				return "", err
+				return fail(err)
+			}
+			if !hadClaude {
+				undo = append(undo, func() { _ = os.RemoveAll(desktopIsolatedClaudeDir(home)) })
 			}
 		}
 		p, err := desktopIsoAdd(home, app, iso.dir3p, desktopIsoClaudeArg(home))
 		if err != nil {
-			return "", err
+			return fail(err)
 		}
+		undo = append(undo, func() { _, _ = desktopiso.Remove(home) })
 		if desktopWiredAny(usual) && !desktopWired(iso) {
 			desktopAdoptStash(usual)
 			if src := desktopLocaleFrom(usual); src != "" {
 				iso.app = src
 			}
 			if err := desktopOn(iso); err != nil {
-				return "", err
+				return fail(err)
 			}
+			undo = append(undo, func() { _ = desktopOff(iso) })
+			// the user's own is put back on owl too if a later step fails,
+			// as it was before this move (some of it may already be off)
+			undo = append(undo, func() {
+				for _, u := range usual {
+					_ = desktopOn(u)
+				}
+			})
 			for _, u := range usual {
 				if err := desktopOff(u); err != nil {
-					return "", err
+					return fail(err)
 				}
 			}
 			stash(map[string]string{desktopIsolatedFrom: "1"})
+			undo = append(undo, func() { forget(desktopIsolatedFrom) })
 		}
 		if err := saveDesktopIsolated(true); err != nil {
-			return "", err
+			return fail(err)
 		}
 		desktopClaudeSync(home)
 		return p, nil

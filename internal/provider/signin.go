@@ -106,10 +106,14 @@ type signInFlow struct {
 	state    string
 	redirect string
 	srv      *http.Server
-	stop     func()           // ends an agent's own login command, when that is the sign-in
-	site     string           // where to sign in, for an agent with more than one (ZCode: "zai" or "bigmodel")
-	plugin   string           // a plugin's sign-in session, finished with the code pasted back
-	claude   *claudeCLISignIn // Claude Code's own sign-in, run by owl
+	stop     func() // ends an agent's own login command, when that is the sign-in
+	site     string // where to sign in, for an agent with more than one (ZCode: "zai" or "bigmodel")
+	plugin   string // a plugin's sign-in session, finished with the code pasted back
+	// pluginCtx is that sign-in's lifetime: the waiting callback and a code
+	// pasted back both run on it, so canceling the sign-in ends either
+	// (#H9/M23)
+	pluginCtx context.Context
+	claude    *claudeCLISignIn // Claude Code's own sign-in, run by owl
 	// pluginPorts are where a plugin's browser sign-in comes back to on
 	// this machine, for its address pasted (pluginsignin_paste.go)
 	pluginPorts []string

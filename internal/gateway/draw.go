@@ -709,7 +709,6 @@ func (s *Server) images(edit bool) http.HandlerFunc {
 			writeError(w, provider.Chat, code, msg)
 			s.record(call)
 		}
-		named := d.Model != "" // a gateway key's models hold one the caller names (#882)
 		if d.Model == "" {
 			m, ok := drawer()
 			if !ok {
@@ -740,7 +739,14 @@ func (s *Server) images(edit bool) http.HandlerFunc {
 			r = heldByGroup(r, g) // held to the group's accounts, if it is
 		}
 		keyWho, keyHeld := keyHolds(r)
-		if named && (isGroup && !groupGiven(r, keyWho, keyHeld, g, ms) || keyHeld && !isGroup && !modelAllowed(keyWho, p, model)) {
+		// the model the default fell back to is judged as one the caller
+		// named is (#882): a key held to some models, or to an account of
+		// its group, is not let past by a request that omits model (H3).
+		// The default is owl's pick, not the caller's, but it is the model
+		// that serves the caller's request; the key's models are a budget
+		// of their own, not overridden by it (owlChose is for calls the
+		// caller never asked for)
+		if isGroup && !groupGiven(r, keyWho, keyHeld, g, ms) || keyHeld && !isGroup && !modelAllowed(keyWho, p, model) {
 			fail(keyModelRefusal(w, keyWho, d.Model))
 			return
 		}

@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -135,6 +136,49 @@ func TestDeleteRestoreClaude(t *testing.T) {
 	}
 	if _, err := Restore("claude/../../x"); err == nil {
 		t.Fatal("a key out of the trash")
+	}
+}
+
+// A trash note is a file owl wrote, but one tampered with must not move a
+// session's file anywhere it names: only an absolute, cleaned path inside
+// the folders agents keep sessions in is put back.
+func TestRestoreRefusesTamperedNote(t *testing.T) {
+	manageSetup(t)
+	tr, err := Delete("claude", mgCC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(TrashDir(), tr.Key, manifest)
+	orig := append([]moved(nil), tr.Items...)
+	write := func(from, name string) {
+		t.Helper()
+		var cur Trashed
+		b, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(b, &cur) != nil {
+			t.Fatal("the note can't be read")
+		}
+		cur.Items = append([]moved(nil), orig...)
+		cur.Items[0].From, cur.Items[0].Name = from, name
+		if b, err := json.Marshal(cur); err != nil {
+			t.Fatal(err)
+		} else if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "outside.jsonl")
+	for _, c := range []struct{ from, name string }{
+		{orig[0].From, ".."},
+		{"relative/file.jsonl", orig[0].Name},
+		{orig[0].From + "/../../etc/passwd", orig[0].Name},
+		{outside, orig[0].Name},
+	} {
+		write(c.from, c.name)
+		if _, err := Restore(tr.Key); err == nil {
+			t.Fatalf("a note naming %q %q was restored", c.from, c.name)
+		}
+	}
+	if _, err := os.Stat(outside); err == nil {
+		t.Fatal("a tampered note made a file outside the agent's folders")
 	}
 }
 

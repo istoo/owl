@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/istoo/owl/internal/access"
-	"github.com/istoo/owl/internal/budget"
 	"github.com/istoo/owl/internal/netproxy"
 	"github.com/istoo/owl/internal/provider"
 )
@@ -645,7 +644,7 @@ func (t *chatTurn) read(c chatPageCall) map[string]any {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return failed("read_url reads only http:// and https:// URLs, not " + raw)
 	}
-	release, refused := budget.Reserve(access.Caller(t.r.Context()), int64(len(raw)), "", limitClock())
+	release, refused := reserveFor(access.Caller(t.r.Context()), int64(len(raw)), "", limitClock())
 	if refused != nil {
 		return failed(refused.Error())
 	}

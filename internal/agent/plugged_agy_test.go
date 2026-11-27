@@ -248,7 +248,7 @@ func TestAgyPlugin(t *testing.T) {
 	if a.Typed() != "agy" || !strings.HasPrefix(a.Notice(), "Type agy in a new terminal: owl added it to ~/") {
 		t.Fatalf("typed %q, notice %q", a.Typed(), a.Notice())
 	}
-	if want := "GEMINI_API_KEY=" + gateway.TokenFor("agy") + " GOOGLE_GEMINI_BASE_URL=" + gateway.URL() + " agy --settings " + posixQuote(over) + " --model 'owl/deepseek/pro'"; a.Launch() != want {
+	if want := "GEMINI_API_KEY=" + posixQuote(gateway.TokenFor("agy")) + " GOOGLE_GEMINI_BASE_URL=" + posixQuote(gateway.URL()) + " agy --settings " + posixQuote(over) + " --model " + posixQuote("owl/deepseek/pro"); a.Launch() != want {
 		t.Fatalf("launch %q, want %q", a.Launch(), want)
 	}
 	// another of owl's models

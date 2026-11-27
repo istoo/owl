@@ -69,16 +69,35 @@ func keyLimited(next http.Handler) http.Handler {
 			// no body: the model is named in the query
 			size, model = 0, strings.TrimSpace(r.URL.Query().Get("model"))
 		} else if enc := r.Header.Get("Content-Encoding"); costCap || scoped || size < 0 || (enc != "" && !strings.EqualFold(enc, "identity")) {
-			// a turn on Codex's own path reads to its own limit (codexBackend)
-			var most int64
-			if strings.HasPrefix(r.URL.Path, CodexPath+"/") {
-				most = codexBodyLimit()
+			// the most the route itself reads of its body: a small
+			// endpoint's own limit, not the gateway's 512 MiB (L1)
+			most := keyBodyLimit(r.URL.Path)
+			ctx := r.Context()
+			// a declared body takes its room before it is read, as it
+			// does on every route (requestBody)
+			if n := r.ContentLength; n > 0 && n <= most {
+				if err := bodyRoom.take(ctx, n); err != nil {
+					w.Header().Set("Connection", "close")
+					writeError(w, protoOfPath(r.URL.Path), http.StatusServiceUnavailable, err.Error())
+					return
+				}
 			}
-			b, status, err := readBoundedRequestBody(w, r, requestLimits{body: most})
+			// a body of unknown length, and a compressed body's decoded
+			// size, takes room as it is read, not once it is all held: a
+			// body nobody has declared a size for must not grow without
+			// its room (L1)
+			b, status, err := readBoundedRequestBodyRoom(w, r, requestLimits{body: most},
+				func(n int64) error { return bodyRoom.take(ctx, n) })
 			if err != nil {
 				writeError(w, protoOfPath(r.URL.Path), status, err.Error())
 				return
 			}
+			if err := bodyRoom.take(ctx, int64(len(b))); err != nil {
+				writeError(w, protoOfPath(r.URL.Path), http.StatusServiceUnavailable, err.Error())
+				return
+			}
+			// the body is read again by the route that serves it, and
+			// held there; this copy only finds its size and model
 			r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(b)), int64(len(b))
 			size, model = int64(len(b)), budget.ModelOf(b)
 		}
@@ -115,6 +134,32 @@ func keyLimited(next http.Handler) http.Handler {
 		defer release()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// keyBodyLimit is the most keyLimited reads of the body a request to
+// path will carry: what the route itself reads, so a small endpoint's
+// limit holds here too and the gateway's 512 MiB isn't read and held for
+// a body the route would turn away (L1). A path not listed reads what
+// requestBody reads, defaultBodyLimit.
+func keyBodyLimit(path string) int64 {
+	switch {
+	case strings.HasPrefix(path, CodexPath+"/"):
+		// a turn on Codex's own path reads to its own limit (codexBackend)
+		return codexBodyLimit()
+	case path == "/v1/owl/usage/requests":
+		return ingestMaxBody // usageIngest reads at most this
+	case path == "/v1/systemone":
+		return maxSystemOneBody // serveSystemOne reads at most this
+	case strings.HasPrefix(path, AdminPath):
+		return adminBodyMost // the management API reads at most this
+	case path == ChatPagePath+"/anthropic/v1/messages":
+		return 256 << 20 // chatMessages reads at most this
+	case path == ChatPagePath+"/anthropic/v1/files":
+		return chatFileMax + (1 << 20) // chatFileUpload's
+	case path == ChatPagePath+"/v1/tools/asr":
+		return 30 << 20 // chatASR's
+	}
+	return defaultBodyLimit
 }
 
 // geminiURLModel is the model of a Gemini API path,

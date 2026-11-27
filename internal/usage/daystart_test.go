@@ -106,3 +106,39 @@ func TestDayStartsAfterMidnight(t *testing.T) {
 	run(4)
 	run(0)
 }
+
+// A page of this computer's own zone is cached under its logical day: a
+// change to dayStart that leaves that day's name the same must still throw
+// the page away, or the heatmap and Today keep the old boundary.
+func TestDayStartChangeRefreshesLocalCaches(t *testing.T) {
+	pageHome(t)
+	loc := time.Local
+	holdClock(t, time.Date(2026, 9, 30, 1, 30, 0, 0, loc))
+	Append(Record{Agent: "claude", Provider: "openai", Model: "m", Input: 10, Status: 200})
+	holdClock(t, time.Date(2026, 9, 30, 4, 30, 0, 0, loc))
+	Append(Record{Agent: "claude", Provider: "openai", Model: "m", Input: 10, Status: 200})
+	holdClock(t, time.Date(2026, 9, 30, 12, 0, 0, 0, loc))
+	days := func() map[string]int {
+		out := map[string]int{}
+		for _, d := range HeatmapOf(Filter{}).Days {
+			out[d.Date] = d.Calls
+		}
+		return out
+	}
+	startAt(t, 0)
+	if got := days(); got["2026-09-30"] != 2 {
+		t.Fatalf("start 0: %v", got)
+	}
+	// 01:30 is now the day before, but "today" is still 2026-09-30
+	startAt(t, 4)
+	if got := days(); got["2026-09-29"] != 1 || got["2026-09-30"] != 1 {
+		t.Fatalf("start 4: %v", got)
+	}
+	if got := QueryPage(Today, Filter{}, 0, 10).Total; got != 1 {
+		t.Fatalf("start 4: Today has %d calls, want 1", got)
+	}
+	startAt(t, 0)
+	if got := QueryPage(Today, Filter{}, 0, 10).Total; got != 2 {
+		t.Fatalf("back to start 0: Today has %d calls, want 2", got)
+	}
+}

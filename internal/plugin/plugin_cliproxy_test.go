@@ -78,6 +78,22 @@ func TestPluginNodeTakesTheProxy(t *testing.T) {
 	}
 }
 
+func TestHostProxyValueUsesOneSpelling(t *testing.T) {
+	for _, tc := range []struct {
+		env  []string
+		want string
+	}{
+		{[]string{"Https_Proxy=mixed"}, "mixed"},
+		{[]string{"HTTPS_PROXY=upper", "https_proxy="}, "upper"},
+		{[]string{"https_proxy=lower", "HTTPS_PROXY="}, "lower"},
+		{[]string{"HTTPS_PROXY=upper", "https_proxy=lower", "Https_Proxy=mixed"}, "upper"},
+	} {
+		if got := hostProxyValue(tc.env, "HTTPS_PROXY"); got != tc.want {
+			t.Errorf("代理选择 %q，期望 %q", got, tc.want)
+		}
+	}
+}
+
 // #1363 (iamyhzhao): Grok, moved onto its plugin, read as signed out
 // after nearly every restart of the computer, until moved back to the
 // built-in and on again. owl, started at login, started the plugin

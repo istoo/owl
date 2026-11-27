@@ -200,8 +200,6 @@ func TestMaskedTranslatedBodyIsStable(t *testing.T) {
 	}
 }
 
-// maskedGolden is the sha256 and length of the normalized Chat body an
-// upstream was sent for claudeCodeRequest(4) under masking, recorded on
-// the code before the request was parsed and masked once, and the length
-// of the body itself.
-const maskedGolden = "4c107bdcfbb4aaa6bdc6657dfdba1b5ff98188dda949594449d888d6d39dec57 29649 29754"
+// 以 e29029645 的规范化 Chat 正文为基线；四次工具调用的 api_key
+// 从通用 SECRET 改用 API_KEY 策略，其余字节不变。依次为摘要、规范化长度、原长度。
+const maskedGolden = "77e72c530bb5ebcc5217ece2c9949482ba55a56182a8b6e18a104a910fb8a7bd 29653 29758"

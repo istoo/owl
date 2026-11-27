@@ -118,7 +118,7 @@ func searchCmd(args []string) error {
 		fmt.Println(searchUsage)
 		return nil
 	case "add", "set":
-		if len(args) < 2 {
+		if len(args) < 2 || flagValue(args[1]) {
 			return fmt.Errorf("owl search add <api> <key> [url=<address>]")
 		}
 		a := provider.SearchAPI{Vendor: strings.ToLower(args[1])}
@@ -126,6 +126,9 @@ func searchCmd(args []string) error {
 		// nothing after it puts the vendor's own back
 		urlGiven := false
 		for _, v := range args[2:] {
+			if flagValue(v) {
+				return fmt.Errorf("owl search add <api> <key> [url=<address>] [pick=turns|order]")
+			}
 			if u, ok := strings.CutPrefix(v, "url="); ok {
 				a.URL, urlGiven = u, true
 			} else if p, ok := strings.CutPrefix(v, "pick="); ok {

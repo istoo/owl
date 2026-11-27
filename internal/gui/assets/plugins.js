@@ -1745,7 +1745,9 @@
     main.append(facts);
     const links = el("div", "pm-links");
     const link = (label, href) => {
-      if (!href) return;
+      // a market's homepage or repository is opened only as an http(s)
+      // address, never a javascript: or data: one (C5)
+      if (!href || !/^https?:\/\//i.test(href)) return;
       const a = el("a", "pm-link");
       a.href = href;
       a.append(el("span", "", label), glyph(OUTL, 11, 1.5));

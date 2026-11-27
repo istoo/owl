@@ -215,8 +215,10 @@ func gitSource(spec string) (gh, remote, ref string) {
 	}
 	if gh != "" {
 		gh = strings.TrimSuffix(strings.Trim(gh, "/"), ".git")
-		if p := strings.Split(gh, "/"); len(p) >= 2 && p[0] != "" && p[1] != "" {
-			gh, remote = p[0]+"/"+p[1], ""
+		// owner and repo are GitHub's own letters only: one with ? or #
+		// would put a query or a fragment of the spec into the API URL
+		if r := repoPath(gh); r != "" {
+			gh, remote = r, ""
 		} else {
 			gh = ""
 		}

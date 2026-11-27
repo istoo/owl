@@ -112,6 +112,12 @@ func record(id, key, v string) {
 // which read as changed outside owl, and the drift kept the row up
 // among the connected ones while it said Not connected (#834).
 func (a *Agent) Apply(key, v string) error {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
+	return a.apply(key, v)
+}
+
+func (a *Agent) apply(key, v string) error {
 	if a.Native != nil {
 		return a.Native.Apply(key, v)
 	}
@@ -491,6 +497,12 @@ func orDefault(v string) string {
 // catches. A replaced field brings back the others owl set with it.
 // Either way the record is renewed, so a use before now no longer counts.
 func (a *Agent) Reapply() error {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
+	return a.reapply()
+}
+
+func (a *Agent) reapply() error {
 	if a.Native != nil {
 		return a.Native.Connect()
 	}
@@ -501,12 +513,12 @@ func (a *Agent) Reapply() error {
 	if d != nil && d.Kind == "replaced" {
 		rec := appliedOf(a.ID)
 		// the model first: the others (an effort) are checked against it
-		if err := a.Apply(d.Field, d.Want); err != nil {
+		if err := a.apply(d.Field, d.Want); err != nil {
 			return err
 		}
 		for _, f := range a.Fields {
 			if v, ok := rec.Fields[f.Key]; ok && f.Key != d.Field && f.Get() != v {
-				if err := a.Apply(f.Key, v); err != nil {
+				if err := a.apply(f.Key, v); err != nil {
 					return err
 				}
 			}
@@ -520,7 +532,7 @@ func (a *Agent) Reapply() error {
 		// left out, Reconnect set the tiers again and never the gateway
 		// Check found off (dumplings on Discord)
 		if v := vals[f.Key]; v != "" && (d != nil && f.Key == d.Field || v == owlID || owlValue(a, f, v, vals)) {
-			if err := a.Apply(f.Key, v); err != nil {
+			if err := a.apply(f.Key, v); err != nil {
 				return err
 			}
 		}
@@ -620,12 +632,18 @@ func (a *Agent) Wired() bool {
 // model picked in owl in one click, both): the agent gets owl's whole
 // list, and Disconnect puts back what it had before.
 func (a *Agent) Pick(key, v string) error {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
+	return a.pick(key, v)
+}
+
+func (a *Agent) pick(key, v string) error {
 	if a.Native != nil {
 		value, err := a.Spell(key, v)
 		if err != nil {
 			return err
 		}
-		return a.Apply(key, value)
+		return a.apply(key, value)
 	}
 	// the user's own setting never connects the agent to owl
 	if f := a.Field(key); f != nil && !f.Own && !a.Wired() {
@@ -637,7 +655,7 @@ func (a *Agent) Pick(key, v string) error {
 			}
 		}
 	}
-	return a.Apply(key, v)
+	return a.apply(key, v)
 }
 
 // Connect puts owl into the agent's config, the Agents page's switch
@@ -713,7 +731,13 @@ func (a *Agent) rewired(err error) {
 
 // ConnectHow is Connect, saying how the model was chosen.
 func (a *Agent) ConnectHow() (c Connection, err error) {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
 	defer func() { a.rewired(err) }()
+	return a.connectHow()
+}
+
+func (a *Agent) connectHow() (Connection, error) {
 	if a.Native != nil {
 		return Connection{How: "joined"}, a.Native.Connect()
 	}
@@ -824,7 +848,7 @@ func (a *Agent) connect() (Connection, error) {
 	sameRank, alikeRank := -1, -1
 	for _, o := range opts {
 		if o.Value == owlID {
-			if err := a.Apply(f.Key, owlID); err != nil {
+			if err := a.apply(f.Key, owlID); err != nil {
 				return Connection{}, err
 			}
 			// an app whose picker gets owl's models as listed for it
@@ -897,7 +921,7 @@ func (a *Agent) connect() (Connection, error) {
 	if pick == "" {
 		return Connection{}, fmt.Errorf("owl has no models %s can use: add a subscription or a provider first", a.Name)
 	}
-	return Connection{How: how, Field: f.Key, Value: pick}, a.Apply(f.Key, pick)
+	return Connection{How: how, Field: f.Key, Value: pick}, a.apply(f.Key, pick)
 }
 
 // connectWas is the model an agent is on before it is connected, as a
@@ -926,6 +950,12 @@ func connectWas(v string, opts []Option) string {
 // each one owl set that reads as owl set it (an effort). What owl
 // remembered setting is forgotten.
 func (a *Agent) Disconnect() (err error) {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
+	return a.disconnect()
+}
+
+func (a *Agent) disconnect() (err error) {
 	defer func() { a.rewired(err) }()
 	if a.Native != nil {
 		plan, err := a.Native.Disconnect()
@@ -953,6 +983,10 @@ func (a *Agent) Disconnect() (err error) {
 	}()
 	// the user's own say over a harness Kiro Crew's connect put on
 	kiroCrewUserLeft(a.ID)
+	// read once and taken out only after every write below has gone
+	// through: a Disconnect that fails part way leaves the originals
+	// stashed for the next try (#4258)
+	peeked := peek(a.ID + ".connect.was")
 	before, rec := a.Values(), appliedOf(a.ID)
 	if a.Unwire != nil {
 		if err := a.Unwire(); err != nil {
@@ -977,7 +1011,7 @@ func (a *Agent) Disconnect() (err error) {
 	// a field its own Set left empty goes back to what it was on before
 	// Connect (Goose's own provider and model)
 	var was map[string]string
-	json.Unmarshal([]byte(unstash(a.ID+".connect.was")), &was)
+	json.Unmarshal([]byte(peeked[a.ID+".connect.was"]), &was)
 	after := a.Values()
 	// connected while on a provider named owl it had by hand: what it
 	// was on then is owl's route, its thinking level read off it too
@@ -1016,6 +1050,7 @@ func (a *Agent) Disconnect() (err error) {
 	}
 	b, _ := json.Marshal(back)
 	stash(map[string]string{a.ID + ".reconnect": string(b)})
+	forgetValues(peeked)
 	a.forgetSetUp()
 	return nil
 }
@@ -1098,7 +1133,7 @@ func (a *Agent) reconnect(now map[string]string) (bool, error) {
 	for _, k := range keys {
 		v := rec.Owl[k]
 		if v != a.Values()[k] {
-			if err := a.Apply(k, v); err != nil {
+			if err := a.apply(k, v); err != nil {
 				return true, err
 			}
 		} else {

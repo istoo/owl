@@ -1073,9 +1073,11 @@ func anthropicBody(r *Request, model, host string, replay bool) []byte {
 						MediaType string `json:"media_type,omitempty"`
 						Data      string `json:"data,omitempty"`
 						URL       string `json:"url,omitempty"`
-					}{Type: "base64", MediaType: p.MediaType, Data: p.Data}})
+					}{Type: "base64", MediaType: p.MediaType, Data: p.Data}, CacheControl: partMark(p.cache)})
 				} else {
-					rest = append(rest, aBlock{Type: "text", Text: attachmentText(p)})
+					// the words a file that isn't a PDF is told by keep
+					// the mark the block had, as its text does (H/M8)
+					rest = append(rest, aBlock{Type: "text", Text: attachmentText(p), CacheControl: partMark(p.cache)})
 				}
 			case Image:
 				b := imageBlock(p)
@@ -1246,7 +1248,16 @@ func anthropicBody(r *Request, model, host string, replay bool) []byte {
 			} else {
 				schema = objectSchema(schema)
 			}
-			tools = append(tools, map[string]any{"name": t.Name, "description": t.Description, "input_schema": schema})
+			tool := map[string]any{"name": t.Name, "description": t.Description, "input_schema": schema}
+			// a mark the client put on a tool is kept on it: a client
+			// that marks only its tools lost every breakpoint when the
+			// request was rebuilt (H/M8)
+			if r.clientCache != nil {
+				if m := partMark(r.clientCache.toolTTL[t.Name]); m != nil {
+					tool["cache_control"] = m
+				}
+			}
+			tools = append(tools, tool)
 		}
 		if r.System == "" && len(tools) > 0 && systemMark != nil {
 			tools[len(tools)-1]["cache_control"] = systemMark

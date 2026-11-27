@@ -8,6 +8,8 @@ supported agent: where its config lives, which fields matter and which
 values to offer. It also records what owl set, so a later change made by
 something else shows up as drift.
 
+保存、重命名和删除 Profile 都需要取得 [`profiles.json` 的跨进程写锁](../../internal/profile/profile.go)。未取得锁时不会改写已有配置。Unix 上写密钥文件会收紧已有权限，不因重写把用户设为只读的权限放宽；Windows 文件模式不代表 ACL。验证：`TestSaveRefusesWithoutTheCrossProcessLock`、`TestWriteAtomicModeNeverWidens`。
+
 ## Responsibilities and sources of truth
 
 | Part | Responsibility | Source |

@@ -198,11 +198,14 @@ func wordHits(pool []*Memory, text string) []Hit {
 func fuse(pool []*Memory, words []Hit, sims map[string]float64) []Hit {
 	bar := Near
 	for _, s := range sims {
+		if math.IsNaN(s) {
+			continue // a bad vector is no nearest: it must not poison the bar
+		}
 		bar = max(bar, s-Within)
 	}
 	near := []*Memory{}
 	for _, m := range pool {
-		if s, ok := sims[m.ID]; ok && s >= bar {
+		if s, ok := sims[m.ID]; ok && !math.IsNaN(s) && s >= bar {
 			near = append(near, m)
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/istoo/owl/internal/appdir"
@@ -76,10 +77,17 @@ func claudeDirAgents(home string) []*Agent {
 		byName[name] = dir
 		names = append(names, name)
 	}
-	// with CLAUDE_CONFIG_DIR elsewhere, the default folder is one of the others
+	// with CLAUDE_CONFIG_DIR elsewhere, the default folder is one of the
+	// others. Its name may be taken already by a ~/.claude-default, which
+	// is the same name: the folder gets the next free one, never a second
+	// row with a name that is there, and never one written over (#4133).
 	if def := filepath.Join(home, ".claude"); def != main && isDir(def) && claudeDirIsClaude(def) {
-		byName["default"] = def
-		names = append(names, "default")
+		name := "default"
+		for n := 2; byName[name] != ""; n++ {
+			name = "default-" + strconv.Itoa(n)
+		}
+		byName[name] = def
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	var out []*Agent

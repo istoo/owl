@@ -51,6 +51,19 @@ func useProxy(t *testing.T, v string) {
 	t.Cleanup(func() { settings.Save(was) })
 }
 
+// allowFetch adds entries to settings.json's fetchPrivate: a host, a
+// name:port, an address or a CIDR range.
+func allowFetch(t *testing.T, entries ...string) {
+	t.Helper()
+	was := settings.Load()
+	st := was
+	st.FetchPrivate = append(append([]string(nil), was.FetchPrivate...), entries...)
+	if err := settings.Save(st); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { settings.Save(was) })
+}
+
 // tun stands a local server in for the TUN: a direct request's dial to the
 // pinned address goes there, once the guard has said the address may be
 // dialled. It records the addresses dialled, and fails the test when the
@@ -127,6 +140,9 @@ func TestFakeIPNameGoesToALocalProxyByName(t *testing.T) {
 	fresh(t)
 	proxy, asked := fakeProxy(t, "<html><head><title>Example Domain</title></head><body><p>fetched by name</p></body></html>")
 	useProxy(t, proxy.URL)
+	// H1: the proxy resolves the name itself, so only a host the user
+	// named is handed to it (see fakeip_proxy_test.go)
+	allowFetch(t, "example.com", "loon.test")
 	answers(t, map[string][]string{
 		"example.com": {"198.18.0.7"},
 		"loon.test":   {"198.18.1.57", "fd27:712::c612:139"}, // Loon's AAAA for its own A
@@ -173,12 +189,14 @@ func TestFakeIPNameGoesToALocalProxyByName(t *testing.T) {
 }
 
 // Pure TUN, no proxy set (TomXPRIME: Windows, Clash Verge Rev, no
-// HTTPS_PROXY): the fake address is pinned and dialled, and the TUN
-// carries it. The dial guard lets that one address in, no other in the
-// range.
+// HTTPS_PROXY), for a host the user named: the fake address is pinned and
+// dialled, and the TUN carries it (H1: an un-named one is refused, see
+// TestFakeAnswerWithNoProxyNeedsANamedHost). The dial guard lets that one
+// address in, no other in the range.
 func TestFakeIPNameDialledThroughTheTUN(t *testing.T) {
 	fresh(t)
 	useProxy(t, "direct")
+	allowFetch(t, "example.com")
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("through the tun " + r.Host))
@@ -212,6 +230,7 @@ func TestFakeIPNameDialledThroughTheTUN(t *testing.T) {
 func TestFakeIPWithItsIPv6Answer(t *testing.T) {
 	fresh(t)
 	useProxy(t, "direct")
+	allowFetch(t, "example.com", "filled.test")
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("through the tun " + r.Host))
@@ -246,8 +265,9 @@ func TestFakeIPWithItsIPv6Answer(t *testing.T) {
 
 // What stays refused, with a proxy on this computer and without: a
 // private answer, a fake answer beside a private (or any real) one, a
-// fake address written as the URL, and a fake answer through a proxy
-// elsewhere. Neither the proxy nor the TUN is asked.
+// fake address written as the URL, a fake answer no name of the user's
+// vouches for (H1), and one through a proxy elsewhere. Neither the proxy
+// nor the TUN is asked.
 func TestFakeIPRefusesTheRest(t *testing.T) {
 	fresh(t)
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("reached")) }))
@@ -271,6 +291,7 @@ func TestFakeIPRefusesTheRest(t *testing.T) {
 		"fake6lo.test":  {"198.18.0.9", "fdfe:dcba:9876::7", "::1"},
 	})
 	refused := []string{
+		"http://example.com/", // a fake answer, but no name or address of the user's
 		"http://lan.test/", "http://loop.test/", "http://meta.test/latest/meta-data/", "http://cgnat.test/",
 		"http://ten.test/", "http://mixed.test/", "http://mixed6.test/", "http://mixedpub.test/",
 		"http://loonlan.test/", "http://loonbare.test/", "http://198.18.0.7/", "https://198.18.0.7/",

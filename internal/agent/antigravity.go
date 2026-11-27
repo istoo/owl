@@ -206,24 +206,34 @@ func (f agyFile) connect(ref string) error {
 // leave takes the file off owl onto v, a model of the user's own, or
 // what they had (""); a file not there is made for v only when always
 func (f agyFile) leave(v string, always bool) error {
-	if f.wired() {
+	// the originals are peeked, not taken, until every write has gone
+	// through: a write that fails leaves them stashed for the next try
+	// (#4258)
+	took := peek(f.stashGateway, f.stashModel, f.stashList, f.stashSrc)
+	used := f.wired()
+	if used {
 		// back to what the user had
-		if err := f.putRaw("gateway", unstash(f.stashGateway)); err != nil {
+		if err := f.putRaw("gateway", took[f.stashGateway]); err != nil {
 			return err
 		}
-		if err := f.putRaw(antigravityList, unstash(f.stashList)); err != nil {
+		if err := f.putRaw(antigravityList, took[f.stashList]); err != nil {
 			return err
 		}
-		if err := f.putRaw(antigravitySource, unstash(f.stashSrc)); err != nil {
+		if err := f.putRaw(antigravitySource, took[f.stashSrc]); err != nil {
 			return err
 		}
 		if v == "" {
-			if err := f.putRaw(antigravityModel, unstash(f.stashModel)); err != nil {
+			if err := f.putRaw(antigravityModel, took[f.stashModel]); err != nil {
 				return err
 			}
-			return antigravityTidy(f.path)
+			if err := antigravityTidy(f.path); err != nil {
+				return err
+			}
+			forgetValues(took)
+			return nil
 		}
-		forget(f.stashModel)
+		// the model is v's, so the stashed one is not put back; it goes
+		// with the rest once v is written
 	} else if !always && !isFile(f.path) {
 		// nothing of the user's to change, and no file to make for it
 		return nil
@@ -235,7 +245,13 @@ func (f agyFile) leave(v string, always bool) error {
 	} else if err := edit.SetJSON(f.path, edit.KV{Path: antigravityModel, Value: v}); err != nil {
 		return err
 	}
-	return antigravityTidy(f.path)
+	if err := antigravityTidy(f.path); err != nil {
+		return err
+	}
+	if used {
+		forgetValues(took)
+	}
+	return nil
 }
 
 // sync brings a wired file's gateway and catalog to the gateway's current

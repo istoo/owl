@@ -58,3 +58,25 @@ func TestNoShiftIsTheZoneItself(t *testing.T) {
 		t.Fatal("a plain zone has an offset")
 	}
 }
+
+// The written zone uses 64-bit transition times, so a span reaching past
+// 2038 keeps its daylight-saving changes instead of wrapping an int32 into
+// a bogus one (version 1's limit).
+func TestTZifPast2038(t *testing.T) {
+	loc := mustLoad(t, "America/New_York")
+	data := tzif(loc, 4, time.Date(2037, 1, 1, 0, 0, 0, 0, time.UTC))
+	sh, err := time.LoadLocationFromTZData("test", data)
+	if err != nil {
+		t.Fatalf("the zone doesn't read back: %v", err)
+	}
+	for _, d := range []time.Time{
+		time.Date(2039, time.January, 15, 12, 0, 0, 0, time.UTC),
+		time.Date(2039, time.July, 15, 12, 0, 0, 0, time.UTC),
+	} {
+		_, want := d.In(loc).Zone()
+		_, got := d.In(sh).Zone()
+		if got != want-4*3600 {
+			t.Fatalf("%s: shifted offset %d, want %d", d.Format(time.DateOnly), got, want-4*3600)
+		}
+	}
+}

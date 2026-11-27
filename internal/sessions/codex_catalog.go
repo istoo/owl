@@ -327,27 +327,42 @@ func restoreIn(path string, rows []codexCatalogRow) error {
 			have[n] = true
 		}
 	}
+	err = rs.Err()
 	rs.Close()
+	if err != nil {
+		return err
+	}
 	if !have["host_id"] || !have["thread_id"] {
 		return nil
 	}
 	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
 		return err
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(context.Background(), `ROLLBACK`)
+		}
+	}()
 	added := int64(0)
 	for _, r := range rows {
 		var cols, marks []string
 		var args []any
 		for i, c := range r.Cols {
+			if i >= len(r.Vals) {
+				break
+			}
 			if have[c] {
 				cols = append(cols, `"`+strings.ReplaceAll(c, `"`, `""`)+`"`)
 				marks = append(marks, "?")
 				args = append(args, r.Vals[i].value())
 			}
 		}
+		if len(cols) == 0 {
+			continue // no column of this row is one the table has
+		}
 		res, err := conn.ExecContext(ctx, `INSERT OR IGNORE INTO local_thread_catalog (`+strings.Join(cols, ", ")+`) VALUES (`+strings.Join(marks, ", ")+`)`, args...)
 		if err != nil {
-			conn.ExecContext(ctx, `ROLLBACK`)
 			return err
 		}
 		n, _ := res.RowsAffected()
@@ -356,8 +371,11 @@ func restoreIn(path string, rows []codexCatalogRow) error {
 	if added > 0 {
 		bumpCatalogRevision(ctx, conn)
 	}
-	_, err = conn.ExecContext(ctx, `COMMIT`)
-	return err
+	if _, err = conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // tidyCodexCatalog forgets, in each Codex folder, the catalog rows of the

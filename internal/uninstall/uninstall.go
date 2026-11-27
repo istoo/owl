@@ -274,10 +274,15 @@ func Data(r *Report) {
 		// link to a dotfiles or data folder): only the link goes, never
 		// its files (#H48).
 		if at != p && !appdir.MovedOwns(at) {
-			var lerr error
+			if keep != "" && within(keep, p) {
+				// An agent still reads the Library through this link's
+				// own path: the link and the folder it names stay, or
+				// its skills and servers go with the folder
+				r.Kept = append(r.Kept, Done{What: at, Err: "left with its link: the Library there is still used through it"})
+				continue
+			}
 			if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-				lerr = err
-				d.Err = lerr.Error()
+				d.Err = err.Error()
 				r.Data = append(r.Data, d)
 			} else {
 				r.Kept = append(r.Kept, Done{What: at, Err: "left as it is: owl didn't move its files there, so only the link was removed"})

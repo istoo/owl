@@ -1917,7 +1917,14 @@ func (d *responsesDecoder) decode(data string, emit func(Event)) error {
 			emit(Event{Kind: KStart, MsgID: ev.Response.ID, Model: ev.Response.Model})
 		}
 	case "response.output_item.added":
-		d.endCall(emit)
+		// a function_call added before its own arguments waits its turn
+		// (#3985): it is not the open call being switched away from, and
+		// closing that one first ended it early, so its later deltas
+		// went to this call's arguments (H4)
+		queued := ev.Item.Type == "function_call" && d.giving == nil
+		if !queued {
+			d.endCall(emit)
+		}
 		if ev.Item.Type == "function_call" {
 			if d.giving == nil {
 				// the call waits for its own arguments (#3985)
@@ -2465,7 +2472,10 @@ func (e *responsesEncoder) event(ev Event) {
 				if in := e.input.feed(ev.Text); in != "" {
 					e.send("response.custom_tool_call_input.delta", map[string]any{"item_id": e.itemID, "output_index": e.item, "delta": in})
 				}
-			default:
+			case !q.Search:
+				// a tool_search_call has no arguments deltas, as closeAs
+				// sends none of its done either: an orphan delta made a
+				// strict client refuse the stream (H7)
 				e.send("response.function_call_arguments.delta", map[string]any{"item_id": e.itemID, "output_index": e.item, "delta": ev.Text})
 			}
 		}

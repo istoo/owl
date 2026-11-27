@@ -992,6 +992,86 @@ func namedSecret(key, s string) bool {
 	return key != "" && len(s) >= 8 && notAVariable(s) && !timestampValue(s) && SecretName(key)
 }
 
+// namedSecretValue says v is the kind of opaque value a field named for a
+// secret carries, whatever the field is called: long enough to be one, not
+// a stand-in (${PASS}, ****) and not a moment.
+func namedSecretValue(v string) bool {
+	return len(v) >= 8 && notAVariable(v) && !timestampValue(v)
+}
+
+// wholePlaceholder says s is exactly one braced placeholder, not text that
+// merely holds one: a name would mask the text around it, but the
+// placeholder itself is already opaque.
+func wholePlaceholder(s string) bool {
+	m := placeholderRe.FindStringIndex(s)
+	return m != nil && m[0] == 0 && m[1] == len(s)
+}
+
+// maskNamedField masks a value under a field named for a secret. The rules
+// and the user's words run first, so a kind they know keeps its own Action
+// (an API_KEY set to block is blocked) and a word wins over Allow. What
+// they leave is masked by the field's name, run by run around whatever is
+// already opaque in it, so the whole value is covered and no placeholder
+// or made-up key is nested in another (H36).
+func maskNamedField(s string, o Options, put func(kind, v string) string) (string, int) {
+	if wholePlaceholder(s) {
+		return s, 0
+	}
+	t, n := mask(s, o, put, false)
+	if o.allows(s) {
+		// the user lets this value go as written; what a word masked in it
+		// stays masked, as apply's rule has it
+		return t, n
+	}
+	out, m := nameMaskRuns(t, o, put)
+	return out, n + m
+}
+
+// nameMaskRuns masks each run of t outside a placeholder or a made-up key
+// already there by the SECRET policy, leaving them whole.
+func nameMaskRuns(t string, o Options, put func(kind, v string) string) (string, int) {
+	var b strings.Builder
+	total, last := 0, 0
+	for _, p := range protectedSpans(t) {
+		if p.start < last {
+			continue // one already covered by a span before it
+		}
+		total += nameMaskRun(&b, t[last:p.start], o, put)
+		b.WriteString(t[p.start:p.end])
+		last = p.end
+	}
+	total += nameMaskRun(&b, t[last:], o, put)
+	return b.String(), total
+}
+
+// nameMaskRun masks one run of a named field's value by the SECRET policy:
+// its Action (mask, warn or block) is applied as a rule's would be, and
+// Seen is told of it.
+func nameMaskRun(b *strings.Builder, run string, o Options, put func(kind, v string) string) int {
+	if run == "" {
+		return 0
+	}
+	if !namedSecretValue(run) {
+		b.WriteString(run)
+		return 0
+	}
+	t, n := apply(run, []span{{0, len(run), "SECRET", ByRule, 0, false}}, put, o, false)
+	b.WriteString(t)
+	return n
+}
+
+// protectedSpans are where a placeholder or a made-up key already in s
+// lies, sorted by where they start.
+func protectedSpans(s string) []span {
+	var out []span
+	for _, m := range placeholderRe.FindAllStringIndex(s, -1) {
+		out = append(out, span{m[0], m[1], "", "", 0, false})
+	}
+	out = append(out, shapeSpans(s)...)
+	sort.Slice(out, func(i, j int) bool { return out[i].start < out[j].start })
+	return out
+}
+
 // MaskJSON masks the strings of a request body, and says how many values
 // it masked. A body that isn't JSON is masked as text.
 //
@@ -1047,12 +1127,22 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 		}
 	}
 	total := 0
-	var seen []string // value, placeholder, value, placeholder…
+	var seen []seenPair
+	seenAt := map[string]int{}
 	put := func(kind, v string) string {
 		p := o.put()(kind, v)
 		// kept for the signed pass below, and the walk's buffer is reused
 		// for the next value: a copy of its own
-		seen = append(seen, strings.Clone(v), p)
+		v = strings.Clone(v)
+		word := kind == "TERM"
+		if i, ok := seenAt[v]; ok {
+			if !word {
+				seen[i].word = false // a rule found it too: it is no word alone
+			}
+		} else {
+			seenAt[v] = len(seen)
+			seen = append(seen, seenPair{v, p, word})
+		}
 		return p
 	}
 	// the definitions after the rest, so a value the model found in what
@@ -1062,34 +1152,17 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 			return s
 		}
 		if o.Secrets && under(path, args) && namedSecret(key, s) {
-			// A value masked for its field's name goes through the same
-			// policy as one a rule finds: the user's Allow lets it go as
-			// written, Actions["SECRET"] may warn of it or block it, and
-			// Seen is told of it. Masked here alone it would skip all of
-			// that, and the gateway, seeing no hit, would send the body
-			// back as it came (#52).
-			if !o.allows(s) {
-				act := o.Actions["SECRET"]
-				if act != Warn && act != Block {
-					act = ""
-				}
-				h := Hit{Kind: "SECRET", By: ByRule, Action: act}
-				h.Head, h.Len = Hint(h.Kind, s)
-				if act == Warn {
-					if o.Seen != nil {
-						h.Placeholder = tag(h.Kind, s)
-						o.Seen(h)
-					}
-					return s
-				}
-				h.Placeholder = put("SECRET", s)
-				if o.Seen != nil {
-					o.Seen(h)
-				}
-				total++
-				return h.Placeholder
-			}
-			return s
+			// The rules and the user's words go first, and what they leave
+			// is masked by the field's name — the whole value, or each run
+			// of it around a placeholder or made-up key already there.
+			// Returning early on a rule's substring left the rest of a
+			// named field in clear, and masking the value whole nested one
+			// placeholder inside another (H36).
+			so := o
+			so.args = true
+			t, n := maskNamedField(s, so, put)
+			total += n
+			return t
 		}
 		if !masked(path, key, s) || under(path, defs) {
 			return s
@@ -1117,17 +1190,14 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 	if len(signed) == 0 {
 		return out, total
 	}
-	var remask *strings.Replacer
-	if len(seen) > 0 {
-		remask = replacerOf(seen)
-	}
 	out, _ = walkShared(out, func(path []byte, key, s string) string {
 		if keepIn(path, key, s, args, defs) || !under(path, signed) {
 			return s
 		}
 		t := s
-		if remask != nil {
-			if t = remask.Replace(s); t != s {
+		if len(seen) > 0 {
+			if r, changed := remaskSeen(s, seen, o.WordsWhole); changed {
+				t = r
 				total++
 			}
 		}
@@ -1137,7 +1207,12 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 		// number or an address the vendor wrote of its own can be one
 		// masked in another conversation (13800138000 is in many), and
 		// masked, its text would no longer match its signature
-		ko := Options{Secrets: o.Secrets, Route: o.Route}
+		// secrets only, as before (a number or an address the vendor
+		// wrote of its own is no secret), with the threshold and word
+		// boundaries the request was masked under: one the model alone found
+		// under this MinScore and a user's word at its boundary are judged
+		// here as they were there
+		ko := Options{Secrets: o.Secrets, Route: o.Route, MinScore: o.MinScore, WordsWhole: o.WordsWhole}
 		t, n := apply(t, sentSpans(sentKnown, t, ko, func() []span { return knownSpans(t, ko) }), o.put(), o, false)
 		total += n
 		return t
@@ -1145,24 +1220,55 @@ func MaskJSON(body []byte, o Options) ([]byte, int) {
 	return out, total
 }
 
-// replacerOf swaps each value of pairs (value, placeholder, …) for its
-// placeholder, the longest value first where two start at the same place.
-func replacerOf(pairs []string) *strings.Replacer {
-	type pair struct{ v, p string }
-	var ps []pair
-	have := map[string]bool{}
-	for i := 0; i+1 < len(pairs); i += 2 {
-		if !have[pairs[i]] {
-			have[pairs[i]] = true
-			ps = append(ps, pair{pairs[i], pairs[i+1]})
+// seenPair is a value masked in a request and the placeholder it went as,
+// and whether a user's word (ByWord) found it, whose boundary WordsWhole
+// governs.
+type seenPair struct {
+	v, p string
+	word bool
+}
+
+// remaskSeen swaps each value masked in this request for its placeholder
+// in text the vendor signed, which it wrote of the request as we sent it.
+// It is the old strings.Replacer, except that a value a user's word found
+// is replaced only where it is a whole word when the user asked for whole
+// words: replacing it inside a longer word changed text the signature is
+// over, and the vendor refused the turn (M40d). The longest value wins
+// where two start at the same place, as the replacer's order had it.
+func remaskSeen(s string, pairs []seenPair, wordsWhole bool) (string, bool) {
+	var b strings.Builder
+	changed := false
+	for i := 0; i < len(s); {
+		at, best := -1, -1
+		for k, p := range pairs {
+			if p.v == "" {
+				continue
+			}
+			for j := i; ; {
+				m := strings.Index(s[j:], p.v)
+				if m < 0 {
+					break
+				}
+				a := j + m
+				if !p.word || !wordsWhole || wholeWord(s, a, a+len(p.v)) {
+					if at < 0 || a < at || a == at && len(p.v) > len(pairs[best].v) {
+						at, best = a, k
+					}
+					break
+				}
+				j = a + 1
+			}
 		}
+		if at < 0 {
+			b.WriteString(s[i:])
+			break
+		}
+		b.WriteString(s[i:at])
+		b.WriteString(pairs[best].p)
+		changed = true
+		i = at + len(pairs[best].v)
 	}
-	sort.SliceStable(ps, func(i, j int) bool { return len(ps[i].v) > len(ps[j].v) })
-	args := make([]string, 0, 2*len(ps))
-	for _, p := range ps {
-		args = append(args, p.v, p.p)
-	}
-	return strings.NewReplacer(args...)
+	return b.String(), changed
 }
 
 // asJSON says a string under key holds JSON text of its own, so a value

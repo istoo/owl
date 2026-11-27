@@ -88,6 +88,106 @@ func TestBodyRoomWaitsForARequestToEnd(t *testing.T) {
 	}
 }
 
+// One request's body takes its room once, although a middleware hands
+// the route a context made from the request's (withCaller, keySlots,
+// withSpent): bodyRoom counts the request's mark, not the context, so a
+// large body isn't held twice and refused room it has.
+func TestBodyRoomCountsARequestOnceAcrossContexts(t *testing.T) {
+	b := roomOf(100 << 20)
+	ctx, end := context.WithCancel(context.Background())
+	defer end()
+	ctx = withBodyRoom(ctx) // withCaller's
+	child := context.WithValue(ctx, struct{ name string }{"slot"}, 1)
+	if err := b.take(ctx, 30<<20); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.take(child, 30<<20); err != nil {
+		t.Fatal(err)
+	}
+	if h := roomHeld(b); h != 30<<20 {
+		t.Fatalf("held = %d MiB, want the body's 30 once", h>>20)
+	}
+	if err := b.take(child, 40<<20); err != nil {
+		t.Fatal(err)
+	}
+	if h := roomHeld(b); h != 40<<20 {
+		t.Fatalf("held = %d MiB after a bigger read, want 40", h>>20)
+	}
+	end()
+	deadline := time.Now().Add(10 * time.Second)
+	for roomHeld(b) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("held = %d after the request ended", roomHeld(b))
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// A body already let in may grow only into the room the others leave:
+// two requests growing together are bounded, and a refusal is immediate,
+// not a wait that would leave both holding their part. Two normal growths
+// that fit are both let in.
+func TestBodyRoomBoundsGrowthToTheRoom(t *testing.T) {
+	b := roomOf(4 << 20)
+	one, endOne := context.WithCancel(context.Background())
+	two, endTwo := context.WithCancel(context.Background())
+	defer endOne()
+	defer endTwo()
+	one, two = withBodyRoom(one), withBodyRoom(two)
+	for i, ctx := range []context.Context{one, two} {
+		if err := b.take(ctx, 1<<20); err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+	}
+	// both grow to 2 MiB: 1 + 1 more + 1 more is the 4 MiB room
+	if err := b.take(one, 2<<20); err != nil {
+		t.Fatalf("first growth within the room: %v", err)
+	}
+	if err := b.take(two, 2<<20); err != nil {
+		t.Fatalf("second growth within the room: %v", err)
+	}
+	if h := roomHeld(b); h != 4<<20 {
+		t.Fatalf("held = %d MiB, want 4", h>>20)
+	}
+	// one more growth while the other holds its part: over the room, and
+	// refused at once, not queued
+	err := b.take(one, 3<<20)
+	var full *bodyFull
+	if !errors.As(err, &full) || !full.grew {
+		t.Fatalf("a growth past the room: %v", err)
+	}
+	if h := roomHeld(b); h != 4<<20 {
+		t.Fatalf("held = %d MiB after a refused growth, want 4", h>>20)
+	}
+	endOne()
+	endTwo()
+	deadline := time.Now().Add(10 * time.Second)
+	for roomHeld(b) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("held = %d after both requests ended", roomHeld(b))
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// A body alone, bigger than the room, still runs alone and may grow to
+// whatever it is: its room is not another's to wait on.
+func TestBodyRoomSoloBodyGrowsPastTheRoom(t *testing.T) {
+	b := roomOf(2 << 20)
+	ctx, end := context.WithCancel(context.Background())
+	defer end()
+	ctx = withBodyRoom(ctx)
+	if err := b.take(ctx, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.take(ctx, 3<<20); err != nil {
+		t.Fatalf("an oversized body alone grew past the room: %v", err)
+	}
+	if h := roomHeld(b); h != 3<<20 {
+		t.Fatalf("held = %d MiB, want 3", h>>20)
+	}
+}
+
 // A body bigger than the room runs alone: let in when nothing is held, and
 // it waits, rather than being refused, while something is.
 func TestBodyRoomBiggerThanTheRoomRunsAlone(t *testing.T) {

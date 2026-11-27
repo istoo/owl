@@ -37,6 +37,14 @@ func NewEncoder(w, h, qp int) (*Encoder, error) {
 	if w <= 0 || h <= 0 {
 		return nil, errors.New("h264: an empty picture")
 	}
+	// the sizes below are counted in ints (mbw*mbh*256): a picture near
+	// the limit of one would wrap and make a plane of the wrong size, or
+	// none. Level 5.2 bounds a picture at 36864 macroblocks, so this
+	// bound is above anything a valid encoder makes.
+	const maxDim = 16384
+	if w > maxDim || h > maxDim {
+		return nil, errors.New("h264: the picture is too big")
+	}
 	if qp < 0 || qp > 51 {
 		return nil, errors.New("h264: qp is 0 to 51")
 	}
@@ -84,7 +92,9 @@ func (e *Encoder) convert(img image.Image) planes {
 	p := e.newPlanes()
 	W, H := e.mbw*16, e.mbh*16
 	lw, lh := min(e.w, b.Dx()), min(e.h, b.Dy())
-	if lw == 0 || lh == 0 {
+	// a picture whose bounds run the wrong way has nothing to copy: the
+	// offset below would be before the image
+	if lw <= 0 || lh <= 0 {
 		for i := range p.y {
 			p.y[i] = 16
 		}

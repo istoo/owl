@@ -205,6 +205,18 @@ func pluginPages() []pluginPage {
 	return pages
 }
 
+// pageServiceOption is the plugin option a page's service port is moved
+// by (plugin.ServiceSpec.Option), "" when none is.
+func pageServiceOption(spec string) string {
+	pages, _ := windowParts()
+	for _, p := range pages {
+		if p.Spec == spec && p.service != nil {
+			return p.service.Option
+		}
+	}
+	return ""
+}
+
 // windowOf is a plugin that is on and adds a page or a panel to the
 // window: its package's name and the reads it declared.
 func windowOf(spec string) (name string, reads []string, ok bool) {
@@ -276,22 +288,30 @@ func ownSources(r *http.Request, path string) []string {
 	// The window that framed the page is on the address the browser used,
 	// and says so in the frame's address (pageOriginParam): the frame
 	// sends no Referer.
-	if o := browserOrigin(r); o != "" && o != "https://"+r.Host && o != "http://"+r.Host {
+	if o := browserOrigin(r, path); o != "" && o != "https://"+r.Host && o != "http://"+r.Host {
 		own = append(own, o+path)
 	}
 	return own
 }
 
-// pageOriginParam is the query a window adds to its frame's address: the
-// origin the window itself is on (pluginpages.js).
-const pageOriginParam = "_o"
+// pageOriginParam and pageOriginSigParam are what a page's or a panel's
+// address carries for a browser behind a reverse proxy: the window's own
+// origin, and its signature under this page's token. The window says its
+// origin on the authenticated /api/plugin-pages call (pageOriginQuery),
+// and the server signs it: a bare `_o` in an address is no origin at all
+// (H52).
+const (
+	pageOriginParam    = "_o"
+	pageOriginSigParam = "_s"
+	// pageOriginQuery is the window's origin on /api/plugin-pages and
+	// /api/plugin-panels, which only a signed-in /api serves.
+	pageOriginQuery = "o"
+)
 
-// browserOrigin is the scheme and host the browser reached this server
-// at, from the frame's address, or "" when it names none
-// (or anything but a plain http(s) host and port, which a policy can't be
-// trusted to carry).
-func browserOrigin(r *http.Request) string {
-	u, err := url.Parse(r.URL.Query().Get(pageOriginParam))
+// cleanBrowserOrigin is raw as an http(s) origin, or "" when it names none
+// (or anything but a plain host and port, which a policy can't carry).
+func cleanBrowserOrigin(raw string) string {
+	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.Scheme != "http" && u.Scheme != "https" {
 		return ""
 	}
@@ -301,6 +321,67 @@ func browserOrigin(r *http.Request) string {
 		}
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// windowOrigin is the origin the window said on its authenticated /api
+// call, "" when it said none.
+func windowOrigin(r *http.Request) string {
+	return cleanBrowserOrigin(r.URL.Query().Get(pageOriginQuery))
+}
+
+// pageOriginSig signs origin for a page's token, so only an address the
+// server handed out names it.
+func pageOriginSig(tok, origin string) string {
+	m := hmac.New(sha256.New, pageSecret)
+	m.Write([]byte(tok))
+	m.Write([]byte{0})
+	m.Write([]byte(origin))
+	return hex.EncodeToString(m.Sum(nil)[:16])
+}
+
+// signedPageURL is a page's address with the window's origin and its
+// signature, which its own frame then carries (pageOriginParam).
+func signedPageURL(addr, tok, origin string) string {
+	if origin == "" {
+		return addr
+	}
+	v := url.Values{}
+	v.Set(pageOriginParam, origin)
+	v.Set(pageOriginSigParam, pageOriginSig(tok, origin))
+	sep := "?"
+	if strings.Contains(addr, "?") {
+		sep = "&"
+	}
+	return addr + sep + v.Encode()
+}
+
+// pageTokenOfPath is the token of a path under pluginPagePrefix, "" when
+// it names none.
+func pageTokenOfPath(path string) string {
+	rest, ok := strings.CutPrefix(path, pluginPagePrefix)
+	if !ok {
+		return ""
+	}
+	tok, _, ok := strings.Cut(rest, "/")
+	if !ok || len(tok) != 32 {
+		return ""
+	}
+	return tok
+}
+
+// browserOrigin is the origin a page's address carries, when its
+// signature under that page's token checks out: "" otherwise, so a bare
+// `_o` never reaches a policy.
+func browserOrigin(r *http.Request, path string) string {
+	o := cleanBrowserOrigin(r.URL.Query().Get(pageOriginParam))
+	if o == "" {
+		return ""
+	}
+	tok := pageTokenOfPath(path)
+	if tok == "" || !hmac.Equal([]byte(r.URL.Query().Get(pageOriginSigParam)), []byte(pageOriginSig(tok, o))) {
+		return ""
+	}
+	return o
 }
 
 // pageHostWait is how long a page's HTML waits for its plugin's host,
@@ -363,7 +444,7 @@ func servePluginPage(rw http.ResponseWriter, r *http.Request, web bool) {
 	}
 	// the service's paths are never a file of the page's
 	if strings.HasPrefix(rel, pageServicePath) {
-		if !web || page == nil || page.servicePort() == 0 {
+		if !web || page == nil || page.servicePortOn(r) == 0 {
 			http.NotFound(rw, r)
 			return
 		}
@@ -490,10 +571,14 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			}
 			return ra - rb
 		})
+		o := windowOrigin(r)
 		for i := range out {
-			if web && out[i].servicePort() > 0 {
+			if web && out[i].servicePortOn(r) > 0 {
 				out[i].Service = strings.Repeat("../", strings.Count(out[i].file, "/")) + pageServicePath
 			}
+			// a browser behind a proxy names the address it used, signed, so
+			// the page's own frame can name it too (browserOrigin)
+			out[i].URL = signedPageURL(out[i].URL, out[i].token, o)
 		}
 		writeJSON(rw, out)
 	})
@@ -516,6 +601,10 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 		_, out := windowParts()
 		if out == nil {
 			out = []pluginPanel{}
+		}
+		o := windowOrigin(r)
+		for i := range out {
+			out[i].URL = signedPageURL(out[i].URL, out[i].token, o)
 		}
 		writeJSON(rw, out)
 	})
@@ -569,6 +658,23 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			if err := json.Unmarshal(in.Options, &opts); err != nil {
 				fail(rw, errors.New("a page's options are an object"))
 				return
+			}
+			// the port its service is reached on is the user's to set, not
+			// the page's: left to it, a page moves the proxy to any port it
+			// likes (C6)
+			if o := pageServiceOption(in.Spec); o != "" {
+				if _, set := opts[o]; set {
+					http.Error(rw, "a page's service port is set in owl's settings, not by the page", http.StatusForbidden)
+					return
+				}
+				// the set replaces every option: the user's own port stays
+				for _, e := range plugin.Load().Plugins {
+					if e.Spec == in.Spec && e.Options != nil {
+						if v, ok := e.Options[o]; ok {
+							opts[o] = v
+						}
+					}
+				}
 			}
 			// a page that sets them over and over would start the
 			// host, every plugin's, again each time

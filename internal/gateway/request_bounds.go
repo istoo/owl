@@ -221,9 +221,36 @@ func (z *pooledZstd) Close() error {
 	return nil
 }
 
+// roomedReader takes room for a body as it is decoded, before each read:
+// one whose length nobody declared, and a compressed body's decoded size,
+// is held as it grows instead of after it is all in memory (L1).
+type roomedReader struct {
+	io.ReadCloser
+	room  func(int64) error
+	total int64
+	held  int64
+}
+
+func (r *roomedReader) Read(p []byte) (int, error) {
+	if want := r.total + int64(len(p)); want > r.held {
+		if err := r.room(want); err != nil {
+			return 0, err
+		}
+		r.held = want
+	}
+	n, err := r.ReadCloser.Read(p)
+	r.total += int64(n)
+	return n, err
+}
+
 // Read one bounded body, decoded; callers choose their protocol's error
-// envelope. The limit holds for the decoded bytes too.
+// envelope. The limit holds for the decoded bytes too. room, when set,
+// takes the body's room as it is read (a nil room takes none here).
 func readBoundedRequestBody(w http.ResponseWriter, r *http.Request, limits requestLimits) ([]byte, int, error) {
+	return readBoundedRequestBodyRoom(w, r, limits, nil)
+}
+
+func readBoundedRequestBodyRoom(w http.ResponseWriter, r *http.Request, limits requestLimits, room func(int64) error) ([]byte, int, error) {
 	controller := http.NewResponseController(w)
 	reject := func(status int, err error) ([]byte, int, error) {
 		// Do not let net/http drain a rejected body from a stalled client.
@@ -249,6 +276,11 @@ func readBoundedRequestBody(w http.ResponseWriter, r *http.Request, limits reque
 	}
 	defer controller.SetReadDeadline(time.Time{})
 	readFailure := func(err error) ([]byte, int, error) {
+		var full *bodyFull
+		if errors.As(err, &full) {
+			// no room for the body as it grew: not the client's fault
+			return reject(http.StatusServiceUnavailable, err)
+		}
 		var timeout net.Error
 		if errors.As(err, &timeout) && timeout.Timeout() {
 			return reject(http.StatusRequestTimeout, errors.New("request body read timed out"))
@@ -271,6 +303,9 @@ func readBoundedRequestBody(w http.ResponseWriter, r *http.Request, limits reque
 		return readFailure(err)
 	}
 	defer rd.Close()
+	if room != nil {
+		rd = &roomedReader{ReadCloser: rd, room: room}
+	}
 	// Limit decoded bytes as well.
 	body, err := readSized(io.LimitReader(rd, limits.body+1), declared)
 	if int64(len(body)) > limits.body {

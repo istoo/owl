@@ -1,6 +1,7 @@
 package appdir
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -100,5 +101,80 @@ func TestMovePutsTheSettingsFolderBack(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "config")); !os.IsNotExist(err) {
 		t.Errorf("the moved copy is left at %s: %v", filepath.Join(root, "config"), err)
+	}
+}
+
+// Only a marker this move wrote, naming this folder and part, makes it
+// owl's: a mismatched, forged or unreadable file is not ownership (#H48).
+func TestMovedOwnsChecksTheMarker(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if MovedOwns(cfg) {
+		t.Fatal("a folder with no marker is owl's")
+	}
+	if err := markMoved(cfg, root); err != nil {
+		t.Fatal(err)
+	}
+	if !MovedOwns(cfg) {
+		t.Fatal("a marked folder is not owl's")
+	}
+	marker := filepath.Join(cfg, MovedMark)
+	for _, forged := range []string{
+		fmt.Sprintf(`{"format":"owl-moved","version":1,"part":"cache","root":%q}`, root),         // other part
+		fmt.Sprintf(`{"format":"owl-moved","version":1,"part":"config","root":%q}`, t.TempDir()), // other root
+		`not a marker`,
+	} {
+		if err := os.WriteFile(marker, []byte(forged), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if MovedOwns(cfg) {
+			t.Fatalf("a marker %q made the folder owl's", forged)
+		}
+	}
+}
+
+// markMoved never writes over a file already there, nor follows a link:
+// a marker it didn't make stays as it is (#H48).
+func TestMarkMovedNeverOverwrites(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(cfg, MovedMark)
+	if err := os.WriteFile(marker, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := markMoved(cfg, root); err == nil {
+		t.Fatal("markMoved wrote over a marker already there")
+	}
+	if b, err := os.ReadFile(marker); err != nil || string(b) != "mine" {
+		t.Fatalf("the marker was changed: %q %v", b, err)
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, []byte("not ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, marker); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if err := markMoved(cfg, root); err == nil {
+		t.Fatal("markMoved wrote through a link")
+	}
+	if b, err := os.ReadFile(target); err != nil || string(b) != "not ours" {
+		t.Fatalf("the link's target was written: %q %v", b, err)
+	}
+	if fi, err := os.Lstat(marker); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the link was replaced: %v %v", fi, err)
 	}
 }

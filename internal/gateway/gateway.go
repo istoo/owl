@@ -865,6 +865,20 @@ func keepRecent(ring []Call, c Call) []Call {
 // two at once.
 var WhileServing []func(context.Context)
 
+// gatewayServer is the http.Server the gateway serves on. ConnContext
+// marks each connection with whether its peer is this user
+// (peerUserContext): a request on loopback from another OS user on this
+// computer is not the owner's, and local() says so (C1).
+func (s *Server) gatewayServer() *http.Server {
+	return &http.Server{
+		Handler:           s.closesWhenHandedOff(s.Front()),
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       5 * time.Minute,
+		ConnState:         s.unread.note,
+		ConnContext:       peerUserContext,
+	}
+}
+
 // ListenAndServe runs the gateway until ctx ends, and returns once the
 // requests in flight then have finished: within 2s, or, handing over, as
 // long as a stream takes. A bind error means another owl is already
@@ -955,7 +969,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	pruned := make(chan struct{})
 	go func() { defer close(pruned); keepHubPruned(freshCtx) }()
 	defer func() { stopFresh(); <-pruned }()
-	srv := &http.Server{Handler: s.closesWhenHandedOff(s.Front()), ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 5 * time.Minute, ConnState: s.unread.note}
+	srv := s.gatewayServer()
 	// the owl serving the gateway, and only it, keeps the saved accounts
 	// signed in, so two never refresh one sign-in at once
 	go provider.KeepLoginsAlive(ctx)
@@ -2195,6 +2209,7 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	// a routing group held to some accounts counts on one of them, or
 	// the local estimate says the count, as for a key's (countOn)
+	plain := r // before any group's hold, for a redirect to drop it (M3)
 	r = heldByGroupAt(r, id)
 	// nor on one the user disabled (#1867)
 	if countOff(w, provider.Anthropic, id) {
@@ -2228,7 +2243,15 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 			// counted where generation goes: the model set for a request
 			// masking would change, as written (maskRouteFor)
 			if to := maskRouteFor(agentTurn(r), hits); to != "" {
+				// counted where it is sent: the old group's account
+				// hold goes, and the target's applies, as it does on
+				// a model the user disabled (M3)
+				r = plain
 				p, model, ok = provider.Resolve(to)
+				r = heldByGroupAt(r, to)
+				if countOff(w, provider.Anthropic, to) {
+					return
+				}
 			} else {
 				w, body = rw, b
 				r = withMaskedAs(r, ownMaskedAs(r.Context()))
@@ -7831,23 +7854,6 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 	if proto == provider.Responses && sse && !fromCodex(r.Header) && agentOf(r) != "codex" {
 		enumTidy = &responsesEnumTidy{}
 	}
-	// out is what a filter let through, through ids, phases, toolIDs and
-	// thinkSigs
-	out := func(b []byte) []byte {
-		if ids != nil {
-			b = ids.write(b)
-		}
-		if phases != nil {
-			b = phases.write(b)
-		}
-		if toolIDs != nil {
-			b = toolIDs.write(b)
-		}
-		if thinkSigs != nil {
-			b = thinkSigs.write(b)
-		}
-		return b
-	}
 	buf := make([]byte, replyBufSize(res.ContentLength))
 	var rerr error
 	// atLine says whether what the client has ends a line, so what is
@@ -8013,112 +8019,69 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 			break
 		}
 	}
-	// what's held at the end goes through the filters after the one
-	// that held it
-	sign := func(b []byte) []byte {
-		if crArgs != nil {
-			b = crArgs.write(b)
-		}
-		if made != nil {
-			b = made.write(b)
-		}
-		if ints != nil {
-			b = ints.write(b)
-		}
-		if sigs != nil {
-			b = sigs.write(b)
-		}
-		return out(b)
+	// what's held at the end goes through the filters after the one that
+	// held it, in the order the reads take: each flush's bytes are handed
+	// to every filter after it, as a read's are. So no flush skips
+	// enumTidy, and spaces drains into written (a whole reply held before
+	// its calls are read out) rather than after it (H6).
+	type replyFilter interface {
+		write([]byte) []byte
+		flush() []byte
 	}
+	var filters []replyFilter
 	if tidy != nil {
-		out := tidy.flush()
-		if written != nil {
-			out = append(written.write(out), written.flush()...)
-		}
-		write(sign(out))
-	} else if written != nil {
-		write(sign(written.flush()))
-	}
-	if whole != nil {
-		out := whole.flush()
-		if spaces != nil {
-			out = spaces.write(out)
-		}
-		write(sign(out))
-	}
-	if search != nil {
-		out := search.flush()
-		if spaces != nil {
-			out = spaces.write(out)
-		}
-		write(sign(out))
+		filters = append(filters, tidy)
 	}
 	if spaces != nil {
-		write(sign(spaces.flush()))
+		filters = append(filters, spaces)
+	}
+	if written != nil {
+		filters = append(filters, written)
+	}
+	if whole != nil {
+		filters = append(filters, whole)
+	}
+	if search != nil {
+		filters = append(filters, search)
 	}
 	if crArgs != nil {
-		b := crArgs.flush()
-		if made != nil {
-			// made holds a whole reply until its own drain below, as ints
-			// does: a reply crArgs held to its end goes through it too
-			b = made.write(b)
-		}
-		if ints != nil {
-			// ints holds a whole reply until its own drain below, so the
-			// tail ints has not seen goes through it here first
-			b = ints.write(b)
-		}
-		if sigs != nil {
-			b = sigs.write(b)
-		}
-		write(out(b))
+		filters = append(filters, crArgs)
 	}
 	if made != nil {
-		// past crArgs, drained above: what made held goes on through the
-		// filters after it only
-		b := made.flush()
-		if ints != nil {
-			b = ints.write(b)
-		}
-		if sigs != nil {
-			b = sigs.write(b)
-		}
-		write(out(b))
+		filters = append(filters, made)
 	}
 	if ints != nil {
-		b := ints.flush()
-		if sigs != nil {
-			b = sigs.write(b)
-		}
-		write(out(b))
+		filters = append(filters, ints)
 	}
 	if sigs != nil {
-		write(out(sigs.flush()))
+		filters = append(filters, sigs)
 	}
 	if ids != nil {
-		b := ids.flush()
-		if phases != nil {
-			b = phases.write(b)
-		}
-		write(b)
+		filters = append(filters, ids)
 	}
 	if phases != nil {
-		write(phases.flush())
+		filters = append(filters, phases)
 	}
 	if toolIDs != nil {
-		// the salted tail goes on through thinkSigs, which holds a whole
-		// reply until its own drain below
-		b := toolIDs.flush()
-		if thinkSigs != nil {
-			b = thinkSigs.write(b)
-		}
-		write(b)
+		filters = append(filters, toolIDs)
 	}
 	if thinkSigs != nil {
-		write(thinkSigs.flush())
+		filters = append(filters, thinkSigs)
 	}
 	if enumTidy != nil {
-		write(enumTidy.flush())
+		filters = append(filters, enumTidy)
+	}
+	for i, fl := range filters {
+		b := fl.flush()
+		for _, after := range filters[i+1:] {
+			if len(b) == 0 {
+				break
+			}
+			b = after.write(b)
+		}
+		if len(b) > 0 {
+			write(b)
+		}
 	}
 	if sse {
 		sniff.drain()

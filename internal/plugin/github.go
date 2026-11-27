@@ -623,11 +623,9 @@ func githubRepo(spec string) string {
 	default:
 		return ""
 	}
-	p := strings.Split(strings.Trim(s, "/"), "/")
-	if len(p) < 2 || p[0] == "" || p[1] == "" {
-		return ""
-	}
-	return p[0] + "/" + p[1]
+	// the same letters a repository's owner and name have: one with ? or
+	// # would put a query or a fragment into the URL built from it
+	return repoPath(s)
 }
 
 // askListOrGitHub is the list the community repo's workflow built (see

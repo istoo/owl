@@ -44,6 +44,50 @@
 
   function post(win, msg) { win?.postMessage({ owl: 1, ...msg }, "*"); }
 
+  // originQuery tells the authenticated /api where this browser is: the
+  // server signs it into each page's address (pluginpage.go).
+  const originQuery = () => (typeof web !== "undefined" && web ? "?o=" + encodeURIComponent(location.origin) : "");
+
+  // b64 is bytes as the base64 a JSON body carries, a block at a time.
+  function b64(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    return btoa(s);
+  }
+
+  // a page's file, and a picture it shares, are bounded as the server
+  // bounds them (pluginpage.go's pageinline, pageimage.go's pageImage).
+  const MAX_ASSET = 8 << 20, MAX_IMAGE = 16 << 20, MAX_SIDE = 8192;
+  const imgAt = new Map(); // spec → when it last shared a picture
+  const CRC = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    CRC[n] = c >>> 0;
+  }
+  function crc32(b, from, to) {
+    let c = 0xffffffff;
+    for (let i = from; i < to; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  const be32 = (b, i) => (b[i] * 0x1000000 + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3])) >>> 0;
+  // pngOK is bytes as the PNG a page may share, as pageimage.go's PNG
+  // decoder takes it: the signature, one whole IHDR chunk (its length,
+  // its CRC, and at most 8192 pixels a side).
+  function pngOK(b) {
+    if (b.length < 33 || b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47 ||
+      b[4] !== 0x0d || b[5] !== 0x0a || b[6] !== 0x1a || b[7] !== 0x0a) return false;
+    if (be32(b, 8) !== 13 || b[12] !== 0x49 || b[13] !== 0x48 || b[14] !== 0x44 || b[15] !== 0x52) return false;
+    if (be32(b, 29) !== crc32(b, 12, 29)) return false;
+    const w = be32(b, 16), h = be32(b, 20);
+    return w >= 1 && h >= 1 && w <= MAX_SIDE && h <= MAX_SIDE;
+  }
+  // pagePath is a URL's pathname as the server decodes it (go's
+  // url.PathUnescape), so a namespace is compared in the same terms.
+  function pagePath(pathname) {
+    try { return decodeURIComponent(pathname); } catch { return null; }
+  }
+
   // the theme or the language changed: every page open is told
   function pushTheme() {
     const data = theme();
@@ -145,6 +189,74 @@
         if (!e.reads.includes(name)) throw new Error(t("{name} doesn't ask to read {what}", { name: titled(e), what: name }));
         return api("plugin-pages/read", { spec: e.spec, read: name, params: m.params?.params || {} });
       }
+      case "asset": {
+        // a script the page adds after it came as one document is fetched
+        // here, with the window's cookie, and handed back as base64: only a
+        // file of the page's own folder, never its service or /api, and
+        // never past a redirect (pagebridge.js)
+        const u = new URL(String(m.params?.url || ""), location.href);
+        const base = new URL(e.url, location.href);
+        const at = base.pathname.lastIndexOf("/");
+        const dir = at < 0 ? null : pagePath(base.pathname.slice(0, at + 1));
+        const p = pagePath(u.pathname); // the path alone: no query names the folder
+        const rest = dir && p && p.startsWith(dir) ? p.slice(dir.length) : null;
+        if (rest === null || u.origin !== base.origin || rest.includes("\\") || rest.split("/").some((s) => s === ".." || s === ".") || p.includes("/_owl/service/")) throw new Error(t("That file isn't the page's"));
+        const r = await fetch(u.href, { credentials: "same-origin", redirect: "error" });
+        if (!r.ok) throw new Error(t("{name} didn't answer", { name: u.pathname }));
+        if (Number(r.headers.get("content-length") || 0) > MAX_ASSET) throw new Error(t("That file is too large"));
+        const reader = r.body.getReader(), chunks = [];
+        let n = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          n += value.length;
+          if (n > MAX_ASSET) { reader.cancel(); throw new Error(t("That file is too large")); }
+          chunks.push(value);
+        }
+        const all = new Uint8Array(n);
+        let pos = 0;
+        for (const c of chunks) { all.set(c, pos); pos += c.length; }
+        return { type: r.headers.get("content-type") || "", data: b64(all) };
+      }
+      case "image.copy":
+      case "image.save": {
+        // owl.image.copy/save (pagebridge.js): in a browser this window does
+        // both; in the desktop app the picture goes to the server, whose
+        // clipboard and Downloads it is (pageimage.go). Both hold it to the
+        // same type, size, dimensions and rate.
+        const raw = m.params?.png;
+        const action = m.method.slice(6);
+        const bad = () => new Error(t("A picture is a PNG, 16 MB at most and 8192 pixels a side at most"));
+        // only the types the bridge sends: a Blob (its contract), a
+        // Uint8Array or an ArrayBuffer, each measured before it is copied
+        let bytes;
+        if (raw instanceof Blob) {
+          if (raw.type && raw.type.toLowerCase() !== "image/png") throw bad();
+          if (raw.size > MAX_IMAGE) throw bad();
+          bytes = new Uint8Array(await raw.arrayBuffer());
+        } else if (raw instanceof Uint8Array || raw instanceof ArrayBuffer) {
+          if (raw.byteLength > MAX_IMAGE) throw bad();
+          bytes = new Uint8Array(raw);
+        } else {
+          throw bad();
+        }
+        if (bytes.length > MAX_IMAGE || !pngOK(bytes)) throw bad();
+        const now = Date.now(), last = imgAt.get(e.spec) || 0;
+        if (now - last < 500) throw new Error(t("A page shares a picture twice a second at most"));
+        imgAt.set(e.spec, now);
+        if (!web) return api("plugin-pages/image", { spec: e.spec, action, name: String(m.params?.name || ""), png: b64(bytes) });
+        const blob = new Blob([bytes], { type: "image/png" });
+        if (action === "copy") {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        } else {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = (String(m.params?.name || "owl").replace(/[<>:"/\\|?*\x00-\x1f]/g, "-").trim() || "owl").replace(/\.png$/i, "") + ".png";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        }
+        return true;
+      }
     }
     throw new Error(t("No such call: {what}", { what: String(m.method) }));
   }
@@ -209,7 +321,7 @@
   async function load() {
     loadPanels();
     let list;
-    try { list = await api("plugin-pages"); } catch { return; }
+    try { list = await api("plugin-pages" + originQuery()); } catch { return; }
     // an answer that isn't a list is not known: the tabs drawn stay
     if (!Array.isArray(list)) return;
     const nav = $("#nav");
@@ -386,7 +498,7 @@
 
   async function loadPanels() {
     let list;
-    try { list = await api("plugin-panels"); } catch { return; }
+    try { list = await api("plugin-panels" + originQuery()); } catch { return; }
     // an answer that isn't a list is not known: the panels drawn stay
     if (!Array.isArray(list)) return;
     panelList = list;

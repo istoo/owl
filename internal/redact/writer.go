@@ -309,7 +309,7 @@ func waiting(name string, data []byte) bool {
 // sealedText says a string of a vendor's answer goes on as it came: what the
 // vendor sealed (signatureKeys) and a file's encoded data.
 func sealedText(key, s string) bool {
-	return slices.Contains(signatureKeys, key) || strings.HasPrefix(s, "data:") ||
+	return slices.Contains(signatureKeys, key) || isDataURL(s) ||
 		key == "data" && len(s) >= 64 && !strings.ContainsAny(s, " \n")
 }
 
@@ -447,15 +447,59 @@ func eventCtx(data []byte) string {
 		}
 		return s
 	})
-	for _, k := range []string{`"index":`, `"output_index":`, `"content_index":`} {
-		if i := bytes.Index(data, []byte(k)); i >= 0 {
-			j := i + len(k)
-			e := j
-			for e < len(data) && (data[e] >= '0' && data[e] <= '9' || data[e] == ' ') {
-				e++
-			}
-			b.WriteString(k + string(data[j:e]) + ";")
+	b.WriteString(indexCtx(data))
+	return b.String()
+}
+
+// indexCtx names every index an event carries, whatever level it is at: a
+// stream of several tool calls sends one call's pieces per event, each with
+// choices[0].index and its own delta.tool_calls[i].index. Read only the
+// first (choices[0].index, 0 for every call), the pieces of tool 0 and tool
+// 1 had one context, and the tail held from one was carried into the
+// other's arguments (H38). Each occurrence, in the order it is read, keeps
+// them apart.
+func indexCtx(data []byte) string {
+	var b strings.Builder
+	for i := 0; i < len(data); i++ {
+		if data[i] != '"' {
+			continue
 		}
+		j := i + 1
+		for j < len(data) && data[j] != '"' {
+			if data[j] == '\\' {
+				j++
+			}
+			j++
+		}
+		if j >= len(data) {
+			break // an escape at the end: nothing more to read here
+		}
+		key := data[i+1 : j]
+		i = j
+		switch string(key) {
+		case "index", "output_index", "content_index":
+		default:
+			continue
+		}
+		k := j + 1
+		for k < len(data) && (data[k] == ' ' || data[k] == '\t' || data[k] == '\r' || data[k] == '\n') {
+			k++
+		}
+		if k >= len(data) || data[k] != ':' {
+			continue
+		}
+		k++
+		for k < len(data) && (data[k] == ' ' || data[k] == '\t' || data[k] == '\r' || data[k] == '\n') {
+			k++
+		}
+		e := k
+		for e < len(data) && (data[e] >= '0' && data[e] <= '9' || data[e] == '-') {
+			e++
+		}
+		b.Write(key)
+		b.WriteByte('=')
+		b.Write(data[k:e])
+		b.WriteByte(';')
 	}
 	return b.String()
 }

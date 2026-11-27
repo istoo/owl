@@ -215,9 +215,9 @@ func plistExecutable(path string) string {
 func CursorLocalLaunch(app, gw string) string {
 	key, base := agentKeyAt(CursorLocalID, gw), gw+"/v1"
 	if runtime.GOOS == "windows" {
-		return `$env:CURSOR_LOCAL_AGENT_BASE_URL="` + base + `"; $env:CURSOR_LOCAL_AGENT_API_KEY="` + key + `"; & '` + strings.ReplaceAll(app, "'", "''") + `'`
+		return "$env:CURSOR_LOCAL_AGENT_BASE_URL=" + psQuote(base) + "; $env:CURSOR_LOCAL_AGENT_API_KEY=" + psQuote(key) + "; & " + psQuote(app)
 	}
-	return "CURSOR_LOCAL_AGENT_BASE_URL=" + base + " CURSOR_LOCAL_AGENT_API_KEY=" + key + " '" + strings.ReplaceAll(app, "'", `'\''`) + "'"
+	return "CURSOR_LOCAL_AGENT_BASE_URL=" + posixQuote(base) + " CURSOR_LOCAL_AGENT_API_KEY=" + posixQuote(key) + " " + posixQuote(app)
 }
 
 // cursorLocalVars are the variables the build reads its endpoint from.

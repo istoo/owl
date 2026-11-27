@@ -341,13 +341,16 @@ func qwenpawAt(at place, work string, p qwenpawProfile) *Agent {
 		if err := os.MkdirAll(filepath.Dir(prov), 0o700); err != nil {
 			return err
 		}
-		if err := edit.WriteAtomic(prov, out); err != nil {
+		// QwenPaw keeps its provider files to its user alone (0600): the mode is
+		// set before the rename, so the key is never on disk 0644 waiting
+		// for a chmod (ownerOnly is kept for a distro, where owl's own
+		// modes don't hold; it is a no-op here)
+		if err := edit.WriteAtomicMode(prov, out, 0o600); err != nil {
 			return err
 		}
 		if !keep {
 			stash(map[string]string{keyWrote: k})
 		}
-		// QwenPaw keeps its provider files to its user alone (0600)
 		return at.ownerOnly(prov)
 	}
 	unwire := func() error {

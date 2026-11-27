@@ -61,6 +61,16 @@ func searchMCPSchema(n int) string {
 		searchHitsMost, n, searchHitsMost, n)
 }
 
+// mcpCallerKey names who a request of serveMCP's is, by the server it
+// asks, the gateway key it carries and the client's Mcp-Session-Id: an
+// answer to a request owl made of that client (askClient) is taken only
+// from the same caller, so another key or session can't answer for it
+// (M11).
+func mcpCallerKey(r *http.Request, server string) string {
+	who := access.Caller(r.Context())
+	return server + "\x00" + who.KeyID + "\x00" + who.KeyName + "\x00" + r.Header.Get("Mcp-Session-Id")
+}
+
 // searchCountArg is the count a web_search call names: a number, or a
 // number in a string, as a model may write it; nil when it names none, or
 // something that isn't a number, which is searched for as if not given.
@@ -156,14 +166,14 @@ func serveMCP(w http.ResponseWriter, r *http.Request, what, server string, limit
 	if r.Header.Get("Mcp-Session-Id") == "" && slices.ContainsFunc(msgs, func(m mcpMessage) bool { return m.Method == "initialize" }) {
 		w.Header().Set("Mcp-Session-Id", newMCPSession())
 	}
-	x := &mcpExchange{w: w, canStream: !batch && strings.Contains(r.Header.Get("Accept"), "text/event-stream")}
+	x := &mcpExchange{w: w, canStream: !batch && strings.Contains(r.Header.Get("Accept"), "text/event-stream"), key: mcpCallerKey(r, server)}
 	r = r.WithContext(context.WithValue(r.Context(), mcpExchangeKey{}, x))
 	var out []any
 	for _, m := range msgs {
 		// a notification (no id) or a response to the server is answered
 		// with nothing; a response is handed to the request it answers
 		if m.Method == "" && len(m.ID) > 0 {
-			clientAnswered(m)
+			clientAnswered(m, mcpCallerKey(r, server))
 		}
 		if len(m.ID) == 0 || bytes.Equal(m.ID, []byte("null")) || m.Method == "" {
 			continue

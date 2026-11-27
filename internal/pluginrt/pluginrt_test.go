@@ -80,6 +80,30 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
+// A plugin turned off withdraws only the service it provided: one another
+// plugin has taken the name over with stays that plugin's (L13).
+func TestDisposeKeepsAnothersService(t *testing.T) {
+	ms := []Manifest{
+		{ID: "a", Provides: []string{"svc"}, Apply: func(c *Ctx) error { c.Provide("svc", "a"); return nil }},
+		{ID: "b", Provides: []string{"svc"}, Apply: func(c *Ctx) error { c.Provide("svc", "b"); return nil }},
+	}
+	rt := New(ms)
+	rt.Reconcile(map[string]bool{"a": true, "b": true}, nil)
+	if got := rt.services["svc"]; got != "b" {
+		t.Fatalf("svc = %v, want b (b applied last)", got)
+	}
+	// b off: a's earlier value isn't put back, but a is still active and
+	// its own dispose doesn't take b's away either; first turn a off
+	rt.Reconcile(map[string]bool{"a": false, "b": true}, nil)
+	if got := rt.services["svc"]; got != "b" {
+		t.Fatalf("a off: svc = %v, want b left in place", got)
+	}
+	rt.Reconcile(map[string]bool{"a": false, "b": false}, nil)
+	if _, ok := rt.services["svc"]; ok {
+		t.Fatal("b off: its service stayed")
+	}
+}
+
 func TestCompatible(t *testing.T) {
 	for want, ok := range map[string]bool{"": true, "^1": true, "^1.0": true, "^1.1": false, "^2": false, "1": false, "^x": false} {
 		if Compatible(want) != ok {

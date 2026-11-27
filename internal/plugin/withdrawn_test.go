@@ -44,3 +44,19 @@ func TestWithdrawnGivenToNobodyNew(t *testing.T) {
 		t.Fatalf("WithdrawnKept = %+v", got)
 	}
 }
+
+// AddExact (another computer's plugins.json, a sync or a backup) is turned
+// away too: a spec written as a package's own name installed a retired
+// package just the same (H39).
+func TestWithdrawnGivenToNobodyNewByAddExact(t *testing.T) {
+	storeSandbox(t)
+	const pkg = "@magpie-community/opencode-antigravity-auth"
+	for _, spec := range []string{pkg, pkg + "@0.1.18"} {
+		if _, err := AddExact(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "@magpie-community/opencode-agy-cli-auth") {
+			t.Fatalf("AddExact(%q) = %v, want it turned away pointing to agy-cli", spec, err)
+		}
+	}
+	if len(Load().Plugins) != 0 {
+		t.Fatalf("a turned-away add listed %v", Load().Plugins)
+	}
+}

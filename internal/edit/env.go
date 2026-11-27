@@ -64,7 +64,9 @@ func SetEnvFile(path string, kvs ...KV) error {
 		})
 	}
 	lines = markEnv(lines, string(raw))
-	return WriteAtomic(path, []byte(joinLinesLike(lines, string(raw))))
+	// a dotenv file holds a key or a token, whoever wrote it: it is made
+	// and kept to its user alone
+	return WriteAtomicMode(path, []byte(joinLinesLike(lines, string(raw))), 0o600)
 }
 
 // DelEnvFile removes keys from a dotenv file, and the file when they were

@@ -50,6 +50,10 @@ func TestFakeRunServer(t *testing.T) {
 			l, _ := os.OpenFile(logf, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			fmt.Fprintf(l, "%d %s\n", os.Getpid(), m.Params.ClientInfo.Name)
 			l.Close()
+			// a test that ends a session while its server starts
+			if d, err := time.ParseDuration(os.Getenv("OWL_FAKE_RUN_DELAY")); err == nil {
+				time.Sleep(d)
+			}
 			say(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{"tools": map[string]any{"listChanged": true}}, "serverInfo": map[string]any{"name": "fake", "version": "1"}}})
 		case m.Method == "tools/list":
 			say(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": map[string]any{"tools": []any{map[string]any{"name": "echo"}, map[string]any{"name": fmt.Sprint("pid", os.Getpid())}}}})

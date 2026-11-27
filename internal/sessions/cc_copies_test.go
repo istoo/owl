@@ -369,6 +369,48 @@ func TestClaudeDeleteTakesCopiesAlong(t *testing.T) {
 	}
 }
 
+// A copy Claude kept in another Claude folder, with its own id, goes with
+// the session and comes back there.
+func TestClaudeDeleteRestoresCopyInAnotherFolder(t *testing.T) {
+	claude, _ := setup(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(home, ".claude-work")
+	ccForkFixture(t, claude,
+		[2]string{"original.jsonl", ccOriginal},
+		[2]string{"fork-on.jsonl", ccForkOn})
+	ccForkFixture(t, other, [2]string{"original.jsonl", ccCopyIDs[0]})
+	if got := ccRows("claude"); !slices.Equal(got, []string{ccForkOn}) {
+		t.Fatalf("rows = %v, want [%s]", got, ccForkOn)
+	}
+	mainProj := filepath.Join(claude, "projects", "-w-proj")
+	otherProj := filepath.Join(other, "projects", "-w-proj")
+	moved := []string{
+		filepath.Join(mainProj, ccOriginal+".jsonl"),
+		filepath.Join(mainProj, ccForkOn+".jsonl"),
+		filepath.Join(otherProj, ccCopyIDs[0]+".jsonl"),
+	}
+	tr, err := Delete("claude", ccForkOn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range moved {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s is still there: %v", p, err)
+		}
+	}
+	if _, err := Restore(tr.Key); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range moved {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("%s isn't back: %v", p, err)
+		}
+	}
+}
+
 // Qoder writes Claude Code's files, and its copies are one row too.
 func TestQoderForkCopiesAreOneRow(t *testing.T) {
 	for _, agent := range []string{"qoder", "qoder-cn"} {

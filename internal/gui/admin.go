@@ -179,10 +179,28 @@ func adminMayChangeKey(w http.ResponseWriter, r *http.Request) bool {
 	var in struct {
 		Key string `json:"key"`
 	}
-	if json.Unmarshal(body, &in) != nil || in.Key == "" {
-		return true // add-key, or a body the handler refuses itself
+	if err := json.Unmarshal(body, &in); err != nil {
+		// unknown: refused, not let through (H50)
+		adminError(w, http.StatusBadRequest, "the request's body isn't what a key action takes: "+err.Error())
+		return false
 	}
-	if in.Key == access.Caller(r.Context()).KeyID {
+	who := access.Caller(r.Context())
+	if in.Key == "" {
+		// add-key: a key held to models, accounts, a budget, concurrency or
+		// issuing could give a new key more than it has (H50)
+		if restricted(who) {
+			adminError(w, http.StatusForbidden, "this key is held to limits of its own, so the management API doesn't let it add another key: use `owl gateway-key` or the app")
+			return false
+		}
+		return true
+	}
+	if in.Key == who.KeyID {
+		// its own key: it may rename or rotate it, but lifting the limits
+		// it is held to is the user's to do (H50)
+		if restrictedKeyAction(r.PathValue("action")) {
+			adminError(w, http.StatusForbidden, "this key can't lift or widen its own limits through the management API: use `owl gateway-key` or the app")
+			return false
+		}
 		return true
 	}
 	keys, err := access.List()
@@ -198,6 +216,24 @@ func adminMayChangeKey(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+// restricted is whether who is held to less than every model, account and
+// budget: such a key may not add another through the management API.
+func restricted(who access.Identity) bool {
+	return who.Limit != nil || len(who.More) > 0 || len(who.Models) > 0 || len(who.Accounts) > 0 ||
+		len(who.MCP) > 0 || who.ReadOnly || who.Browser || who.MaxConcurrency > 0 || who.Issues
+}
+
+// restrictedKeyAction is a key action that widens a key's reach: a key
+// may not do these to itself through the management API (H50).
+func restrictedKeyAction(action string) bool {
+	switch action {
+	case "limit-key", "reset-limit-key", "models-key", "aliases-key", "accounts-key", "mcp-key",
+		"quotas-key", "concurrency-key", "tier-key", "redact-key", "access-key", "issuer-key":
+		return true
+	}
+	return false
 }
 
 // adminGroup is the routing group id as the Routing page reads it

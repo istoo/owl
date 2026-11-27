@@ -161,6 +161,13 @@ func githubLangReadme(ctx context.Context, repo, lang string) (string, bool) {
 	if len(readmeTags(lang)) == 0 {
 		return "", false
 	}
+	// owner/repo of GitHub's own letters, as the URL is built from it: a
+	// name with ? or # would put a query or a fragment in it (L13)
+	r := repoPath(repo)
+	if r == "" {
+		return "", false
+	}
+	repo = r
 	b, err := fetchJSON(ctx, githubAPI+"/repos/"+repo+"/contents", 2<<20)
 	if err != nil {
 		return "", false

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -132,6 +133,8 @@ func dateForms(y, m, d int, w string) string {
 
 var dateWords sync.Map // word → *regexp.Regexp, or nil for one that is no date
 
+var dateWordCount atomic.Int64
+
 // dateWord is the pattern for the date the masked word w is, nil where it
 // is no date.
 func dateWord(w string) *regexp.Regexp {
@@ -143,6 +146,7 @@ func dateWord(w string) *regexp.Regexp {
 		re = regexp.MustCompile(dateForms(y, m, d, w))
 	}
 	dateWords.Store(w, re)
+	cacheGrew(&dateWordCount, &dateWords)
 	return re
 }
 

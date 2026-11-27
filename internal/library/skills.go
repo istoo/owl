@@ -1089,7 +1089,29 @@ func githubSource(s string) (Source, bool) {
 		src.Path = strings.Join(parts[4:], "/")
 		src.Path = strings.TrimSuffix(strings.TrimSuffix(src.Path, "SKILL.md"), "/")
 	}
+	if !safePath(src.Path) {
+		return Source{}, false
+	}
 	return src, true
+}
+
+// safePath is whether p names something inside a repository: no segment
+// that climbs out (.., .), no backslash (a separator on another system),
+// nothing absolute, and no NUL. A link a user pasted must not name a
+// folder outside the repository owl fetches (#H23).
+func safePath(p string) bool {
+	if p == "" {
+		return true
+	}
+	if strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || filepath.IsAbs(filepath.FromSlash(p)) {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." || seg == "." {
+			return false
+		}
+	}
+	return true
 }
 
 func expand(p string) string {
@@ -1234,9 +1256,13 @@ func untar(r io.Reader, dst string) error {
 				return err
 			}
 		case tar.TypeReg:
-			if total += h.Size; total > maxFetch {
+			// a size the header lies about is refused before it is added
+			// to the total, and the bytes read are bounded by what is
+			// left: an int64 that would wrap, or a long stream, is too big
+			if h.Size < 0 || h.Size > maxFetch-total {
 				return errTooBig
 			}
+			total += h.Size
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 				return err
 			}
@@ -1248,10 +1274,13 @@ func untar(r io.Reader, dst string) error {
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(f, tr)
+			n, err := io.Copy(f, io.LimitReader(tr, maxFetch-total+1))
 			f.Close()
 			if err != nil {
 				return err
+			}
+			if n > h.Size {
+				return errTooBig
 			}
 		}
 	}
@@ -1445,9 +1474,14 @@ func probeSkills(input, name string) (*Probe, error) {
 			return nil, err
 		}
 		p.Kind, p.root, p.src = src.Kind, tmp, src
-		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(src.Path))); src.Path != "" && err != nil {
-			os.RemoveAll(tmp)
-			return nil, fmt.Errorf("%s has no folder %s", src.Repo, src.Path)
+		if src.Path != "" {
+			// the folder the link names is checked to be in what was
+			// fetched, and not a link out of it (#H23)
+			sub, ok := inside(tmp, src.Path)
+			if _, err := os.Stat(sub); !ok || err != nil {
+				os.RemoveAll(tmp)
+				return nil, fmt.Errorf("%s has no folder %s", src.Repo, src.Path)
+			}
 		}
 		p.Candidates = candidates(tmp, src.Path, srcFolder(src))
 		p.Left = tookLeftOut(tmp, src.Path)
@@ -1476,7 +1510,11 @@ func probeSkills(input, name string) (*Probe, error) {
 				if followsHere(s, p.src, from) {
 					p.Candidates[i].Links = true
 				} else if p.src.remote() {
-					p.Candidates[i].As = l.besideName(c.Name, p.src, c.Path)
+					as, err := l.besideName(c.Name, p.src, c.Path)
+					if err != nil {
+						return nil, err
+					}
+					p.Candidates[i].As = as
 				} else {
 					// a folder of the user's isn't added beside it
 					// (installFrom): shown as had by that name, as before
@@ -1647,7 +1685,12 @@ func installFrom(l *Library, p *Probe, paths, agents []string, shown bool, in *i
 				in.skip(c.Name, fmt.Errorf("the library already has another skill called %s, left as it is: give this one another name in its SKILL.md to add it beside it", c.Name))
 				continue
 			}
-			name = l.besideName(c.Name, src, c.Path)
+			n, err := l.besideName(c.Name, src, c.Path)
+			if err != nil {
+				in.skip(c.Name, err)
+				continue
+			}
+			name = n
 		}
 		dir := skillDir(name)
 		// something by that name in the library's folder that the
@@ -1673,7 +1716,12 @@ func installFrom(l *Library, p *Probe, paths, agents []string, shown bool, in *i
 				in.skip(c.Name, fmt.Errorf("the library's folder already has a %s that isn't this one (%s), left as it is: bring it in from the skills found there to use it", c.Name, dir))
 				continue
 			default:
-				name = l.freeSkillName(c.Name, src)
+				n, err := l.freeSkillName(c.Name, src)
+				if err != nil {
+					in.skip(c.Name, err)
+					continue
+				}
+				name = n
 				dir = skillDir(name)
 			}
 		} else if !errors.Is(err, fs.ErrNotExist) {
@@ -2081,7 +2129,12 @@ func (f *fetcher) prepare(s *Skill) (*skillUpdate, error) {
 		}
 		src.Path = path
 	}
-	from := filepath.Join(tmp, filepath.FromSlash(src.Path))
+	// the folder must be inside what was fetched: a path that climbs out,
+	// or a link to one, is never read (#H23)
+	from, ok := inside(tmp, src.Path)
+	if !ok {
+		return nil, fmt.Errorf("%s has no folder %s", src.Repo, src.Path)
+	}
 	if _, ok := readMeta(from); !ok {
 		if !adopt && goneFrom(tmp, src.Path) {
 			// the repository was read, and the skill isn't in it

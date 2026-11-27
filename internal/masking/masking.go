@@ -67,6 +67,14 @@ func optionsCtx(ctx context.Context) redact.Options {
 	o := redact.Options{Secrets: st.Redact, Personal: st.RedactPersonal, Kinds: st.RedactKinds, Words: st.RedactWords, WordsAnyCase: st.RedactWordsAnyCase, WordsWhole: st.RedactWordsWhole, Rules: st.RedactRules,
 		Actions: st.RedactActions, Allow: st.RedactAllow, Shape: st.RedactShape}
 	o.Route, _ = ctx.Value(routeKey{}).(string)
+	// A key held to masking (access.RedactOn) is masked with the defaults
+	// only where the settings mask nothing: maskingFor asks for this only
+	// then, and the docs say a key's on masks "where the settings mask
+	// nothing too, with the default rules for secrets and personal data".
+	// Where the user set masking of their own — words alone, or personal
+	// data alone — that explicit choice of categories stands; forcing
+	// Secrets and Personal on as well would override what the user asked
+	// for, a change of policy rather than a fix (H42).
 	if forced, _ := ctx.Value(forcedKey{}).(bool); forced && !Wanted(st) {
 		o.Secrets, o.Personal = true, true
 		st.Redact, st.RedactPersonal = true, true
@@ -162,11 +170,19 @@ var guardTried atomic.Int64
 // toGuard downloads AstrLink Guard, then saves it as the pick, unless the
 // user picked a model in between, and lets Privacy Filter go.
 func toGuard() {
+	// never from a test (they stay off the network), and never a model
+	// this platform can't run
+	if testing.Testing() {
+		return
+	}
+	g := pii.Of(pii.AstrLinkGuard)
+	if !g.Supported() {
+		return
+	}
 	now := time.Now().Unix()
 	if t := guardTried.Load(); t != 0 && now-t < 3600 || !guardTried.CompareAndSwap(t, now) {
 		return
 	}
-	g := pii.Of(pii.AstrLinkGuard)
 	g.Download(func() {
 		if settings.Shared().RedactModelName == "" && settings.UseRedactModel(pii.AstrLinkGuard) == nil {
 			pii.Of(pii.PrivacyFilter).Stop()

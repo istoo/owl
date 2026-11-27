@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/istoo/owl/internal/access"
 	"github.com/istoo/owl/internal/edit"
@@ -13,6 +15,14 @@ import (
 	"github.com/istoo/owl/internal/lazyre"
 	"github.com/istoo/owl/internal/provider"
 )
+
+// explicitWrite keeps a user's own write (Apply, Pick, Reapply, Disconnect,
+// Rewire) from running while a catalog sync's kept-away filter is on: the
+// filter passes every write made through edit while it runs, on whichever
+// goroutine, so the two are one at a time (#4133). It is taken before
+// edit.Filtered and by those operations, never held across each other's
+// calls: a sync's agents' Sync and Reapply use unlocked bodies.
+var explicitWrite sync.Mutex
 
 // synced runs an agent's sync, which brings owl's models in its files up
 // to date, not where they are reached: a file whose owl the user pointed
@@ -28,6 +38,8 @@ import (
 // size kept after a resize, writes under the lock settings.Load takes, and
 // a filter reading the settings waited on it for good (ylorn on Discord).
 func synced(sync func() error) error {
+	explicitWrite.Lock()
+	defer explicitWrite.Unlock()
 	return edit.Filtered(keeping().away, sync)
 }
 
@@ -63,12 +75,23 @@ func owlFile(path string) bool {
 	}
 	for _, d := range dirs {
 		for _, p := range paths {
-			if strings.HasPrefix(p, d+sep) {
+			if hasPrefixFold(p, d+sep, runtime.GOOS == "windows") {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// hasPrefixFold is strings.HasPrefix(p, prefix), or, when fold is on (a
+// Windows path), one that ignores case: C:\Users\Me and c:\users\me are
+// one folder there, and a file under it is owl's own whatever case the
+// caller's path happens to have (#4133).
+func hasPrefixFold(p, prefix string, fold bool) bool {
+	if fold {
+		return strings.HasPrefix(strings.ToLower(p), strings.ToLower(prefix))
+	}
+	return strings.HasPrefix(p, prefix)
 }
 
 // originRE is an http(s) URL's scheme and host, as it is written in a file.

@@ -159,7 +159,8 @@ func askRemoteForRouting(p Provider, id string) {
 			rr.Unlock()
 		}()
 		asked := time.Now()
+		shadowed := refreshOut(id)
 		cards, err := askRemote(context.Background(), p, http.MethodGet, RemoteCardsPath, remoteWait)
-		keepRemoteCardsOf(id, gen, asked, cards, err)
+		keepRemoteCardsOf(id, gen, asked, cards, err, shadowed)
 	})
 }

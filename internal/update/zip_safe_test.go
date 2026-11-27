@@ -52,12 +52,6 @@ func TestZipSafeRefusesEscapingEntry(t *testing.T) {
 // target.
 func writeZipLink(t *testing.T, path, link, target string) {
 	t.Helper()
-	writeZipLinkThen(t, path, link, target, nil)
-}
-
-// writeZipLinkThen is writeZipLink with files written after the link.
-func writeZipLinkThen(t *testing.T, path, link, target string, after []string) {
-	t.Helper()
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
@@ -70,23 +64,13 @@ func writeZipLinkThen(t *testing.T, path, link, target string, after []string) {
 		t.Fatal(err)
 	}
 	w.Write([]byte(target))
-	for _, a := range after {
-		w, err = z.Create(a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		w.Write([]byte("x"))
-	}
 	if err := z.Close(); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
 }
 
-// A .app's internal relative symlinks (Versions/Current -> A) are kept;
-// one that resolves outside the download, or is absolute, is refused. A
-// path written under a link is ambiguous and refused even when the link
-// itself stays inside (#C3).
+// A .app's standard internal framework links are kept (#C3).
 func TestZipSafeSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	good := map[string]string{
@@ -103,24 +87,76 @@ func TestZipSafeSymlinks(t *testing.T) {
 			t.Errorf("internal link %q -> %q: %v", link, target, err)
 		}
 	}
-	bad := []struct{ link, target string }{
-		{"owl.app/Contents/link", "/tmp/evil"},
-		{"owl.app/Contents/link", "../../../../etc"},
-		{"owl.app/Contents/link", `..\..\..\..\evil`},
-		{"owl.app/Contents/link", ""},
+}
+
+// zipNames folds each entry name as a Mac may, for resolveZipPath.
+func zipNames(names ...string) map[string]string {
+	out := map[string]string{}
+	for _, n := range names {
+		out[zipFold(n)] = n
 	}
-	for i, b := range bad {
-		p := filepath.Join(dir, "bad"+string(rune('a'+i))+".zip")
-		writeZipLink(t, p, b.link, b.target)
-		if err := zipSafe(p); err == nil {
-			t.Errorf("link %q -> %q was accepted", b.link, b.target)
+	return out
+}
+
+// A standard .app framework layout resolves through its links to the real
+// files (#C3).
+func TestResolveZipPathStandardFramework(t *testing.T) {
+	links := map[string]string{
+		"owl.app/Contents/Frameworks/A.framework/Versions/Current": "A",
+		"owl.app/Contents/Resources":                               "Frameworks/A.framework/Versions/Current/Resources",
+	}
+	z := zipPaths{links: links, names: zipNames(
+		"owl.app", "owl.app/Contents", "owl.app/Contents/Resources",
+		"owl.app/Contents/Frameworks", "owl.app/Contents/Frameworks/A.framework",
+		"owl.app/Contents/Frameworks/A.framework/Versions",
+		"owl.app/Contents/Frameworks/A.framework/Versions/A",
+		"owl.app/Contents/Frameworks/A.framework/Versions/A/Resources",
+		"owl.app/Contents/Frameworks/A.framework/Versions/A/Resources/Info.plist",
+	)}
+	for path, want := range map[string]string{
+		"owl.app/Contents/Frameworks/A.framework/Versions/Current/Resources/Info.plist": "owl.app/Contents/Frameworks/A.framework/Versions/A/Resources/Info.plist",
+		"owl.app/Contents/Resources/Info.plist":                                         "owl.app/Contents/Frameworks/A.framework/Versions/A/Resources/Info.plist",
+	} {
+		got, err := resolveZipPath(path, z)
+		if err != nil || got != want {
+			t.Errorf("resolve(%q) = %q, %v; want %q", path, got, err, want)
 		}
 	}
-	// an inside link with a file written through it: which path lands
-	// depends on the extractor's order, so it is refused
-	p := filepath.Join(dir, "through.zip")
-	writeZipLinkThen(t, p, "owl.app/Contents/link", "A", []string{"owl.app/Contents/link/after"})
-	if err := zipSafe(p); err == nil {
-		t.Error("a file written through an inside link was accepted")
+}
+
+// A ".." after a link is applied inside the folder that link landed in,
+// after its own links are expanded, not folded lexically beforehand (#C3).
+func TestResolveZipPathAppliesDotsAfterTheLink(t *testing.T) {
+	z := zipPaths{
+		links: map[string]string{"a": "x", "x": "d/e"},
+		names: zipNames("a", "x", "d", "d/e"),
+	}
+	got, err := resolveZipPath("a/../y", z)
+	if err != nil || got != "d/y" {
+		t.Fatalf("resolve(a/../y) = %q, %v; want d/y", got, err)
+	}
+}
+
+// A path that reaches an entry under another case or normal form is
+// ambiguous: which one is written cannot be told (#C3).
+func TestResolveZipPathRefusesAnAlias(t *testing.T) {
+	z := zipPaths{
+		links: map[string]string{"owl.app/Link": "A"},
+		names: zipNames("owl.app/Link", "owl.app/A"),
+	}
+	if got, err := resolveZipPath("owl.app/link/after", z); err == nil {
+		t.Fatalf("the case alias resolved to %q", got)
+	}
+}
+
+// An absolute link target is refused, and one that names nothing (#C3).
+func TestCleanLinkTarget(t *testing.T) {
+	for _, raw := range []string{"/tmp/x", `\\server\share`, ""} {
+		if got, err := cleanLinkTarget([]byte(raw)); err == nil {
+			t.Errorf("cleanLinkTarget(%q) = %q, accepted", raw, got)
+		}
+	}
+	if got, err := cleanLinkTarget([]byte(`Versions/Current`)); err != nil || got != "Versions/Current" {
+		t.Errorf("cleanLinkTarget = %q, %v", got, err)
 	}
 }

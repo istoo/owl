@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -261,5 +263,49 @@ func TestFeedSameRecordTwiceKeepsTwoIds(t *testing.T) {
 	live, _ := idsOf(feedRead(t, FeedStart, 100))
 	if len(live) != 2 || live[0] == live[1] {
 		t.Fatalf("two identical lines are two calls: %v", live)
+	}
+}
+
+// Two reads at once share one pass over the ledger: a second reader waits
+// for the one under way instead of reading the whole history beside it,
+// and the lock is not held while that pass runs.
+func TestFeedConcurrentReadsShareOneRefresh(t *testing.T) {
+	now := feedTest(t)
+	for i := range 2 {
+		Append(Record{Time: now.Add(time.Duration(i) * time.Second), Agent: "codex", Provider: "p", Model: "m", Input: 10 + i, Status: 200, Session: "s"})
+	}
+	var reads atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	prev := LogCalls
+	LogCalls = func(time.Time) []sessions.Call {
+		if reads.Add(1) == 1 {
+			close(entered)
+		}
+		<-release
+		return nil
+	}
+	t.Cleanup(func() { LogCalls = prev })
+	feed.Lock()
+	feed.memo = nil
+	feed.Unlock()
+	var wg sync.WaitGroup
+	read := func() {
+		defer wg.Done()
+		if _, err := FeedRead(FeedRequest{Cursor: FeedStart, Limit: 1}); err != nil {
+			t.Errorf("feed read: %v", err)
+		}
+	}
+	wg.Add(1)
+	go read()
+	<-entered // the first is in the ledger, its lock let go
+	wg.Add(1)
+	go read()
+	// give the second time to reach the wait before the first can finish
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("the ledger was read %d times for two concurrent readers, want 1", got)
 	}
 }

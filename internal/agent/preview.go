@@ -126,7 +126,11 @@ func DisconnectPreview(a *Agent, exe string) ([]FileChange, error) {
 		return nil, err
 	}
 	defer removePreview(tmp)
-	tmp, _ = filepath.EvalSymlinks(tmp)
+	// the copy's own path, where it can be resolved; one that can't be
+	// (a gone folder, a folder a policy hides) stays as it was, never ""
+	if r, err := filepath.EvalSymlinks(tmp); err == nil {
+		tmp = r
+	}
 	// the agent's folder: its files, copied; its folders aren't its config
 	before := map[string][]byte{}
 	if err := copyTop(dir, filepath.Join(tmp, dirRel), before, false); err != nil {
@@ -374,6 +378,14 @@ func previewEnv(home, tmp string) []string {
 			continue
 		}
 		if k == "HOME" || k == "USERPROFILE" {
+			continue
+		}
+		// a variable that names no folder under home (a profile's name, a
+		// server's address, a relative name its agent puts under a folder
+		// of its own) is the same under the copy: not Rel'd, and not
+		// dropped because Rel found no folder (#4133)
+		if agentenv.NotPaths[k] {
+			out = append(out, kv)
 			continue
 		}
 		// a folder under home is the same one under the copy's; one

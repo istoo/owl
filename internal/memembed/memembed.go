@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -199,6 +200,7 @@ func Set(on bool) error {
 type download struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc // nil when none is under way
+	doneCh chan struct{}      // closed when the goroutine has gone and cancel is nil
 	err    string             // the last one's, "" when it worked
 	done   atomic.Int64
 }
@@ -214,7 +216,8 @@ func (d *download) start() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	d.cancel, d.err = cancel, ""
+	done := make(chan struct{})
+	d.cancel, d.doneCh, d.err = cancel, done, ""
 	d.done.Store(0)
 	go func() {
 		err := fetchModel(ctx)
@@ -228,16 +231,23 @@ func (d *download) start() {
 		if err == nil {
 			Poke()
 		}
+		close(done)
 	}()
 }
 
-// stop ends the download under way.
+// stop ends the download under way and waits for its goroutine to leave:
+// Set(false) deletes the folder it writes into, and Set(true) after it
+// must find cancel cleared to start the download again.
 func (d *download) stop() {
 	d.mu.Lock()
-	if d.cancel != nil {
-		d.cancel()
+	cancel, done := d.cancel, d.doneCh
+	if cancel != nil {
+		cancel()
 	}
 	d.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 }
 
 // fetchModel fetches the files not on disk yet, each checked against
@@ -525,12 +535,15 @@ func similar(text string, pool []*memory.Memory) map[string]float64 {
 	out := map[string]float64{}
 	for _, m := range pool {
 		v, ok := vs.get(key(m))
-		if !ok {
+		if !ok || len(v) != len(q) {
 			continue
 		}
 		var dot float64
 		for i := range q {
 			dot += float64(q[i]) * float64(v[i])
+		}
+		if math.IsNaN(dot) || math.IsInf(dot, 0) {
+			continue
 		}
 		out[m.ID] = dot
 	}

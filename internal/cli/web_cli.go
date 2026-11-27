@@ -159,7 +159,7 @@ func printWeb(w *gui.Web) {
 	if os.Getenv("OWL_WEB_KEY") != "" {
 		carries = "OWL_WEB_KEY"
 	}
-	fmt.Println(muted.Render("  the link carries " + carries + " · gateway " + advertisedURL() + " · Ctrl-C to stop"))
+	fmt.Println(muted.Render("  the link carries " + carries + ", so anyone who reads it can open this page · gateway " + advertisedURL() + " · Ctrl-C to stop"))
 }
 
 // lanWarning is said wherever the page is served on the network.

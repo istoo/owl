@@ -15,10 +15,13 @@ import (
 // Message marks stay out of conversation hashes: a running process cannot
 // move them in its existing history, and reports that gap on the reply.
 type clientCache struct {
-	system          []cachePoint
-	tail            string
-	count           int
-	tools           int
+	system []cachePoint
+	tail   string
+	count  int
+	tools  int
+	// toolTTL is the mark each tool the client put one on keeps, by name:
+	// the rebuilt tools carry it again (anthropicBody, H/M8)
+	toolTTL         map[string]string
 	messages        int
 	droppedSystem   int
 	droppedMessages int
@@ -271,6 +274,12 @@ func readClientCache(a aRequest) (*clientCache, error) {
 			return nil, err
 		} else if ttl != "" {
 			c.tools++
+			if t.Name != "" {
+				if c.toolTTL == nil {
+					c.toolTTL = map[string]string{}
+				}
+				c.toolTTL[t.Name] = ttl
+			}
 		}
 	}
 	var system []json.RawMessage

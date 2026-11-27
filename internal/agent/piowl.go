@@ -57,7 +57,15 @@ func dropPiBlock(modelsPath string, off func() string) error {
 	}
 	if raw, err := os.ReadFile(modelsPath); err == nil {
 		if _, e := os.Stat(modelsPath + ".before-pi-owl"); e != nil {
-			if err := edit.WriteAtomic(modelsPath+".before-pi-owl", raw); err != nil {
+			// the backup holds the key the block had: the file's own mode
+			// when that is no wider than 0600, 0600 otherwise
+			perm := os.FileMode(0o600)
+			if st, serr := os.Stat(modelsPath); serr == nil {
+				if p := st.Mode().Perm() & 0o600; p != 0 {
+					perm = p
+				}
+			}
+			if err := edit.WriteAtomicMode(modelsPath+".before-pi-owl", raw, perm); err != nil {
 				return err
 			}
 		}

@@ -1034,10 +1034,14 @@ func desktopOff(p desktopPaths) error {
 		return err
 	}
 	k := p.key
-	stashed := unstash(desktopStashed+k) != ""
-	mode, mode3p, applied := unstash(desktopMode+k), unstash(desktopMode3p+k), unstash(desktopApplied+k)
+	// what was stashed is peeked, not taken, until every write below has
+	// gone through: one that fails leaves the originals for the next try
+	// (#4258)
+	took := peek(desktopStashed+k, desktopMode+k, desktopMode3p+k, desktopApplied+k, desktopMade+k, desktopLocale+k)
+	stashed := took[desktopStashed+k] != ""
+	mode, mode3p, applied := took[desktopMode+k], took[desktopMode3p+k], took[desktopApplied+k]
 	var made []string
-	if m := unstash(desktopMade + k); m != "" {
+	if m := took[desktopMade+k]; m != "" {
 		made = strings.Split(m, "\n")
 	}
 	if !stashed && !slices.ContainsFunc(entries, desktopOurs) {
@@ -1105,7 +1109,7 @@ func desktopOff(p desktopPaths) error {
 
 	// Claude-3p's config.json owl made only to carry the language:
 	// gone again when it still holds nothing but that language
-	if loc := unstash(desktopLocale + k); loc != "" && slices.Contains(made, p.app3p) {
+	if loc := took[desktopLocale+k]; loc != "" && slices.Contains(made, p.app3p) {
 		if b, err := os.ReadFile(p.app3p); err == nil {
 			var m map[string]json.RawMessage
 			var only string
@@ -1130,6 +1134,7 @@ func desktopOff(p desktopPaths) error {
 			os.Remove(f)
 		}
 	}
+	forgetValues(took)
 	return nil
 }
 

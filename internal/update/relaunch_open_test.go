@@ -16,15 +16,15 @@ import (
 // it, Settings' AutoRestart took the focus from the app the user was
 // typing in (xyxyxy_15591 on Discord).
 func TestRelaunchOpen(t *testing.T) {
-	const app = "/Applications/owl.app"
+	const app = "/Applications/Owl Suite.app"
 	for _, c := range []struct {
 		window, quiet bool
 		want          string
 	}{
-		{true, false, `open -n "/Applications/owl.app"`},
-		{true, true, `open -n -g "/Applications/owl.app"`},
-		{false, false, `open -n -g "/Applications/owl.app" --args tray`},
-		{false, true, `open -n -g "/Applications/owl.app" --args tray`},
+		{true, false, `open -n '/Applications/Owl Suite.app'`},
+		{true, true, `open -n -g '/Applications/Owl Suite.app'`},
+		{false, false, `open -n -g '/Applications/Owl Suite.app' --args tray`},
+		{false, true, `open -n -g '/Applications/Owl Suite.app' --args tray`},
 	} {
 		if got := relaunchOpen(app, c.window, c.quiet); got != c.want {
 			t.Errorf("relaunch, window %v quiet %v: %s, want %s", c.window, c.quiet, got, c.want)

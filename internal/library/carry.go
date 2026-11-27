@@ -384,6 +384,33 @@ func (b *Bundle) check() error {
 	return nil
 }
 
+// trustFolder is whether the skill's folder here is a link to the folder
+// a bundle names, and nothing more: a bundle's Source.Dir is a description
+// from another computer, and one Put wrote into the library's record must
+// not make it trusted on the next (#M37c). Only the link on this
+// computer, read and resolved (a relative one against its own folder), is
+// evidence that the folder is where this computer's skill lives.
+func (l *Library) trustFolder(s *CarriedSkill, src *Source) bool {
+	if src.Dir == "" || !filepath.IsAbs(src.Dir) || !isDir(src.Dir) {
+		return false
+	}
+	to, ok := linkReal(skillDir(s.Name))
+	return ok && to == realDir(src.Dir)
+}
+
+// linkReal is where a link points, resolved relative to the link's own
+// folder when it is a relative one, with the path's links followed.
+func linkReal(link string) (string, bool) {
+	to, err := os.Readlink(link)
+	if err != nil {
+		return "", false
+	}
+	if !filepath.IsAbs(to) {
+		to = filepath.Join(filepath.Dir(link), to)
+	}
+	return realDir(to), true
+}
+
 // localFile reports whether rel, with /, names a file inside a folder:
 // not absolute, no .., no \ to be read as a separator elsewhere.
 func localFile(rel string) bool {
@@ -533,8 +560,13 @@ func Put(b *Bundle) (*Result, error) {
 					continue
 				}
 			}
-			if src := s.Source; src != nil && src.Kind == "folder" && src.Dir != "" && isDir(src.Dir) {
-				if to, err := os.Readlink(skillDir(s.Name)); err == nil && filepath.Clean(to) == filepath.Clean(src.Dir) {
+			// a folder is linked only when this computer already links the skill
+			// to it: a bundle from another computer names its own paths, and
+			// one that happens to exist here (a folder of the user's) must
+			// not become a link out of the library. Else it comes as its
+			// files (#M37c)
+			if src := s.Source; src != nil && src.Kind == "folder" && l.trustFolder(s, src) {
+				if to, ok := linkReal(skillDir(s.Name)); ok && to == realDir(src.Dir) {
 					keep[s.Name] = true
 				} else {
 					link[s.Name] = src.Dir

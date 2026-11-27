@@ -47,6 +47,14 @@ func TestKeyLimitsOnAndOff(t *testing.T) {
 		_, err := s.searchMCPRun(r, "latest go", nil, nil)
 		return err
 	}
+	// web_fetch and ChatPage's read_url go through the same budget point
+	// (M1), so a key held to a limit with no plugin serving it is refused
+	// there too, before the page is asked for
+	webFetch := func() error {
+		r := httptest.NewRequest("POST", SearchMCPPath, nil).WithContext(access.WithIdentity(t.Context(), capped))
+		_, err := s.fetchMCPRun(r, fetchArgs{URL: "https://example.com/"})
+		return err
+	}
 
 	// on
 	if w := call(secrets[0]); w.Code != 200 {
@@ -77,6 +85,9 @@ func TestKeyLimitsOnAndOff(t *testing.T) {
 	}
 	if err := mcp(); err == nil || !strings.Contains(err.Error(), "Key limits plugin") {
 		t.Errorf("off: the search MCP server said %v, not that the plugin is off", err)
+	}
+	if err := webFetch(); err == nil || !strings.Contains(err.Error(), "Key limits plugin") {
+		t.Errorf("off: web_fetch said %v, not that the plugin is off", err)
 	}
 	if w := call(secrets[1]); w.Code != 200 {
 		t.Fatal("off: a key with no limit refused", w.Code, w.Body.String())

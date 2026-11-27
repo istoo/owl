@@ -355,10 +355,26 @@ func delJSONBytes(raw []byte, keyPath string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("cannot locate key %q", keyPath)
 	}
 	a-- // closing quote of the key
-	for a > 0 && stripped[a-1] != '"' {
+	// back to the key's opening quote: a quote inside the name that is
+	// escaped (\" in `{"a\"b": 1}`) is not it, so a run of backslashes
+	// before a quote is counted, and only an even one (or none) ends the
+	// scan (#4133)
+	for a > 0 {
 		a--
+		if stripped[a] != '"' {
+			continue
+		}
+		bs := 0
+		for j := a - 1; j >= 0 && stripped[j] == '\\'; j-- {
+			bs++
+		}
+		if bs%2 == 0 {
+			break
+		}
 	}
-	a-- // opening quote
+	if a == 0 && stripped[a] != '"' {
+		return nil, false, fmt.Errorf("cannot locate key %q", keyPath)
+	}
 	b := r.Index + len(r.Raw)
 
 	ws := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }

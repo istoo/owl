@@ -126,7 +126,7 @@ func gitSource(s string) (src Source, ok bool, err error) {
 		if src.Ref != "" && (!gitRef.MatchString(src.Ref) || strings.HasPrefix(src.Ref, "-") || strings.Contains(src.Ref, "..")) {
 			return Source{}, true, fmt.Errorf("%q isn't a branch or tag git can fetch", src.Ref)
 		}
-		if strings.Contains("/"+src.Path+"/", "/../") {
+		if !safePath(src.Path) {
 			return Source{}, true, fmt.Errorf("%q isn't a folder in the repository", src.Path)
 		}
 	}

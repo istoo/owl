@@ -418,3 +418,47 @@ func TestModelPanicIsTheRequestsError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A gateway key held to masking (access.RedactOn) is a fallback, not an
+// override: with the settings masking nothing it masks secrets and personal
+// data by the defaults, and where the user set masking of their own their
+// explicit categories stand. Forcing Secrets on over "words only" would
+// override what the user asked for, a policy change (H42).
+func TestForcedMasksOnlyWhereSettingsMaskNothing(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("HOME", h)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(h, ".config"))
+
+	if err := settings.Save(settings.Settings{RedactModelOff: true}); err != nil {
+		t.Fatal(err)
+	}
+	if Wanted(settings.Settings{RedactModelOff: true}) {
+		t.Fatal("all off read as wanted")
+	}
+	forced := optionsCtx(WithForced(context.Background()))
+	if !forced.Secrets || !forced.Personal {
+		t.Fatalf("forced with nothing set: secrets %v personal %v, want both", forced.Secrets, forced.Personal)
+	}
+
+	for _, c := range []struct {
+		st       settings.Settings
+		secrets  bool
+		personal bool
+	}{
+		{settings.Settings{RedactWords: []string{"acme"}, RedactModelOff: true}, false, false},
+		{settings.Settings{RedactPersonal: true, RedactModelOff: true}, false, true},
+		{settings.Settings{Redact: true, RedactModelOff: true}, true, false},
+	} {
+		if err := settings.Save(c.st); err != nil {
+			t.Fatal(err)
+		}
+		if !Wanted(c.st) {
+			t.Fatalf("Wanted false for %+v: the test isn't the case", c.st)
+		}
+		got := optionsCtx(WithForced(context.Background()))
+		if got.Secrets != c.secrets || got.Personal != c.personal {
+			t.Fatalf("forced with the user's %+v: secrets %v personal %v, want %v/%v (their categories stand)",
+				c.st, got.Secrets, got.Personal, c.secrets, c.personal)
+		}
+	}
+}

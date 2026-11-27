@@ -178,16 +178,18 @@ func gooseProviderKept(path string, at place) map[string]any {
 	return mergeKept(have, want, []string{"name", "engine", "api_key_env", "base_url", "requires_auth", "dynamic_models", "models", "headers"})
 }
 
-// writeGooseProvider writes owl's custom provider file for Goose.
+// writeGooseProvider writes owl's custom provider file for Goose. It
+// carries the gateway's key, so it is kept to its user alone: the folder
+// is made 0700 and the file 0600, never 0644 first.
 func writeGooseProvider(path string, at place) error {
 	b, err := json.MarshalIndent(gooseProviderKept(path, at), "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return edit.WriteAtomic(path, append(b, '\n'))
+	return edit.WriteAtomicMode(path, append(b, '\n'), 0o600)
 }
 
 // syncGooseProvider rewrites owl's custom provider file for Goose with

@@ -307,6 +307,7 @@ func startOne(path string, cpu bool, stop <-chan struct{}) (*helper, error) {
 	// pf-serve has its own copy: once it exits, a read here sees EOF
 	w.Close()
 	if err != nil {
+		in.Close() // no child to write to: the pipe would leak
 		out.Close()
 		return nil, err
 	}
@@ -677,7 +678,13 @@ func (h *helper) classify(texts []string) ([][]redact.Found, error) {
 	r := &reader{r: h.out}
 	status := r.u32()
 	if status == 1 {
-		msg := r.bytes(int(r.u32()))
+		// an answer out of step with the protocol could name a length of
+		// gigabytes; never allocate more than a message can be
+		n := r.u32()
+		if r.err == nil && n > maxServeMessage {
+			r.err = fmt.Errorf("pf-serve's message is %d bytes, past %d", n, maxServeMessage)
+		}
+		msg := r.bytes(int(n))
 		if r.err != nil {
 			return nil, r.fail(h)
 		}
@@ -709,6 +716,11 @@ func (h *helper) classify(texts []string) ([][]redact.Found, error) {
 // beforeRead runs between sending a request and reading its answer, for
 // a test to read after pf-serve has exited (TestGPUDeathReadAfterExit).
 var beforeRead = func(*helper) {}
+
+// maxServeMessage is the most pf-serve's own error message may be: a
+// length read out of step with the protocol is not one, and a length in
+// the gigabytes would end the process allocating it.
+const maxServeMessage = 1 << 20
 
 type reader struct {
 	r   *bufio.Reader

@@ -164,7 +164,7 @@ func (l *Library) projectByKey(key string) *Project {
 // project's hub entry (hub, or nil) in its local scope and the servers it
 // turns off in its disabledMcpServers; what owl wrote there before and
 // no longer wants comes out, and nothing else of the record changes.
-func (l *Library) syncClaudeLocal(p *Project, hub *Server, fail func(what string, err error)) {
+func (l *Library) syncClaudeLocal(p *Project, hub *Server, b *backups, fail func(what string, err error)) {
 	var want []string
 	for _, name := range offFor(p.ServersOff, "claude") {
 		if l.server(name) != nil {
@@ -188,6 +188,16 @@ func (l *Library) syncClaudeLocal(p *Project, hub *Server, fail func(what string
 		return
 	}
 	defer release()
+	// Claude Code's own record is kept before owl changes it, as every
+	// agent's file is (#L11): one wrong key there takes its projects with
+	// it, and the user has no copy
+	if b == nil {
+		b = newBackups()
+	}
+	if err := b.keep("claude", path); err != nil {
+		fail("claude", err)
+		return
+	}
 	// a record under another key (the folder became a repository's) goes
 	if p.Claude != nil && p.Claude.Root != root {
 		if err := clearClaudeLocal(path, p.Claude); err != nil {

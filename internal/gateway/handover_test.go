@@ -724,16 +724,29 @@ func TestToolCallOfTheOwlBeforeGoesToIt(t *testing.T) {
 
 	h := lanGuard(New().Handler())
 	token := randomToken()
-	call := func(remote string) (int, string) {
+	call := func(remote, listen string) (int, string) {
 		r := httptest.NewRequest("POST", claudeMCPPath+token, strings.NewReader(`{"tool_call_id":"x","name":"read","arguments":{}}`))
 		r.RemoteAddr = remote
+		if listen != "" {
+			r = r.WithContext(context.WithValue(r.Context(), http.LocalAddrContextKey,
+				&net.TCPAddr{IP: net.ParseIP(listen), Port: 3425}))
+		}
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w.Code, w.Body.String()
 	}
 	// from this computer's own LAN address, as on a non-loopback OWL_ADDR
-	// (#1546): no key, as for this one's own runs
-	if c, b := call("192.168.1.9:5000"); c != 200 || !strings.Contains(b, "answered there") {
+	// (#1546): no key, as for this one's own runs. The handover window is
+	// this computer's callers only (M5): another machine's made-up token
+	// there is judged as any request from it, without reaching the owl
+	// before this one.
+	if c, b := call("192.168.1.50:5000", "192.168.1.9"); c != http.StatusUnauthorized {
+		t.Fatalf("another machine's call went on in the handover: %d %s", c, b)
+	}
+	if g := got.Load(); g != nil {
+		t.Fatalf("another machine's call reached the owl before: %q", g)
+	}
+	if c, b := call("192.168.1.9:5000", "192.168.1.9"); c != 200 || !strings.Contains(b, "answered there") {
 		t.Fatalf("the call wasn't passed on: %d %s", c, b)
 	}
 	if g, _ := got.Load().(string); !strings.HasPrefix(g, "POST "+claudeMCPPath+token+" ") || !strings.Contains(g, `"tool_call_id":"x"`) {
@@ -743,13 +756,13 @@ func TestToolCallOfTheOwlBeforeGoesToIt(t *testing.T) {
 	// needs a key again
 	before.Close()
 	os.Remove(sock)
-	if c, b := call("127.0.0.1:5000"); c != http.StatusNotFound {
+	if c, b := call("127.0.0.1:5000", "127.0.0.1"); c != http.StatusNotFound {
 		t.Fatalf("with the owl before gone: %d %s", c, b)
 	}
 	if forwarding() {
 		t.Fatal("still passing calls on to a owl gone")
 	}
-	if c, b := call("192.168.1.9:5000"); c != http.StatusUnauthorized {
+	if c, b := call("192.168.1.9:5000", "192.168.1.9"); c != http.StatusUnauthorized {
 		t.Fatalf("from the network, with the owl before gone: %d %s", c, b)
 	}
 }

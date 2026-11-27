@@ -673,6 +673,11 @@ func cut(t string, size int) []span {
 				next++
 			}
 		}
+		if next <= at {
+			// a size no larger than the overlap leaves no room to move
+			// on: take the whole piece, or the loop never ends
+			next = end
+		}
 		at = next
 	}
 }

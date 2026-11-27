@@ -6,6 +6,7 @@ import (
 	"log"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/istoo/owl/internal/proc"
@@ -31,9 +32,12 @@ type bodyRoomT struct {
 	why   string
 	sized bool
 	held  int64
-	// by is what each request being served holds, by its context, so a
-	// body read twice in one request takes its room once
-	by    map[context.Context]int64
+	// by is what each request being served holds, by its body-room key,
+	// so a body read twice in one request takes its room once. The key is
+	// the request's mark (withBodyRoom), which a context made from it
+	// keeps: a middleware's WithContext (withCaller, keySlots, withSpent)
+	// would otherwise count the same body again.
+	by    map[any]int64
 	queue []*bodyWaiter
 }
 
@@ -52,6 +56,33 @@ const bodyRoomFree = 1 << 20
 // answered 503: within unroutedMost, which the wait counts toward
 // (noteWait), so the answer says why.
 var bodyRoomWait = 100 * time.Second
+
+// bodyRoomKey marks a request for bodyRoom. Its value is one per
+// request, so the contexts it is made from (a middleware's WithContext)
+// count a body read twice as one request's. withCaller sets it.
+type bodyRoomKey struct{}
+
+// bodyRoomMark is one request's. It carries an id so two of them are
+// never the same key: pointers to zero-size values may share an address,
+// and every request of every caller would then count as one.
+type bodyRoomMark struct{ id uint64 }
+
+var bodyRoomMarkID atomic.Uint64
+
+// withBodyRoom is ctx marked as a request's, once at its start.
+func withBodyRoom(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bodyRoomKey{}, &bodyRoomMark{id: bodyRoomMarkID.Add(1)})
+}
+
+// roomKey is the mark ctx carries, or ctx itself when it carries none
+// (a handler called directly, a test's own context): either way, a body
+// read twice through the same context is counted once.
+func roomKey(ctx context.Context) any {
+	if m, ok := ctx.Value(bodyRoomKey{}).(*bodyRoomMark); ok {
+		return m
+	}
+	return ctx
+}
 
 // bodyRoomFloor is the least room, however small the machine.
 const bodyRoomFloor = 64 << 20
@@ -78,9 +109,17 @@ type bodyFull struct {
 	n, held, room int64
 	why           string
 	waited        time.Duration
+	// grew says a body already let in grew past the room it was let in
+	// for, rather than one never let in: no wait was spent on it.
+	grew bool
 }
 
 func (e *bodyFull) Error() string {
+	if e.grew {
+		return fmt.Sprintf("owl is serving %d MiB of request bodies at once, as much as it holds (%d MiB, %s), "+
+			"and this body has grown past the room it was let in with; the provider was not asked",
+			e.held>>20, e.room>>20, e.why)
+	}
 	return fmt.Sprintf("owl is serving %d MiB of request bodies at once, as much as it holds (%d MiB, %s), "+
 		"and none of them ended within %s to make room for this %d MiB one; the provider was not asked",
 		e.held>>20, e.room>>20, e.why, e.waited, e.n>>20)
@@ -101,13 +140,29 @@ func (b *bodyRoomT) take(ctx context.Context, n int64) error {
 		b.sized = true
 		b.room, b.why = bodyRoomSize()
 	}
-	if h, ok := b.by[ctx]; ok || b.room <= 0 {
-		if ok && n > h {
-			// the body read is bigger than its request said, a compressed
-			// one: it holds what it is, let in already
-			b.held += n - h
-			b.by[ctx] = n
+	key := roomKey(ctx)
+	h, holds := b.by[key]
+	if holds {
+		if n <= h || b.room <= 0 {
+			b.mu.Unlock()
+			return nil
 		}
+		// the body read is bigger than its request said, a compressed
+		// one: it grows only into the room the others leave. Waiting
+		// here would leave every holder holding part of the room while
+		// none can finish, so it is refused now. A body alone may grow
+		// past the room, as an oversized one runs alone.
+		if b.held > h && b.held+(n-h) > b.room {
+			full := &bodyFull{n: n, held: b.held, room: b.room, why: b.why, grew: true}
+			b.mu.Unlock()
+			return full
+		}
+		b.held += n - h
+		b.by[key] = n
+		b.mu.Unlock()
+		return nil
+	}
+	if b.room <= 0 {
 		b.mu.Unlock()
 		return nil
 	}
@@ -159,10 +214,10 @@ func (b *bodyRoomT) letIn() {
 		}
 		b.queue = b.queue[1:]
 		if b.by == nil {
-			b.by = map[context.Context]int64{}
+			b.by = map[any]int64{}
 		}
 		b.held += w.n
-		b.by[w.ctx] = w.n
+		b.by[roomKey(w.ctx)] = w.n
 		close(w.in)
 		ctx := w.ctx
 		context.AfterFunc(ctx, func() { b.give(ctx) })
@@ -171,9 +226,10 @@ func (b *bodyRoomT) letIn() {
 
 // give returns what ctx's request held.
 func (b *bodyRoomT) give(ctx context.Context) {
+	k := roomKey(ctx)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.held -= b.by[ctx]
-	delete(b.by, ctx)
+	b.held -= b.by[k]
+	delete(b.by, k)
 	b.letIn()
 }

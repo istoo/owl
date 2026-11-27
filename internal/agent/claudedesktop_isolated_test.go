@@ -200,6 +200,36 @@ func TestClaudeDesktopIsolatedOnlyOnAMac(t *testing.T) {
 	}
 }
 
+// A turn-on that fails part way puts back what it had already made: no
+// Claude Owl.app, no Claude-Owl-3p, no Code tab folder, and the switch
+// still off (#4133).
+func TestClaudeDesktopIsolatedRollsBackAFailedTurnOn(t *testing.T) {
+	home, _, iso, on := isolatedSandbox(t)
+	oldAdd := desktopIsoAdd
+	desktopIsoAdd = func(string, string, string, string) (string, error) {
+		return "", errors.New("no app could be made")
+	}
+	t.Cleanup(func() { desktopIsoAdd = oldAdd })
+	if _, err := SetDesktopIsolated(home, true); err == nil {
+		t.Fatal("the failed turn-on said it went through")
+	}
+	if *on {
+		t.Error("the switch stayed on")
+	}
+	if desktopIsolatedClaudeOn() {
+		t.Error("the Code tab's own folder stayed on")
+	}
+	if _, err := os.Stat(iso.dir3p); !os.IsNotExist(err) {
+		t.Errorf("Claude-Owl-3p left: %v", err)
+	}
+	if _, err := os.Stat(desktopIsolatedClaudeDir(home)); !os.IsNotExist(err) {
+		t.Errorf("the Code tab's folder left: %v", err)
+	}
+	if _, err := os.Stat(desktopiso.Path(home)); !os.IsNotExist(err) {
+		t.Errorf("an app was left: %v", err)
+	}
+}
+
 // Two Claude.app processes run with the isolated Desktop on: owl's
 // Restart and its "running on the old settings" read the one it wires.
 func TestDesktopInstance(t *testing.T) {

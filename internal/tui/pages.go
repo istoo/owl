@@ -1239,9 +1239,9 @@ func costCurrency() (settings.Settings, float64, map[string]bool) {
 		costYuan = provider.YuanPricedSet()
 	}
 	if costSet.Currency != "usd" && costSet.Currency != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		costRateVal = fx.Get(ctx).CNYPerUSD
-		cancel()
+		// never the network in View(): Soon is the rate known now, and
+		// fetches a stale one behind the page for the next look (M41)
+		costRateVal = fx.Soon().CNYPerUSD
 	}
 	costAt = time.Now()
 	return costSet, costRateVal, costYuan

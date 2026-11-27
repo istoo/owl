@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,18 @@ func TestWordsSplitsCJK(t *testing.T) {
 	got := strings.Join(Words("用 Go 写测试, mote-run!"), "|")
 	if got != "用|go|写|写测|测|测试|试|mote|run" {
 		t.Fatalf("words %q", got)
+	}
+}
+
+// A NaN similarity is no similarity: it must not raise the bar to NaN and
+// hide every memory the search did mean.
+func TestFuseSkipsNaN(t *testing.T) {
+	a := &Memory{ID: "a", Text: "one"}
+	b := &Memory{ID: "b", Text: "two"}
+	c := &Memory{ID: "c", Text: "three"}
+	out := fuse([]*Memory{a, b, c}, nil, map[string]float64{"a": math.NaN(), "b": 0.9, "c": 0.2})
+	if len(out) != 1 || out[0].Memory != b {
+		t.Fatalf("fused %+v, want only b", out)
 	}
 }
 

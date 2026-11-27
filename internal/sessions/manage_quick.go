@@ -36,8 +36,10 @@ var (
 	// is under way; each stands for the size and time it was read at
 	glances = map[string]*state{}
 	// overlaid are the glances put into the cache for one pass of
-	// Manage, never saved with it
-	overlaid = map[string]*state{}
+	// Manage, never saved with it; refs counts the passes still holding a
+	// path, so an earlier pass's done doesn't drop a later pass's glance
+	overlaid    = map[string]*state{}
+	overlayRefs = map[string]int{}
 	// behind are the paths a read behind an answer has taken, and
 	// behindRuns the reads, waited for by Reset
 	behind     = map[string]bool{}
@@ -113,9 +115,16 @@ func quickRead(want, all []file) (pending map[string]bool, done func()) {
 		seen := glanceAll(look)
 		mu.Lock()
 		for i, f := range look {
-			if seen[i] != nil {
-				glances[f.path] = seen[i]
+			if seen[i] == nil {
+				continue
 			}
+			// a read behind the answer may have filled the cache while mu
+			// was let go: its parse is the true one, and the glance must
+			// neither replace it nor be kept for a later put
+			if cache[f.path] != nil {
+				continue
+			}
+			glances[f.path] = seen[i]
 		}
 	}
 	put := map[string]*state{}
@@ -125,14 +134,23 @@ func quickRead(want, all []file) (pending map[string]bool, done func()) {
 		}
 	}
 	for p, g := range put {
-		cache[p], overlaid[p] = g, g
+		// put holds the paths not in the cache: the glance goes there,
+		// counted once for this pass, so a later pass's done doesn't drop
+		// a glance this one still shows
+		overlaid[p], cache[p] = g, g
+		overlayRefs[p]++
 	}
 	return pending, func() {
 		for p, g := range put {
+			if overlayRefs[p] > 1 {
+				overlayRefs[p]--
+				continue
+			}
+			delete(overlayRefs, p)
+			delete(overlaid, p)
 			if cache[p] == g {
 				delete(cache, p)
 			}
-			delete(overlaid, p)
 		}
 	}
 }
@@ -275,6 +293,6 @@ func savable() map[string]*state {
 func forgetBehind() {
 	behindRuns.Wait()
 	mu.Lock()
-	glances, overlaid, behind = map[string]*state{}, map[string]*state{}, map[string]bool{}
+	glances, overlaid, overlayRefs, behind = map[string]*state{}, map[string]*state{}, map[string]int{}, map[string]bool{}
 	mu.Unlock()
 }

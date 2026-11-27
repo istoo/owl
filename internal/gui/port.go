@@ -87,8 +87,11 @@ func setPort(p int) (portJSON, error) {
 	was := cur.Port
 	if strconv.Itoa(want) == gateway.Port() {
 		if was != p {
-			cur.Port = p
-			if err := settings.Save(cur); err != nil {
+			// the write re-reads under the settings lock (M41)
+			if _, err := settings.Update(func(s *settings.Settings) error {
+				s.Port = p
+				return nil
+			}); err != nil {
 				return portJSON{}, err
 			}
 		}
@@ -107,15 +110,18 @@ func setPort(p int) (portJSON, error) {
 	}
 	// the agents reaching the gateway where it is now, to move with it
 	on := agent.OnGateway()
-	cur.Port = p
-	if err := settings.Save(cur); err != nil {
+	if _, err := settings.Update(func(s *settings.Settings) error {
+		s.Port = p
+		return nil
+	}); err != nil {
 		return portJSON{}, err
 	}
 	if gw != nil {
 		if err := gw.Relisten(); err != nil {
-			back := settings.Load()
-			back.Port = was
-			_ = settings.Save(back)
+			_, _ = settings.Update(func(s *settings.Settings) error {
+				s.Port = was
+				return nil
+			})
 			return portJSON{}, errPortTaken(want)
 		}
 	} else {

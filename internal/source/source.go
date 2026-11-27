@@ -256,6 +256,14 @@ func do(c *http.Client, req *http.Request, urls []string) (*http.Response, error
 	// unbounded, and neither a mirror nor a second address may be sent an
 	// empty body in its place (#H14).
 	couldNotReplay := hasBody && req.GetBody == nil && len(urls) > 1
+	// the caller's body is closed once, as http.Client's contract says: by
+	// the transport when a try carries it, here when none does (#H14)
+	originalSent := false
+	defer func() {
+		if hasBody && !originalSent {
+			req.Body.Close()
+		}
+	}()
 	if couldNotReplay {
 		if official < 0 {
 			return nil, errors.New("the request body can't be sent again")
@@ -276,15 +284,20 @@ func do(c *http.Client, req *http.Request, urls []string) (*http.Response, error
 			// only a request bare allows has one here (Do)
 			r.Header.Del("Authorization")
 		}
-		if hasBody && req.GetBody != nil {
-			// every address gets a body of its own: a mirror that answered
-			// nothing left the previous one used up
-			body, err := req.GetBody()
-			if err != nil {
-				last = errors.Join(last, fmt.Errorf("%s: %w", raw, err))
-				continue
+		if hasBody {
+			if !originalSent {
+				// the caller's body goes with the first try that is made,
+				// and the transport closes it; every later try gets a body
+				// of its own, since the one before it was used up (#H14)
+				originalSent = true
+			} else {
+				body, err := req.GetBody()
+				if err != nil {
+					last = errors.Join(last, fmt.Errorf("%s: %w", raw, err))
+					continue
+				}
+				r.Body = body
 			}
-			r.Body = body
 		}
 		// with no GetBody r.Body is the caller's: it is sent once, and
 		// urls is the official address alone (couldNotReplay)

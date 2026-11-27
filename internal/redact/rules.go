@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/istoo/owl/internal/lazyre"
 )
@@ -117,6 +118,8 @@ func (r Rule) compile() (*regexp.Regexp, error) {
 // string of every request.
 var compiled sync.Map // Rule → *regexp.Regexp
 
+var ruleCount atomic.Int64
+
 // customRules are the user's rules as Mask runs them, the ones that work.
 func customRules(in []Rule) []rule {
 	var out []rule
@@ -130,7 +133,11 @@ func customRules(in []Rule) []rule {
 			if err != nil || re.MatchString("") {
 				re = nil
 			}
-			v, _ = compiled.LoadOrStore(r, re)
+			var loaded bool
+			v, loaded = compiled.LoadOrStore(r, re)
+			if !loaded {
+				cacheGrew(&ruleCount, &compiled)
+			}
 		}
 		re := v.(*regexp.Regexp)
 		if re == nil {

@@ -89,9 +89,9 @@ var agyPlain = []string{"remote-control", "--remote-control", "-remote-control"}
 // owl's settings file, in PowerShell or a POSIX shell.
 func agyLaunchAt(gw, key, settings, model string, powershell bool) string {
 	if powershell {
-		return `$env:GEMINI_API_KEY="` + key + `"; $env:GOOGLE_GEMINI_BASE_URL="` + gw + `"; agy --settings '` + strings.ReplaceAll(settings, "'", "''") + `' --model '` + strings.ReplaceAll(model, "'", "''") + `'`
+		return "$env:GEMINI_API_KEY=" + psQuote(key) + "; $env:GOOGLE_GEMINI_BASE_URL=" + psQuote(gw) + "; agy --settings " + psQuote(settings) + " --model " + psQuote(model)
 	}
-	return "GEMINI_API_KEY=" + key + " GOOGLE_GEMINI_BASE_URL=" + gw + " agy --settings '" + strings.ReplaceAll(settings, "'", `'\''`) + "' --model '" + strings.ReplaceAll(model, "'", `'\''`) + "'"
+	return "GEMINI_API_KEY=" + posixQuote(key) + " GOOGLE_GEMINI_BASE_URL=" + posixQuote(gw) + " agy --settings " + posixQuote(settings) + " --model " + posixQuote(model)
 }
 
 // agyShell gives the user's shells the function agy, or takes it out of

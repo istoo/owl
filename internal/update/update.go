@@ -41,6 +41,7 @@ import (
 	"github.com/istoo/owl/internal/settings"
 	"github.com/istoo/owl/internal/source"
 	"github.com/istoo/owl/internal/winarm"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Site is owl's own repository: releases published there are the only
@@ -1786,6 +1787,10 @@ func zipSafe(path string) error {
 	}
 	var nodes []node
 	links, files := map[string]string{}, map[string]node{}
+	// names maps a name as macOS may treat it (case-folded, NFC) to the one
+	// entry that has it: a path reaching an entry by a name it doesn't
+	// have is ambiguous, and refused.
+	names := map[string]string{}
 	for _, f := range z.File {
 		name := f.Name
 		slash := strings.ReplaceAll(name, `\`, "/")
@@ -1801,6 +1806,13 @@ func zipSafe(path string) error {
 			// extractor's choice
 			return fmt.Errorf("the download has the entry %q twice", name)
 		}
+		if ex, clash := names[zipFold(key)]; clash {
+			// two names one filesystem may take as one (a Mac's
+			// case-insensitive or normalising one): which lands is
+			// ambiguous
+			return fmt.Errorf("the download's entries %q and %q are one name here", ex, key)
+		}
+		names[zipFold(key)] = key
 		n := node{name: key, dir: strings.HasSuffix(name, "/") || f.Mode().IsDir()}
 		if f.Mode()&os.ModeSymlink != 0 {
 			target, err := zipLinkTarget(f)
@@ -1817,8 +1829,9 @@ func zipSafe(path string) error {
 	// not only the link's text: a link to a link, or a path written through
 	// one, is judged where it ends. A path written under a link or a file
 	// is ambiguous, and refused.
+	paths := zipPaths{links: links, names: names}
 	for _, n := range nodes {
-		final, err := resolveZipPath(n.name, links, 0)
+		final, err := resolveZipPath(n.name, paths)
 		if err != nil {
 			return fmt.Errorf("the download's entry %q: %w", n.name, err)
 		}
@@ -1858,6 +1871,12 @@ func zipLinkTarget(f *zip.File) (string, error) {
 	if len(b) > maxLink {
 		return "", fmt.Errorf("the target is too long")
 	}
+	return cleanLinkTarget(b)
+}
+
+// cleanLinkTarget is a link's target as the paths it is resolved by: no
+// absolute target, and nothing empty.
+func cleanLinkTarget(b []byte) (string, error) {
 	target := strings.ReplaceAll(string(b), `\`, "/")
 	if target == "" {
 		return "", fmt.Errorf("the link names nothing")
@@ -1868,42 +1887,76 @@ func zipLinkTarget(f *zip.File) (string, error) {
 	return target, nil
 }
 
-// resolveZipPath is path as it lands after following the archive's links:
-// a link is replaced by its target taken from its own folder, and what
-// follows it is resolved from there. A path that climbs out of the unpack
-// folder, or a chain of links that never ends, is an error.
-func resolveZipPath(p string, links map[string]string, depth int) (string, error) {
-	if depth > 40 {
-		return "", fmt.Errorf("the links never end")
-	}
-	parts := strings.Split(p, "/")
-	out := []string{}
-	for i, c := range parts {
+// zipPaths is what resolveZipPath reads from the archive: each link's
+// exact path and target, and every entry's name folded the way a Mac may
+// fold it, so a path that reaches an entry by another case or normal form
+// is seen as ambiguous.
+type zipPaths struct {
+	links map[string]string // symlink path -> target
+	names map[string]string // zipFold(name) -> exact name
+}
+
+// zipFold is a name as a case-insensitive, normalising Mac filesystem may
+// take it: lower-cased and NFC. Two entries that fold to one name are
+// ambiguous (#C3).
+func zipFold(name string) string {
+	return strings.ToLower(norm.NFC.String(name))
+}
+
+// resolveZipPath is path as it lands after following the archive's links.
+// Components are expanded one at a time, in order: a link's target is put
+// where the link was and the remaining path follows it, so a ".." after a
+// link is applied inside the target it landed in, never folded before
+// that target's own links are resolved. A path that climbs out of the
+// unpack folder, a chain that never ends, or a component that reaches an
+// entry only under another case or normal form, is an error.
+func resolveZipPath(p string, z zipPaths) (string, error) {
+	dir := []string{} // resolved components, no links among them
+	queue := splitZipPath(p)
+	followed := 0
+	for len(queue) > 0 {
+		c := queue[0]
+		queue = queue[1:]
 		switch c {
 		case "", ".":
 			continue
 		case "..":
-			if len(out) == 0 {
+			if len(dir) == 0 {
 				return "", fmt.Errorf("it climbs outside the download")
 			}
-			out = out[:len(out)-1]
+			dir = dir[:len(dir)-1]
 			continue
 		}
-		out = append(out, c)
-		cur := strings.Join(out, "/")
-		target, linked := links[cur]
-		if !linked {
+		dir = append(dir, c)
+		cur := strings.Join(dir, "/")
+		if target, linked := z.links[cur]; linked {
+			if followed++; followed > 40 {
+				return "", fmt.Errorf("the links never end")
+			}
+			// the target is relative to the link's own folder; the
+			// remaining path comes after the target's own components,
+			// not folded into them now
+			dir = dir[:len(dir)-1]
+			queue = append(splitZipPath(target), queue...)
 			continue
 		}
-		rest := strings.Join(parts[i+1:], "/")
-		joined := pathpkg.Join(pathpkg.Dir(cur), target)
-		if rest != "" {
-			joined = pathpkg.Join(joined, rest)
+		if ex, ok := z.names[zipFold(cur)]; ok && ex != cur {
+			return "", fmt.Errorf("%q reaches the entry %q under another name; which is written is ambiguous", cur, ex)
 		}
-		return resolveZipPath(joined, links, depth+1)
 	}
-	if len(out) == 0 {
+	if len(dir) == 0 {
 		return ".", nil
 	}
-	return strings.Join(out, "/"), nil
+	return strings.Join(dir, "/"), nil
+}
+
+// splitZipPath is p's components, without the empty ones.
+func splitZipPath(p string) []string {
+	var out []string
+	for _, c := range strings.Split(p, "/") {
+		if c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }

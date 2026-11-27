@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -134,6 +135,10 @@ func TestAddStartsDesktopOnTheFolder(t *testing.T) {
 	if len(ents) != 2 {
 		t.Errorf("Applications holds %v", ents)
 	}
+	// the old bundle was moved aside for the rename and is gone after it
+	if _, err := os.Stat(filepath.Join(filepath.Dir(p), "."+Name+".app-old")); !os.IsNotExist(err) {
+		t.Errorf("the replaced bundle is still there: %v", err)
+	}
 	if got, err := Remove(home); err != nil || got != p {
 		t.Fatalf("remove: %q %v", got, err)
 	}
@@ -142,6 +147,23 @@ func TestAddStartsDesktopOnTheFolder(t *testing.T) {
 	}
 	if got, err := Remove(home); err != nil || got != "" {
 		t.Fatalf("remove again: %q %v", got, err)
+	}
+}
+
+// The single-instance check names the folder as a regular expression:
+// a folder with '.' or '+' in it is quoted, or it would match a Desktop
+// on another folder and keep this one from starting (#4133).
+func TestScriptQuotesTheFolderForPgrep(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "Application Support", "Claude-Owl+3p[1]")
+	s := Script(filepath.Join(home, "Claude.app"), "Claude", dir, "")
+	if !strings.Contains(s, "--user-data-dir="+regexp.QuoteMeta(dir)+"( |$)") {
+		t.Fatalf("pgrep pattern not quoted:\n%s", s)
+	}
+	// a plain folder is unchanged by the quoting
+	plain := filepath.Join(home, "Claude-Owl-3p")
+	if p := Script(filepath.Join(home, "Claude.app"), "Claude", plain, ""); !strings.Contains(p, "--user-data-dir="+plain+"( |$)") {
+		t.Fatalf("plain pgrep pattern:\n%s", p)
 	}
 }
 
@@ -243,5 +265,97 @@ func TestAddLeavesTheirs(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(theirs, "Contents", "Info.plist")); err != nil {
 		t.Fatal("theirs gone")
+	}
+}
+
+// oldApps are the hidden folders Add keeps a replaced bundle in, by
+// their name beside p.
+func oldApps(t *testing.T, p string) []string {
+	t.Helper()
+	ents, err := os.ReadDir(filepath.Dir(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), "."+Name+".app-old-") {
+			out = append(out, filepath.Join(filepath.Dir(p), e.Name()))
+		}
+	}
+	return out
+}
+
+// The bundle found before the new one was renamed in is put back when the
+// rename fails, and no folder of owl's is left behind (#4133).
+func TestAddPutsTheOldAppBackWhenTheRenameFails(t *testing.T) {
+	noRegister(t)
+	home := t.TempDir()
+	claudeApp := fakeClaude(t, filepath.Join(home, "Applications"), filepath.Join(home, "args"))
+	dir := filepath.Join(home, "iso-3p")
+	p, err := Add(home, claudeApp, dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(p, "Contents", "OLD-MARK")
+	if err := os.WriteFile(marker, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := renameFile
+	t.Cleanup(func() { renameFile = old })
+	renameFile = func(from, to string) error {
+		// the new bundle's own rename, not the old one's back
+		if to == p && strings.HasPrefix(filepath.Base(from), "."+Name+".app-") && !strings.Contains(filepath.Base(filepath.Dir(from)), ".app-old-") {
+			return errors.New("injected rename failure")
+		}
+		return os.Rename(from, to)
+	}
+	if _, err := Add(home, claudeApp, dir, ""); err == nil {
+		t.Fatal("the failed rename said it went through")
+	}
+	if b, err := os.ReadFile(marker); err != nil || string(b) != "old" {
+		t.Fatalf("the app before this one wasn't put back: %v %q", err, b)
+	}
+	if left := oldApps(t, p); len(left) != 0 {
+		t.Errorf("replaced bundles left: %v", left)
+	}
+}
+
+// A rollback that fails doesn't take the old bundle with it: the error
+// says where it is kept, and it is still there, whole (#4133).
+func TestAddKeepsTheOldAppWhenTheRollbackFails(t *testing.T) {
+	noRegister(t)
+	home := t.TempDir()
+	claudeApp := fakeClaude(t, filepath.Join(home, "Applications"), filepath.Join(home, "args"))
+	dir := filepath.Join(home, "iso-3p")
+	p, err := Add(home, claudeApp, dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(p, "Contents", "OLD-MARK")
+	if err := os.WriteFile(marker, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := renameFile
+	t.Cleanup(func() { renameFile = old })
+	renameFile = func(from, to string) error {
+		if to == p {
+			return errors.New("injected rename failure")
+		}
+		return os.Rename(from, to)
+	}
+	_, err = Add(home, claudeApp, dir, "")
+	if err == nil {
+		t.Fatal("the failed rollback said it went through")
+	}
+	if !strings.Contains(err.Error(), "kept at") {
+		t.Fatalf("the kept app isn't named: %v", err)
+	}
+	left := oldApps(t, p)
+	if len(left) != 1 {
+		t.Fatalf("kept bundles %v, want one", left)
+	}
+	t.Cleanup(func() { os.RemoveAll(left[0]) })
+	if b, err := os.ReadFile(filepath.Join(left[0], Name+".app", "Contents", "OLD-MARK")); err != nil || string(b) != "old" {
+		t.Fatalf("the kept app: %v %q", err, b)
 	}
 }

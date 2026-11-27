@@ -92,6 +92,7 @@ func originURL(config string) string {
 	defer f.Close()
 	section, first, origin := "", "", ""
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if strings.HasPrefix(line, "[") {

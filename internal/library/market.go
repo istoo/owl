@@ -659,6 +659,21 @@ func rank(r *registryServer, m MarketServer, q string) int {
 	return s
 }
 
+// webURL is u when it is an http or https address the page may open, and
+// "" for anything else: a registry entry's link is not a place to send a
+// browser to (javascript:, data:, a file of the user's) (#L11, C5).
+func webURL(u string) string {
+	p, err := url.Parse(u)
+	if err != nil || p.Host == "" || p.User != nil {
+		return ""
+	}
+	switch strings.ToLower(p.Scheme) {
+	case "http", "https":
+		return u
+	}
+	return ""
+}
+
 // brandIcons are logos the registry doesn't carry, by repository, taken
 // from the project's own site, so its server isn't shown with its owner's
 // avatar.
@@ -669,7 +684,7 @@ var brandIcons = map[string]string{
 // fromRegistry is what a registry entry becomes in the library: its remote
 // when it has one, else the package it's published as.
 func fromRegistry(r *registryServer) (MarketServer, bool) {
-	m := MarketServer{ID: r.Name, Name: shortName(r.Name), Title: r.Title, Description: r.Description, Homepage: r.WebsiteURL, Inputs: []Input{}}
+	m := MarketServer{ID: r.Name, Name: shortName(r.Name), Title: r.Title, Description: r.Description, Homepage: webURL(r.WebsiteURL), Inputs: []Input{}}
 	m.addrs = addrsOf(r.Name, r.WebsiteURL, r.Repository.URL)
 	for _, rm := range r.Remotes {
 		m.addrs = append(m.addrs, addrsOf(rm.URL)...)
@@ -681,7 +696,7 @@ func fromRegistry(r *registryServer) (MarketServer, bool) {
 		m.Title = m.Name
 	}
 	if m.Homepage == "" {
-		m.Homepage = r.Repository.URL
+		m.Homepage = webURL(r.Repository.URL)
 	}
 	owner := githubOwner(r.Repository.URL)
 	if owner == "" {

@@ -142,13 +142,20 @@
     };
     try {
       for await (const chunk of body) {
-        buf = (buf + dec.decode(chunk, { stream: true })).replace(/\r\n?/g, "\n");
+        buf += dec.decode(chunk, { stream: true });
+        // a \r at the end may be the first half of a \r\n split across
+        // chunks: hold it, or its \n in the next chunk makes a blank
+        // line that isn't there and splits the event (M6)
+        const held = buf.endsWith("\r") ? "\r" : "";
+        if (held) buf = buf.slice(0, -1);
+        buf = buf.replace(/\r\n?/g, "\n") + held;
         let i;
         while ((i = buf.indexOf("\n\n")) >= 0) {
           event(buf.slice(0, i));
           buf = buf.slice(i + 2);
         }
       }
+      buf = buf.replace(/\r\n?/g, "\n");
       if (buf.trim()) event(buf);
       put({ s, end: "done" });
     } catch (err) {

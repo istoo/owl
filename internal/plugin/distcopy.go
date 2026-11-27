@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,8 +97,10 @@ func distCopyDiffers(tgz []byte, name string) string {
 	if err != nil {
 		return "the tarball can't be read: " + err.Error()
 	}
+	defer gz.Close()
 	tr := tar.NewReader(gz)
 	files := 0
+	var total int64
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -106,18 +109,31 @@ func distCopyDiffers(tgz []byte, name string) string {
 		if err != nil {
 			return "the tarball can't be read: " + err.Error()
 		}
-		if h.Typeflag != tar.TypeReg {
+		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
 			continue
 		}
 		// npm pack's files are under package/; the first part is the
 		// package's folder whatever it is named, as Bun takes it
-		_, rel, ok := strings.Cut(path.Clean(strings.TrimPrefix(h.Name, "./")), "/")
-		if !ok || rel == "" || rel == ".." || strings.HasPrefix(rel, "../") {
+		clean := path.Clean(strings.TrimPrefix(h.Name, "./"))
+		_, rel, ok := strings.Cut(clean, "/")
+		if !ok || rel == "" {
 			continue
 		}
-		want, err := io.ReadAll(tr)
+		// a name leaving the package's folder is refused here too: on
+		// Windows a backslash in it is a separator, and filepath.Join
+		// would read the file outside node_modules
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			continue
+		}
+		if err := checkTarSize(h.Size, &total); err != nil {
+			return "the tarball can't be read: " + err.Error()
+		}
+		want, err := io.ReadAll(io.LimitReader(tr, maxTarFile+1))
 		if err != nil {
 			return "the tarball can't be read: " + err.Error()
+		}
+		if int64(len(want)) > maxTarFile {
+			return "the tarball can't be read: a file is larger than " + sizeText(maxTarFile)
 		}
 		files++
 		got, err := os.ReadFile(filepath.Join(at, filepath.FromSlash(rel)))
@@ -237,6 +253,31 @@ type tarFile struct {
 	mode fs.FileMode
 }
 
+// maxTarFile is the most one file of a tarball may hold, unpacked, and the
+// most every file of it together: a gzip bomb is a few KB that expands to
+// gigabytes, and reading one into memory ends the host.
+const maxTarFile = 64 << 20
+
+// checkTarSize says h fits the single-file and total limits, adding it to
+// total.
+func checkTarSize(h int64, total *int64) error {
+	if h < 0 || h > maxTarFile {
+		return fmt.Errorf("a file of %s is past the %s limit", sizeText(h), sizeText(maxTarFile))
+	}
+	if *total += h; *total > maxTarFile {
+		return fmt.Errorf("the tarball's files are past %s unpacked", sizeText(maxTarFile))
+	}
+	return nil
+}
+
+// sizeText is n bytes as a reader says it: 64 MiB.
+func sizeText(n int64) string {
+	if n >= 1<<20 {
+		return strconv.FormatInt(n>>20, 10) + " MiB"
+	}
+	return strconv.FormatInt(n, 10) + " bytes"
+}
+
 // tarballFiles is every regular file of an npm pack tarball, by its path
 // under the package's folder (the first part of each name, whatever it
 // is called, as Bun takes it). A name leaving that folder is refused.
@@ -245,8 +286,10 @@ func tarballFiles(tgz []byte) (map[string]tarFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer gz.Close()
 	tr := tar.NewReader(gz)
 	files := map[string]tarFile{}
+	var total int64
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -255,7 +298,7 @@ func tarballFiles(tgz []byte) (map[string]tarFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		if h.Typeflag != tar.TypeReg {
+		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
 			continue
 		}
 		clean := path.Clean(strings.TrimPrefix(h.Name, "./"))
@@ -266,9 +309,17 @@ func tarballFiles(tgz []byte) (map[string]tarFile, error) {
 		if !ok || rel == "" {
 			continue
 		}
-		body, err := io.ReadAll(tr)
+		// a gzip bomb names a small file and expands to a huge one: the
+		// declared and the read bytes are both bounded
+		if err := checkTarSize(h.Size, &total); err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(io.LimitReader(tr, maxTarFile+1))
 		if err != nil {
 			return nil, err
+		}
+		if int64(len(body)) > maxTarFile {
+			return nil, fmt.Errorf("the tarball's %q is larger than %s", rel, sizeText(maxTarFile))
 		}
 		mode := fs.FileMode(0o644)
 		if h.Mode&0o111 != 0 {

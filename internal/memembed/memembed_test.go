@@ -3,11 +3,14 @@ package memembed
 import (
 	"context"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/istoo/owl/internal/memory"
 	"github.com/istoo/owl/internal/pii/guard"
@@ -190,5 +193,81 @@ func TestNotThereIsWords(t *testing.T) {
 	}
 	if On() {
 		t.Fatal("a broken switch file is on")
+	}
+}
+
+// A vector of another size, or one with a NaN in it, is no cosine: it is
+// left out rather than read past its end or turned into a NaN score that
+// empties the whole semantic search.
+func TestSimilarSkipsBadVectors(t *testing.T) {
+	f := sandbox(t, true)
+	a := save(t, "Release notes", memory.Active)
+	b := save(t, "Use tabs", memory.Active)
+	c := save(t, "A busy port", memory.Active)
+	vs := vectors()
+	vs.put(key(a), []float32{1}) // not the model's size
+	bad := make([]float32, guard.EmbedDim)
+	bad[0] = float32(math.NaN())
+	vs.put(key(b), bad)
+	vs.put(key(c), f.Embed("A busy port"))
+	out := similar("release", []*memory.Memory{a, b, c})
+	if _, ok := out[a.ID]; ok {
+		t.Fatal("a short vector was scored")
+	}
+	if _, ok := out[b.ID]; ok {
+		t.Fatal("a NaN vector was scored")
+	}
+	if _, ok := out[c.ID]; !ok {
+		t.Fatal("the good vector was left out")
+	}
+}
+
+// Switching the model off while it downloads stops the goroutine before
+// the folder is deleted, and switching it on again starts a new download:
+// a cancel left behind made the second one never begin.
+func TestDownloadStopsBeforeDelete(t *testing.T) {
+	sandbox(t, false)
+	t.Cleanup(func() { dl.stop() })
+	oldBase := base
+	t.Cleanup(func() { base = oldBase })
+	started := make(chan struct{}, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	base = srv.URL + "/"
+	if err := Set(true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the download never started")
+	}
+	if err := Set(false); err != nil {
+		t.Fatal(err)
+	}
+	// the goroutine has cleared cancel and left before the folder was
+	// deleted; a cancel still there would stop the next start
+	dl.mu.Lock()
+	running := dl.cancel != nil
+	dl.mu.Unlock()
+	if running {
+		t.Fatal("Set(false) returned with the download goroutine still running")
+	}
+	if _, err := os.Stat(Root()); !os.IsNotExist(err) {
+		t.Fatalf("the model folder is back after it was deleted: %v", err)
+	}
+	if err := Set(true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("switched on again, the download never restarted")
+	}
+	if err := Set(false); err != nil {
+		t.Fatal(err)
 	}
 }

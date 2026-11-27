@@ -198,10 +198,16 @@ func isPlugin(dir string) bool {
 // marketplace calls it by.
 func readPlugin(dir, hint string, over map[string]any) (*plLoaded, error) {
 	man := map[string]any{}
-	if m, err := readJSONFile(filepath.Join(dir, ".claude-plugin", "plugin.json")); err == nil {
-		man = m
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	// every file read goes through inside: a manifest that names a link out
+	// of the plugin's folder is never followed (#H24)
+	if p, ok := inside(dir, ".claude-plugin/plugin.json"); ok {
+		if m, err := readJSONFile(p); err == nil {
+			man = m
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	} else if _, err := os.Lstat(filepath.Join(dir, ".claude-plugin", "plugin.json")); err == nil {
+		return nil, fmt.Errorf(".claude-plugin/plugin.json leaves the plugin's folder")
 	}
 	for k, v := range over {
 		if _, ok := man[k]; !ok {
@@ -238,7 +244,11 @@ func readPlugin(dir, hint string, over map[string]any) (*plLoaded, error) {
 			dirs = []string{d}
 		} else if es, err := os.ReadDir(d); err == nil {
 			for _, e := range es {
-				if c := filepath.Join(d, e.Name()); e.IsDir() || isDirLink(c) {
+				c, ok := inside(dir, filepath.ToSlash(filepath.Join(rel, e.Name())))
+				if !ok {
+					continue
+				}
+				if e.IsDir() || isDirLink(c) {
 					if _, ok := readMeta(c); ok {
 						dirs = append(dirs, c)
 					}
@@ -273,8 +283,11 @@ func readPlugin(dir, hint string, over map[string]any) (*plLoaded, error) {
 			agentFiles = append(agentFiles, d)
 		} else if es, err := os.ReadDir(d); err == nil {
 			for _, e := range es {
-				if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
-					agentFiles = append(agentFiles, filepath.Join(d, e.Name()))
+				if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
+					continue
+				}
+				if f, ok := inside(dir, filepath.ToSlash(filepath.Join(rel, e.Name()))); ok {
+					agentFiles = append(agentFiles, f)
 				}
 			}
 		}
@@ -293,10 +306,14 @@ func readPlugin(dir, hint string, over map[string]any) (*plLoaded, error) {
 
 	// MCP servers
 	var mcpDocs []map[string]any
-	if m, err := readJSONFile(filepath.Join(dir, ".mcp.json")); err == nil {
-		mcpDocs = append(mcpDocs, m)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		leave(".mcp.json", err.Error())
+	if p, ok := inside(dir, ".mcp.json"); ok {
+		if m, err := readJSONFile(p); err == nil {
+			mcpDocs = append(mcpDocs, m)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			leave(".mcp.json", err.Error())
+		}
+	} else {
+		leave(".mcp.json", "the path leaves the plugin's folder")
 	}
 	for _, v := range manifestList(man["mcpServers"]) {
 		switch x := v.(type) {
@@ -323,10 +340,14 @@ func readPlugin(dir, hint string, over map[string]any) (*plLoaded, error) {
 
 	// hooks
 	var hookDocs []map[string]any
-	if m, err := readJSONFile(filepath.Join(dir, "hooks", "hooks.json")); err == nil {
-		hookDocs = append(hookDocs, m)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		leave("hooks/hooks.json", err.Error())
+	if p, ok := inside(dir, "hooks/hooks.json"); ok {
+		if m, err := readJSONFile(p); err == nil {
+			hookDocs = append(hookDocs, m)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			leave("hooks/hooks.json", err.Error())
+		}
+	} else {
+		leave("hooks/hooks.json", "the path leaves the plugin's folder")
 	}
 	for _, v := range manifestList(man["hooks"]) {
 		switch x := v.(type) {
@@ -735,9 +756,14 @@ func fetchSourceRoot(input string) (root, tmp string, src Source, err error) {
 // one plugin there.
 func findPlugins(root string) (*PluginProbe, error) {
 	p := &PluginProbe{root: root, Candidates: []PluginCandidate{}}
-	mk, err := readJSONFile(filepath.Join(root, ".claude-plugin", "marketplace.json"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	var mk map[string]any
+	if f, ok := inside(root, ".claude-plugin/marketplace.json"); ok {
+		var err error
+		if mk, err = readJSONFile(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf(".claude-plugin/marketplace.json leaves the marketplace's folder")
 	}
 	if mk == nil {
 		pl, err := readPlugin(root, filepath.Base(root), nil)
@@ -1006,32 +1032,12 @@ func installPlugin(l *Library, pl *plLoaded, dir, input, pick string, agents []s
 			b.Agents = orNone(slices.Compact(slices.Sorted(slices.Values(agents))))
 		}
 	}
-	// the files first, beside the old ones, and swapped in once copied
 	if err := os.MkdirAll(pluginsDir(), 0o755); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(pluginData(pl.name), 0o755); err != nil {
 		return nil, err
 	}
-	stage := pluginDir(pl.name) + ".new"
-	os.RemoveAll(stage)
-	if err := copyDir(dir, stage); err != nil {
-		os.RemoveAll(stage)
-		return nil, err
-	}
-	// what the old version made goes, to be made again
-	if old != nil {
-		removePluginParts(l, old)
-	}
-	os.RemoveAll(pluginDir(pl.name))
-	if err := os.Rename(stage, pluginDir(pl.name)); err != nil {
-		os.RemoveAll(stage)
-		return nil, err
-	}
-	root := pluginDir(pl.name)
-	// skills are read again from the copy
-	rel := func(p string) string { r, _ := filepath.Rel(dir, p); return filepath.Join(root, r) }
-
 	var skipped []Problem
 	skip := func(what, why string) {
 		b.Left = append(b.Left, PluginLeft{What: what, Why: why})
@@ -1041,18 +1047,41 @@ func installPlugin(l *Library, pl *plLoaded, dir, input, pick string, agents []s
 	for _, k := range pl.left {
 		skipped = append(skipped, Problem{What: "plugin:" + pl.name, Error: k.What + ": " + k.Why})
 	}
-	// a name another item has is given this plugin's name before it
-	free := func(name string, taken func(string) bool, ok func(string) bool) (string, bool) {
+
+	// the names are settled before the old version is touched: a clash is
+	// found first, and the old version is only moved aside once there is
+	// something to put in its place (#M37b)
+	var oldSkills, oldServers, oldHooks, oldAgents []string
+	if old != nil {
+		oldSkills, oldServers, oldHooks, oldAgents = old.Skills, old.MCP, old.Hooks, old.Subagents
+	}
+	oldHas := func(list []string, n string) bool { return slices.Contains(list, n) }
+	// a name another item of its own kind has is given this plugin's name
+	// before it; the kinds are apart, so a server and a skill of one name
+	// don't rename each other (#M37b)
+	used := map[string]bool{}
+	free := func(kind, name string, taken func(string) bool, ok func(string) bool) (string, bool) {
 		for _, n := range []string{name, pluginSlug(pl.name) + "-" + name} {
-			if ok(n) && !taken(n) {
+			key := kind + "\x00" + n
+			if ok(n) && !used[key] && !taken(n) {
+				used[key] = true
 				return n, true
 			}
 		}
 		return "", false
 	}
+	type skillPlan struct {
+		s    plSkill
+		name string
+	}
+	var skillPlans []skillPlan
 	skillNames := map[string]string{}
 	for _, s := range pl.skills {
-		n, ok := free(s.name, func(n string) bool {
+		n, ok := free("skill", s.name, func(n string) bool {
+			// what the old version made goes, and its name with it
+			if oldHas(oldSkills, n) {
+				return false
+			}
 			if l.skill(n) != nil {
 				return true
 			}
@@ -1063,69 +1092,232 @@ func installPlugin(l *Library, pl *plLoaded, dir, input, pick string, agents []s
 			skip("skill "+s.name, "the library already has one by that name")
 			continue
 		}
-		if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
-			return nil, err
-		}
-		if err := copyDir(rel(s.dir), skillDir(n)); err != nil {
-			os.RemoveAll(skillDir(n))
-			skip("skill "+s.name, err.Error())
-			continue
-		}
-		if err := pluginSkillText(skillDir(n), pl.name); err != nil {
-			os.RemoveAll(skillDir(n))
-			skip("skill "+s.name, err.Error())
-			continue
-		}
-		l.Skills = append(l.Skills, &Skill{Name: n, Agents: []string{}, Bundle: pl.name})
-		b.Skills = append(b.Skills, n)
-		skillNames[s.name] = n
+		skillPlans = append(skillPlans, skillPlan{s, n})
 	}
+	type serverPlan struct {
+		s    *Server
+		name string
+	}
+	var serverPlans []serverPlan
 	for _, s := range pl.servers {
-		n, ok := free(s.Name, func(n string) bool { return l.server(n) != nil }, func(n string) bool { return checkName("server", n) == nil })
+		n, ok := free("server", s.Name, func(n string) bool {
+			return l.server(n) != nil && !oldHas(oldServers, n)
+		}, func(n string) bool { return checkName("server", n) == nil })
 		if !ok {
 			skip("MCP server "+s.Name, "the library already has one by that name")
 			continue
 		}
-		s.Name, s.Bundle = n, pl.name
-		l.MCP = append(l.MCP, s)
-		b.MCP = append(b.MCP, n)
+		serverPlans = append(serverPlans, serverPlan{s, n})
 	}
+	type hookPlan struct {
+		h    *Hook
+		name string
+	}
+	var hookPlans []hookPlan
 	for _, h := range pl.hooks {
-		n, ok := free(h.Name, func(n string) bool { return l.hook(n) != nil }, func(n string) bool { return checkName("hook", n) == nil })
+		n, ok := free("hook", h.Name, func(n string) bool {
+			return l.hook(n) != nil && !oldHas(oldHooks, n)
+		}, func(n string) bool { return checkName("hook", n) == nil })
 		if !ok {
 			skip("hook "+h.Name, "the library already has one by that name")
 			continue
 		}
-		h.Name, h.Bundle = n, pl.name
-		l.Hooks = append(l.Hooks, h)
-		b.Hooks = append(b.Hooks, n)
+		hookPlans = append(hookPlans, hookPlan{h, n})
 	}
+	type agentPlan struct {
+		s    *Subagent
+		name string
+	}
+	var agentPlans []agentPlan
 	for _, s := range pl.agents {
-		n, ok := free(s.Name, func(n string) bool { return l.subagent(n) != nil }, func(n string) bool { return subagentNameRe.MatchString(n) })
+		n, ok := free("subagent", s.Name, func(n string) bool {
+			return l.subagent(n) != nil && !oldHas(oldAgents, n)
+		}, func(n string) bool { return subagentNameRe.MatchString(n) })
 		if !ok {
 			skip("subagent "+s.Name, "the library already has one by that name")
 			continue
 		}
-		s.Name, s.Bundle = n, pl.name
-		for i, k := range s.Skills {
+		agentPlans = append(agentPlans, agentPlan{s, n})
+	}
+	if len(skillPlans)+len(serverPlans)+len(hookPlans)+len(agentPlans) == 0 {
+		return nil, errors.New("every part of it clashes with the library's own: " + skipped[len(skipped)-1].Error)
+	}
+
+	// the files are copied into a folder of their own, and the old version
+	// is moved aside whole into another: neither name can be one already
+	// there, and the old version is kept until the library is saved
+	// (#M37b)
+	stageHold, err := os.MkdirTemp(pluginsDir(), ".new-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(stageHold)
+	stage := filepath.Join(stageHold, "plugin")
+	if err := copyDir(dir, stage); err != nil {
+		return nil, err
+	}
+	hold, err := os.MkdirTemp(pluginsDir(), ".swap-")
+	if err != nil {
+		return nil, err
+	}
+	sw := &pluginSwap{dir: pluginDir(pl.name), hold: hold, backup: filepath.Join(hold, "old"),
+		old: old, stamp: time.Now().Format("2006-01-02_15-04-05.000")}
+	if _, err := os.Lstat(sw.dir); err == nil {
+		if err := os.Rename(sw.dir, sw.backup); err != nil {
+			os.RemoveAll(hold)
+			return nil, err
+		}
+		sw.moved = true
+	}
+	if err := os.Rename(stage, sw.dir); err != nil {
+		// put the old version back before leaving; if that fails, say
+		// where it is kept rather than lose the path to it
+		rerr := error(nil)
+		if sw.moved {
+			rerr = os.Rename(sw.backup, sw.dir)
+		}
+		if rerr == nil {
+			os.RemoveAll(hold)
+		} else {
+			rerr = fmt.Errorf("the old version is kept at %s: %w", sw.backup, rerr)
+		}
+		return nil, errors.Join(err, rerr)
+	}
+	root := sw.dir
+	// skills are read again from the copy
+	rel := func(p string) string { r, _ := filepath.Rel(dir, p); return filepath.Join(root, r) }
+
+	// what the old version made goes, to be made again
+	if old != nil {
+		removePluginParts(l, old, sw.stamp)
+	}
+	for _, p := range skillPlans {
+		if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
+			return nil, errors.Join(err, sw.undo())
+		}
+		sw.created = append(sw.created, p.name)
+		if err := copyDir(rel(p.s.dir), skillDir(p.name)); err != nil {
+			os.RemoveAll(skillDir(p.name))
+			skip("skill "+p.s.name, err.Error())
+			continue
+		}
+		if err := pluginSkillText(skillDir(p.name), pl.name); err != nil {
+			os.RemoveAll(skillDir(p.name))
+			skip("skill "+p.s.name, err.Error())
+			continue
+		}
+		l.Skills = append(l.Skills, &Skill{Name: p.name, Agents: []string{}, Bundle: pl.name})
+		b.Skills = append(b.Skills, p.name)
+		skillNames[p.s.name] = p.name
+	}
+	for _, p := range serverPlans {
+		p.s.Name, p.s.Bundle = p.name, pl.name
+		l.MCP = append(l.MCP, p.s)
+		b.MCP = append(b.MCP, p.name)
+	}
+	for _, p := range hookPlans {
+		p.h.Name, p.h.Bundle = p.name, pl.name
+		l.Hooks = append(l.Hooks, p.h)
+		b.Hooks = append(b.Hooks, p.name)
+	}
+	for _, p := range agentPlans {
+		p.s.Name, p.s.Bundle = p.name, pl.name
+		for i, k := range p.s.Skills {
 			if m := skillNames[k]; m != "" {
-				s.Skills[i] = m
+				p.s.Skills[i] = m
 			}
 		}
-		l.Subagents = append(l.Subagents, s)
-		b.Subagents = append(b.Subagents, n)
+		l.Subagents = append(l.Subagents, p.s)
+		b.Subagents = append(b.Subagents, p.name)
 	}
 	if len(b.Skills)+len(b.MCP)+len(b.Hooks)+len(b.Subagents) == 0 {
-		os.RemoveAll(pluginDir(pl.name))
-		return nil, errors.New("every part of it clashes with the library's own: " + skipped[len(skipped)-1].Error)
+		return nil, errors.Join(errors.New("every part of it clashes with the library's own: "+skipped[len(skipped)-1].Error), sw.undo())
 	}
 	if old != nil {
 		l.Plugins = slices.DeleteFunc(l.Plugins, func(x *Plugin) bool { return x.Name == old.Name })
 	}
 	l.Plugins = append(l.Plugins, b)
+	// the old version is the backup's until the library is saved:
+	// changeLocked commits or undoes it by the save's result
+	l.pluginSwaps = append(l.pluginSwaps, sw)
 	sort.Slice(l.Plugins, func(i, j int) bool { return l.Plugins[i].Name < l.Plugins[j].Name })
 	l.givePlugin(b)
 	return skipped, nil
+}
+
+// pluginSwap is a plugin folder moved aside while a change installs its
+// next version. It is kept until the library is saved: a save that fails
+// puts the old version back, and an error of that undo is part of the
+// failure, never dropped (#M37b).
+type pluginSwap struct {
+	dir     string // the plugin's folder
+	hold    string // a folder of this swap's own, with the backup in it
+	backup  string
+	moved   bool
+	created []string // the skills this change made
+	old     *Plugin
+	stamp   string // where removePluginParts set the old skills aside
+}
+
+// undo puts the old version back. It leaves the backup where it is when
+// the folder can't be restored, and names it in the error.
+func (s *pluginSwap) undo() error {
+	var errs []error
+	for _, n := range s.created {
+		if err := os.RemoveAll(skillDir(n)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	// the old parts went to the backups, and come back from there
+	if s.old != nil {
+		for _, n := range s.old.Skills {
+			from := filepath.Join(BackupDir(), s.stamp, "skills", n)
+			if _, err := os.Lstat(from); err != nil {
+				continue
+			}
+			if err := os.MkdirAll(skillsDir(), 0o755); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if err := os.Rename(from, skillDir(n)); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	if err := os.RemoveAll(s.dir); err != nil {
+		errs = append(errs, err)
+	}
+	if s.moved {
+		if err := os.Rename(s.backup, s.dir); err != nil {
+			errs = append(errs, fmt.Errorf("the old version is kept at %s: %w", s.backup, err))
+		}
+	}
+	if len(errs) == 0 {
+		os.RemoveAll(s.hold)
+	}
+	return errors.Join(errs...)
+}
+
+func (s *pluginSwap) commit() { os.RemoveAll(s.hold) }
+
+// undoPluginSwaps puts back every plugin version a change moved aside, for
+// a change that won't be saved.
+func (l *Library) undoPluginSwaps() error {
+	var errs []error
+	for _, s := range l.pluginSwaps {
+		errs = append(errs, s.undo())
+	}
+	l.pluginSwaps = nil
+	return errors.Join(errs...)
+}
+
+// commitPluginSwaps lets the old versions go, once the library naming the
+// new ones is saved.
+func (l *Library) commitPluginSwaps() {
+	for _, s := range l.pluginSwaps {
+		s.commit()
+	}
+	l.pluginSwaps = nil
 }
 
 // givePlugin sets each part's agents from the bundle's: its Agents when
@@ -1161,9 +1353,9 @@ func (l *Library) givePlugin(b *Plugin) {
 	}
 }
 
-// removePluginParts takes out of l every item the bundle made.
-func removePluginParts(l *Library, b *Plugin) {
-	stamp := time.Now().Format("2006-01-02_15-04-05.000")
+// removePluginParts takes out of l every item the bundle made; stamp is
+// where the skill folders it sets aside with the backups go.
+func removePluginParts(l *Library, b *Plugin, stamp string) {
 	for _, n := range b.Skills {
 		if s := l.skill(n); s != nil && s.Bundle == b.Name {
 			_ = removeSkill(l, n, stamp)
@@ -1221,7 +1413,7 @@ func RemovePlugin(name string) (*Result, error) {
 		if b == nil {
 			return fmt.Errorf("no plugin called %s", name)
 		}
-		removePluginParts(l, b)
+		removePluginParts(l, b, time.Now().Format("2006-01-02_15-04-05.000"))
 		l.Plugins = slices.DeleteFunc(l.Plugins, func(x *Plugin) bool { return x.Name == name })
 		return nil
 	})

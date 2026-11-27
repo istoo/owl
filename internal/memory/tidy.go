@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Tidying is memory's nightly pass (memdistill's Dream): memories that
@@ -96,7 +97,7 @@ func Tidy(p Plan) ([]Change, error) {
 				into = fixed[0]
 			} else {
 				text := strings.TrimSpace(mg.Text)
-				if text == "" || len(text) > MaxText {
+				if text == "" || utf8.RuneCountInString(text) > MaxText {
 					continue
 				}
 				kind := mg.Kind

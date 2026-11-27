@@ -121,8 +121,17 @@ func (c *Ctx) Contribute(slot, key string) {
 // the plugin is turned off.
 func (c *Ctx) Provide(name string, v any) {
 	c.rt.services[name] = v
+	c.rt.owners[name] = c
 	c.provided = append(c.provided, name)
-	c.OnDispose(func() { delete(c.rt.services, name) })
+	// only what this plugin put there is withdrawn: a plugin turned off
+	// after another took the name over must not take the other's service
+	// away
+	c.OnDispose(func() {
+		if c.rt.owners[name] == c {
+			delete(c.rt.services, name)
+			delete(c.rt.owners, name)
+		}
+	})
 }
 
 // Service is a service a plugin Provides, or nil.
@@ -197,13 +206,16 @@ type Runtime struct {
 	plugins  map[string]*running
 	order    []string // applied order, for disposing in reverse
 	services map[string]any
+	// owners is the Ctx that provided each service, so one turned off
+	// after another took the name over leaves the other's in place
+	owners map[string]*Ctx
 	// reconciled is set once Reconcile has run
 	reconciled bool
 }
 
 // New is a runtime of the registered plugins, none applied yet.
 func New(ms []Manifest) *Runtime {
-	rt := &Runtime{plugins: map[string]*running{}, services: map[string]any{}}
+	rt := &Runtime{plugins: map[string]*running{}, services: map[string]any{}, owners: map[string]*Ctx{}}
 	for _, s := range Core {
 		rt.services[s] = struct{}{}
 	}

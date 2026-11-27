@@ -215,7 +215,7 @@ func TestPinnedGatewayKeyForEveryWriter(t *testing.T) {
 		_, zc := zcodeAddress(gw, gateway.Token)
 		agy := ""
 		if m := regexp.MustCompile(`GEMINI_API_KEY="?([^" ;]+)`).FindStringSubmatch(AgyLaunch("m")); m != nil {
-			agy = m[1]
+			agy = strings.Trim(m[1], `'"`)
 		}
 		return map[string]string{
 			"agy":          agy,

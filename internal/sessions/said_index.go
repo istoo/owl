@@ -188,16 +188,29 @@ func ForgetSaid() {
 }
 
 func (x *saidIndex) open() (*sql.DB, error) {
-	x.mu.Lock()
+	var file string
+	for {
+		x.mu.Lock()
+		file = x.where()
+		if x.db != nil && x.file == file {
+			db := x.db
+			x.mu.Unlock()
+			return db, nil
+		}
+		// a refresh reads from the db about to be closed: let it leave first
+		if run := x.running; run != nil {
+			x.mu.Unlock()
+			<-run
+			continue
+		}
+		if x.db != nil {
+			x.db.Close()
+			x.db, x.sessions, x.at = nil, nil, time.Time{}
+		}
+		break
+	}
 	defer x.mu.Unlock()
-	file := x.where()
-	if x.db != nil && x.file == file {
-		return x.db, nil
-	}
-	if x.db != nil {
-		x.db.Close()
-		x.db, x.sessions, x.at = nil, nil, time.Time{}
-	}
+	file = x.where()
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return nil, err
 	}
@@ -548,17 +561,21 @@ func saidTerms(needle string) []string {
 	return out
 }
 
-// saidKeys are the sessions whose index holds every term.
-func saidKeys(ctx context.Context, db *sql.DB, terms []string) (map[string]bool, error) {
+// saidKeys are the sessions whose index holds every term; filtered is
+// false when no term could be asked at all, so the index can't narrow the
+// search and the caller reads every session instead of none.
+func saidKeys(ctx context.Context, db *sql.DB, terms []string) (map[string]bool, bool, error) {
 	var keys map[string]bool
+	failed := 0
 	for _, t := range terms {
 		rs, err := db.QueryContext(ctx, `SELECT DISTINCT c.key FROM said JOIN chunks c ON c.rowid = said.rowid WHERE said MATCH ?`, t)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, false, ctx.Err()
 			}
 			// a term FTS5 won't take narrows nothing: the files
 			// are read for the words in any case
+			failed++
 			continue
 		}
 		got := map[string]bool{}
@@ -571,14 +588,17 @@ func saidKeys(ctx context.Context, db *sql.DB, terms []string) (map[string]bool,
 		err = rs.Err()
 		rs.Close()
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		keys = got
 		if len(keys) == 0 {
 			break
 		}
 	}
-	return keys, nil
+	if len(terms) > 0 && failed == len(terms) {
+		return nil, false, nil
+	}
+	return keys, true, nil
 }
 
 // saidReadMost is how long a search reads the files the index named.
@@ -602,14 +622,17 @@ func (x *saidIndex) searchSince(ctx context.Context, needle, agent string, since
 		return out, err
 	}
 	x.fresh(ctx, db, saidWait)
-	keys, err := saidKeys(ctx, db, terms)
+	keys, filtered, err := saidKeys(ctx, db, terms)
 	if err != nil {
 		return out, err
 	}
 	x.mu.Lock()
 	var found []saidSession
-	for k := range keys {
-		if ss, ok := x.sessions[k]; ok && (agent == "" || ss.s.Agent == agent) && !ss.s.Last.Before(since) && Reads(ss.s.Agent) {
+	for k, ss := range x.sessions {
+		if filtered && !keys[k] {
+			continue
+		}
+		if (agent == "" || ss.s.Agent == agent) && !ss.s.Last.Before(since) && Reads(ss.s.Agent) {
 			found = append(found, ss)
 		}
 	}

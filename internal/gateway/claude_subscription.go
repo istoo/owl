@@ -748,11 +748,10 @@ func (b *subscriptionBridge) handedOver(user string) {
 }
 
 func randomToken() string {
-	var b [24]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
+	// crypto/rand.Text never fails short of a broken system call, and
+	// panics there: a timestamp fallback made a callback token a value
+	// another process could guess (L4)
+	return rand.Text()
 }
 
 // claudeCLI is the Claude Code owl runs: this machine's, or, on Windows
@@ -2758,7 +2757,7 @@ func (b *subscriptionBridge) shelve(run *subscriptionRun) {
 		return
 	}
 	key := run.idleKey
-	s := &savedSession{session: sid, sessions: sessions, owner: run.owned(), conv: run.convKey, key: key, behind: run.behindKey, loose: run.loose, tools: tools, at: run.idleAt, cachePrefix: run.cachePrefix, appended: run.appended}
+	s := &savedSession{session: sid, sessions: sessions, owner: run.owned(), conv: run.convKey, key: key, behind: run.behindKey, loose: run.loose, tools: tools, at: run.idleAt, cachePrefix: run.cachePrefix, appended: run.appended, tui: run.tui}
 	if run.tui {
 		s.behindLine, s.behindMsg = run.behindLine, run.behindMsg
 	} else {

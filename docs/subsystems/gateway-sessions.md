@@ -377,6 +377,8 @@ marked `forgot`; the agent's own files are not touched), and no Resume
 (`resumeFor`). Restore unhides. With the command installed nothing changes.
 Tests: `TestUninstalledAgentSessionsAreForgotten`,
 `TestManageDeleteOfAnUninstalledAgentTakesItOffTheList`, `sessions-forget.test.cjs`.
+恢复原生会话前，[`Restore`](../../internal/sessions/manage.go) 会核对清单中每个目标是否符合该 Agent 的真实会话目录布局。项目目录的链接失效时，保留回收站副本，不猜测目标。有效的自定义目录、跨目录 Claude 副本和其他项目下的 dsh 子会话仍可恢复。验证：`TestRestorablePathsBelongToTheAgent`、`TestClaudeDeleteRestoresCopyInAnotherFolder`、`TestDshRestoresASubagentInAnotherProject`。
+
 A deleted Codex session also leaves the Codex app's list (zhuddan on Discord).
 The app (ChatGPT.app's Codex, 26.x) lists threads from its own catalog,
 `<CODEX_HOME>/sqlite/codex.db` (`codex-dev.db` for a non-prod build), table

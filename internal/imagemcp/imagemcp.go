@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -555,14 +554,8 @@ func (s *server) generate(raw json.RawMessage, used *string, c caller) (string, 
 		if sniffed := http.DetectContentType(img); strings.HasPrefix(sniffed, "image/") {
 			mt = sniffed
 		}
-		path, err := target(project, a.Path, a.Prompt, extOf(mt), i, len(out.Data))
+		path, err := writeNew(project, a.Path, a.Prompt, extOf(mt), i, len(out.Data), img)
 		if err != nil {
-			return "", err
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(path, img, 0o644); err != nil {
 			return "", err
 		}
 		saved = append(saved, path)
@@ -702,14 +695,35 @@ func reference(project, ref string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(project, path)
 	}
-	b, err := os.ReadFile(path)
+	// only a plain file of a sane size is read: a folder, a device or a
+	// pipe would be read whole, and a huge one takes memory for a request
+	// that can't carry it (#M37a)
+	fi, err := os.Stat(path)
 	if err != nil {
 		return "", fmt.Errorf("reference image: %w", err)
 	}
-	mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
-	if !strings.HasPrefix(mt, "image/") {
-		mt = http.DetectContentType(b)
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("reference image %s isn't a plain file", ref)
 	}
+	const maxReference = 32 << 20
+	if fi.Size() > maxReference {
+		return "", fmt.Errorf("reference image %s is over 32 MiB", ref)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("reference image: %w", err)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxReference+1))
+	f.Close()
+	if err != nil {
+		return "", fmt.Errorf("reference image: %w", err)
+	}
+	if len(b) > maxReference {
+		return "", fmt.Errorf("reference image %s is over 32 MiB", ref)
+	}
+	// what the bytes are is what counts: a .png extension over a script or
+	// a text file is no image (#M37a)
+	mt := http.DetectContentType(b)
 	if !strings.HasPrefix(mt, "image/") {
 		return "", fmt.Errorf("reference image %s isn't an image (%s)", ref, mt)
 	}
@@ -779,7 +793,9 @@ func target(project, path, prompt, ext string, i, n int) (string, error) {
 	// the name can't be tried at all. It used to be treated as taken, so
 	// k counted up forever, one failed Stat at a time, and pinned a CPU.
 	for k := 2; ; k++ {
-		_, err := os.Stat(out)
+		// Lstat, not Stat: a dangling link is something there, and
+		// writing at that name goes through it wherever it points (#M37a)
+		_, err := os.Lstat(out)
 		if errors.Is(err, os.ErrNotExist) {
 			return out, nil
 		}
@@ -796,6 +812,40 @@ func target(project, path, prompt, ext string, i, n int) (string, error) {
 // maxNameTries bounds how many taken names target steps past before it
 // gives up: a folder with that many of one name is not one to write into.
 const maxNameTries = 10000
+
+// writeNew writes img at a name target says is free, created with O_EXCL:
+// a name another writer (or a link) took between the check and the write
+// is stepped past, never written through (#M37a).
+func writeNew(project, path, prompt, ext string, i, n int, img []byte) (string, error) {
+	for tries := 0; ; tries++ {
+		p, err := target(project, path, prompt, ext, i, n)
+		if err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return "", err
+		}
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if errors.Is(err, os.ErrExist) {
+			if tries >= maxNameTries {
+				return "", fmt.Errorf("no free name for %s in %s: %d are taken", filepath.Base(p), filepath.Dir(p), maxNameTries)
+			}
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(img)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			os.Remove(p)
+			return "", werr
+		}
+		return p, nil
+	}
+}
 
 // imageExt are the extensions of the formats an image comes back in, videoExt
 // those a video may be given.

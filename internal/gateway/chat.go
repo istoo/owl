@@ -1448,6 +1448,10 @@ func (d *chatDecoder) end(emit func(Event)) {
 
 func (d *chatDecoder) decode(data string, emit func(Event)) error {
 	if strings.TrimSpace(data) == "[DONE]" {
+		// the text held to see whether a tag began goes first, as it
+		// does at a finish_reason: a stream that ends on [DONE] with no
+		// finish_reason kept its tail back otherwise (M9)
+		d.end(emit)
 		d.giveHeld(emit)
 		return nil
 	}

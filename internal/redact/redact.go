@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 	"unsafe"
@@ -1092,6 +1093,23 @@ func Hint(kind, v string) (head string, n int) {
 // anyCases are the patterns that find a user's word in any case, by word.
 var anyCases sync.Map
 
+// regexCacheMax bounds the caches of compiled patterns (anyCases,
+// dateWords, rules' compiled). Words and rules come from the settings, and
+// one a hostile or broken file carries must not grow the process for ever.
+const regexCacheMax = 1 << 15
+
+var anyCaseCount atomic.Int64
+
+// cacheGrew counts one entry stored and starts the cache over when it has
+// grown past regexCacheMax. A cache miss after a clear only compiles the
+// pattern again, so losing entries costs nothing but that.
+func cacheGrew(n *atomic.Int64, m *sync.Map) {
+	if n.Add(1) > regexCacheMax {
+		m.Clear()
+		n.Store(0)
+	}
+}
+
 // anyCase finds w as written but in any case (Unicode's simple folding, so
 // a word whose case changes its length in bytes is still found whole).
 func anyCase(w string) *regexp.Regexp {
@@ -1100,6 +1118,7 @@ func anyCase(w string) *regexp.Regexp {
 	}
 	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(w))
 	anyCases.Store(w, re)
+	cacheGrew(&anyCaseCount, &anyCases)
 	return re
 }
 
@@ -1205,9 +1224,14 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 	if len(raw) < 3 {
 		return raw, 0
 	}
-	s := raw // what the finders read: as long as raw, a place in one is the same in the other
+	s := raw // what the finders read
+	var mapBack func([]span) []span
 	if escaped {
-		s = unescapedView(raw)
+		// the finders read the text decoded: a \uXXXX is the letter it
+		// stands for, so a Chinese word or a & split by an escape is found
+		// (and the spans found are mapped back to the bytes it is written
+		// as, whole escapes)
+		s, mapBack = unescapedView(raw)
 		put = unescapedPut(put)
 	}
 	var found []span
@@ -1250,6 +1274,12 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		}
 	}
 	found = append(found, ruleSpans(s, o)...)
+	// the spans found in s are in its places; ones found in raw (the model
+	// and a value masked before as it is written escaped) are in raw's.
+	// They are kept apart until each has been judged by the text it was
+	// found in, and the ones from s are mapped back to raw's bytes. With
+	// no escape, s is raw and the two are the same text.
+	var inRaw []span
 	// after the rules', so where a rule finds the same value it keeps the
 	// kind it has always had
 	if o.sent {
@@ -1257,20 +1287,27 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		now := modelSpans(raw, o)
 		kept := sentSpans(sentModel, raw, o, func() []span { return now })
 		learnLate(raw, now, kept, o, escaped)
-		found = append(found, kept...)
+		inRaw = append(inRaw, kept...)
 		found = append(found, sentSpans(sentKnown, s, o, func() []span { return knownSpans(s, o) })...)
 	} else {
-		found = append(found, modelSpans(raw, o)...) // the model was asked about raw
+		inRaw = append(inRaw, modelSpans(raw, o)...) // the model was asked about raw
 		found = append(found, knownSpans(s, o)...)
 	}
 	if escaped {
 		// a value masked before with a newline, a quote or a backslash in it
 		// reads here as it is written, escaped: knownSpans reading the
 		// unescapedView finds none of those (#58)
-		found = append(found, knownSpansInJSON(raw, o)...)
-		found = inStrings(raw, outsideEscapes(raw, found))
+		inRaw = append(inRaw, knownSpansInJSON(raw, o)...)
 	}
 	found = noNumbers(s, noIDs(s, found))
+	inRaw = noNumbers(raw, noIDs(raw, inRaw))
+	if mapBack != nil {
+		found = mapBack(found)
+	}
+	found = append(found, inRaw...)
+	if escaped {
+		found = inStrings(raw, outsideEscapes(raw, found))
+	}
 	if o.sent {
 		noteScores(raw, found) // what is masked for a vendor, not a preview
 	}
@@ -1394,38 +1431,74 @@ func learnLate(raw string, now, kept []span, o Options, escaped bool) {
 	apply(raw, late, put, o, escaped)
 }
 
-// unescapedView is s, JSON text, as long as s and read as the vendor reads
-// it once unescaped, as far as the finders tell: an escape that stands for
-// a newline, a tab or another control character has its letter read as
-// one (\n as \ and a newline), and a \u escape's u and digits as line
-// breaks, so neither starts or ends a word. A backslash, a quote and a
-// slash escaped stay as written: the rules read \" as a quote and C:\\Users
-// as a Windows path.
-func unescapedView(s string) string {
-	if strings.IndexByte(s, '\\') < 0 {
-		return s
+// unescapedView is s, JSON text, read as the vendor reads it once
+// unescaped: \n, \t and \r are the characters they stand for, and a
+// \uXXXX (a surrogate pair too) is the rune it names. The finders read
+// this text, so a key split by an escape (& for &), a password written
+// p, or a Chinese word written as \uXXXX is found as written. Mapping
+// what they find back to s is mapBack: each span's ends are moved to the
+// whole escape that spells the first and last byte it covers, so the value
+// replaced in s is a run of whole escapes and s stays JSON. mapBack is nil
+// when s has no escape, and then the view is s itself.
+func unescapedView(s string) (view string, mapBack func([]span) []span) {
+	if !hasJSONEscape(s) {
+		return s, nil
 	}
-	b := []byte(s)
-	for i := 0; i+1 < len(b); i++ {
-		if b[i] != '\\' {
-			continue
+	plain, at := jsonPlain(s)
+	// from and to are, for each byte of plain, the bytes of s that spell
+	// it: one for a byte written as itself, the whole escape otherwise
+	from := make([]int, len(plain))
+	to := make([]int, len(plain))
+	for i := 0; i < len(plain); {
+		a := at[i]
+		j := i + 1
+		for j < len(plain) && at[j] == a {
+			j++
 		}
-		i++
-		switch b[i] {
-		case 'n', 'b', 'f':
-			b[i] = '\n'
-		case 'r':
-			b[i] = '\r'
-		case 't':
-			b[i] = '\t'
-		case 'u':
-			for j := i; j < i+5 && j < len(b); j++ {
-				b[j] = '\n'
+		b := a + escapeLen(s[a:])
+		if b > len(s) {
+			b = len(s) // a lone backslash at the end is text of its own
+		}
+		for k := i; k < j; k++ {
+			from[k], to[k] = a, b
+		}
+		i = j
+	}
+	mapBack = func(found []span) []span {
+		out := found[:0]
+		for _, f := range found {
+			if f.start < 0 {
+				continue
 			}
-			i += 4
+			if f.end > len(plain) {
+				f.end = len(plain)
+			}
+			if f.start >= f.end {
+				continue
+			}
+			f.start, f.end = from[f.start], to[f.end-1]
+			if f.start < f.end {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+	return plain, mapBack
+}
+
+// escapeLen is how many bytes of JSON text the escape s starts with takes:
+// 1 for a byte written as itself, 6 for \uXXXX, 12 for a surrogate pair,
+// and 2 for any other escape (a backslash and the byte after it).
+func escapeLen(s string) int {
+	if len(s) < 2 || s[0] != '\\' {
+		return 1
+	}
+	if s[1] == 'u' {
+		if _, n := jsonRune(s); n > 0 {
+			return n
 		}
 	}
-	return string(b)
+	return 2
 }
 
 // unescapedPut is put given each value unescaped, as the vendor and the

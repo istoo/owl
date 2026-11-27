@@ -18,7 +18,6 @@ import (
 	"golang.org/x/net/html/charset"
 
 	"github.com/istoo/owl/internal/access"
-	"github.com/istoo/owl/internal/budget"
 	"github.com/istoo/owl/internal/netproxy"
 )
 
@@ -80,7 +79,7 @@ func (s *Server) fetchMCPRun(r *http.Request, a fetchArgs) (string, error) {
 		limit = webFetchChars
 	}
 	limit = min(limit, webFetchMaxChars)
-	release, refused := budget.Reserve(access.Caller(r.Context()), int64(len(raw)), "", limitClock())
+	release, refused := reserveFor(access.Caller(r.Context()), int64(len(raw)), "", limitClock())
 	if refused != nil {
 		return "", refused
 	}

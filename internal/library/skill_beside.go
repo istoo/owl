@@ -63,11 +63,17 @@ func movedIn(s *Skill, src Source, c Candidate, from string) bool {
 // the owner both have would not (skills/writing/blog beside
 // skills/coding/blog is blog-writing); one from elsewhere takes its
 // source's (freeSkillName).
-func (l *Library) besideName(name string, src Source, path string) string {
+func (l *Library) besideName(name string, src Source, path string) (string, error) {
 	if s := l.skill(name); s != nil && sameRepo(s.Source, src) {
 		if dir := slash.Dir(path); dir != "." && dir != "" {
-			if n := withSuffix(name, slash.Base(dir)); n != "" && !l.skillNameTaken(n) {
-				return n
+			if n := withSuffix(name, slash.Base(dir)); n != "" {
+				taken, err := l.skillNameTaken(n)
+				if err != nil {
+					return "", err
+				}
+				if !taken {
+					return n, nil
+				}
 			}
 		}
 	}
@@ -75,22 +81,40 @@ func (l *Library) besideName(name string, src Source, path string) string {
 }
 
 // skillNameTaken is whether the library has a skill called name, or its
-// folder has something by that name. One that can't be looked at is
-// taken: what is there is unknown.
-func (l *Library) skillNameTaken(name string) bool {
+// folder has something by that name. A folder that can't be looked at is
+// an error, not a name to try: what is there is unknown, and a name tried
+// past it could take its place (#H26).
+func (l *Library) skillNameTaken(name string) (bool, error) {
 	if l.skill(name) != nil {
-		return true
+		return true, nil
 	}
 	_, err := os.Lstat(skillDir(name))
-	return !errors.Is(err, fs.ErrNotExist)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	}
+	return false, err
 }
 
 // freeSkillName is the name a skill called name from src goes by in the
 // library: name itself while nothing has it, else name with the source's
 // owner, then its repository's (or folder's) name, then a number added.
-func (l *Library) freeSkillName(name string, src Source) string {
-	if !l.skillNameTaken(name) {
-		return name
+func (l *Library) freeSkillName(name string, src Source) (string, error) {
+	taken, err := l.skillNameTaken(name)
+	if err != nil {
+		return "", err
+	}
+	if !taken {
+		return name, nil
+	}
+	free := func(n string) (bool, error) {
+		if n == "" || n == name {
+			return false, nil
+		}
+		taken, err := l.skillNameTaken(n)
+		return !taken, err
 	}
 	owner, repo := sourceParts(src)
 	var tries []string
@@ -101,24 +125,50 @@ func (l *Library) freeSkillName(name string, src Source) string {
 		tries = append(tries, repo)
 	}
 	for _, s := range tries {
-		if n := withSuffix(name, s); n != "" && n != name && !l.skillNameTaken(n) {
-			return n
+		n := withSuffix(name, s)
+		ok, err := free(n)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return n, nil
 		}
 	}
 	base := owner
 	if base == "" {
 		base = repo
 	}
-	for i := 2; ; i++ {
-		suffix := fmt.Sprint(i)
+	// A name that plus <base>-<i> can't be made (base is too long to fit
+	// beside name) would loop for ever: a number alone always fits, and
+	// the names tried are bounded (#H26). A folder that can't be read is
+	// an error, and a list with no free name left is one too: never a
+	// name that wasn't checked.
+	for i := 2; i <= maxSkillNameTries; i++ {
 		if base != "" {
-			suffix = base + "-" + suffix
+			n := withSuffix(name, base+"-"+fmt.Sprint(i))
+			ok, err := free(n)
+			if err != nil {
+				return "", err
+			}
+			if ok {
+				return n, nil
+			}
 		}
-		if n := withSuffix(name, suffix); n != "" && !l.skillNameTaken(n) {
-			return n
+		n := withSuffix(name, fmt.Sprint(i))
+		ok, err := free(n)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return n, nil
 		}
 	}
+	return "", fmt.Errorf("no free name for a skill called %s: %d beside it are taken", name, maxSkillNameTries)
 }
+
+// maxSkillNameTries bounds the numbered names freeSkillName tries beside
+// one that is taken; a variable for a test to bring the bound down.
+var maxSkillNameTries = 10000
 
 // sourceParts is a source's owner and repository: openai and skills for
 // openai/skills or https://gitlab.com/openai/skills.git, and for a folder

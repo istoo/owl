@@ -38,6 +38,8 @@ export function state(tabId) {
       mouse: null, // where the mouse last was, {x, y}
       lastInput: 0, // when the last action's input ended
       lastWheel: 0,
+      detaching: false, // detach is turning the focus emulation off
+      attaches: 0, // how many calls have attached the tab
     };
     tabs.set(tabId, t);
   }
@@ -55,6 +57,13 @@ export async function attach(tabId) {
   clearTimeout(t.idle);
   t.idle = setTimeout(() => detach(tabId), BUSY_MS);
   t.busy = true;
+  // a call that attaches is a new attachment, told apart from a call
+  // already running when detach started: detach gives up only for this
+  t.attaches++;
+  // a detach under way finishes first: attaching while its focus change
+  // and chrome.debugger.detach are out would let the detach take this
+  // attachment away after it was made (#M36c)
+  while (t.detaching) await new Promise((r) => setTimeout(r, 5));
   if (t.attached) return t;
   if (!t.attaching) {
     t.attaching = (async () => {
@@ -150,12 +159,29 @@ export function releaseAll() {
 
 export async function detach(tabId) {
   const t = tabs.get(tabId);
-  if (!t || !t.attached) return;
+  if (!t || !t.attached || t.detaching) return;
+  // a call that attaches this tab again while the focus is being turned
+  // off must keep the debugger: the last one to set busy wins, and this
+  // detach gives up and turns the focus emulation back on (#M36c)
+  t.detaching = true;
   clearTimeout(t.idle);
-  // the page's focus is its own again before the debugger goes
-  await send(tabId, "Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
-  t.attached = false;
-  try { await chrome.debugger.detach({ tabId }); } catch {}
+  const attaches = t.attaches;
+  try {
+    // the page's focus is its own again before the debugger goes
+    await send(tabId, "Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
+    // a call attached the tab while the focus was being turned off: the
+    // debugger stays, and the focus goes back on. A call that was busy
+    // before this detach is not one: the BUSY_MS timer is the bound on
+    // it, as it always was (#M36c)
+    if (t.attaches !== attaches) {
+      if (t.attached) await send(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+      return;
+    }
+    t.attached = false;
+    try { await chrome.debugger.detach({ tabId }); } catch {}
+  } finally {
+    t.detaching = false;
+  }
 }
 
 // autoAttach asks for the sessions of the frames from other sites that a

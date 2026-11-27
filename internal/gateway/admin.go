@@ -29,6 +29,10 @@ import (
 // own (DNS rebinding) is refused too, with its key or without.
 const AdminPath = "/v1/owl/admin/"
 
+// adminBodyMost is the most body the management API reads: a settings
+// save or a page upload, not a conversation.
+const adminBodyMost = 4 << 20
+
 // adminHandler is what serves the routes under AdminPath, set by the app's
 // package (gui) at start; nil serves 503.
 var adminHandler atomic.Pointer[http.Handler]
@@ -78,7 +82,7 @@ func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
 		adminRefuse(w, http.StatusServiceUnavailable, "admin_unavailable", "this owl serves no management API")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, adminBodyMost)
 	rest := "/" + strings.TrimPrefix(r.URL.Path, AdminPath)
 	log.Printf("management API: %s %s by gateway key %q", r.Method, rest, who.KeyName)
 	r2 := r.Clone(r.Context())

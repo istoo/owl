@@ -53,21 +53,36 @@ import (
 //     plain http:// request whose Host is then the address too);
 //   - each redirect goes through the same, at most imageRedirects of them.
 //
-// One more shape is let through, a fake-IP resolver's (Clash's TUN with
-// fake-ip, Clash Verge, Surge's enhanced mode, Loon; #2593): a name whose
-// every answer is in 198.18.0.0/15 (netguard.FakeIP). Pure TUN, no proxy:
-// the fake address is pinned and dialled, and the TUN carries it to the
-// host the name stands for. Through a proxy on this computer (loopback or
-// localhost), the proxy is given the name, never the fake address, which
-// it can't route; through a proxy elsewhere it is refused. The fake-IP
-// resolver's own AAAA beside its fake A (netguard.FakePaired, mihomo's
-// fake-ip-range6) is left out and never dialled. An address
-// literal in the range, or an answer with any other address beside the
-// fake ones, is judged as ever. What the name stands for is then the
-// fake-IP resolver's to decide, where owl can't see: a name that
-// really points at the user's network is reached if that resolver's
-// rules send it there. The same holds for a provider's icon
-// (internal/provider/icon.go), which shares netguard.
+// One more shape is a fake-IP resolver's (Clash's TUN with fake-ip,
+// Clash Verge, Surge's enhanced mode, Loon; #2593): a name whose every
+// answer is in 198.18.0.0/15 (netguard.FakeIP). The fake address is
+// pinned and dialled; through a proxy on this computer (loopback or
+// localhost) the proxy is given the name instead, which it can route.
+// Either way the destination is one owl can't check: a published A record
+// can be in that range too, and with no proxy owl can't tell a TUN from
+// whatever the OS routes the range to. So such a name is fetched only as
+// a host the user named itself — fetchPrivate or the vendor's own host —
+// or to an address or range the user named, when the proxy isn't
+// resolving the name itself (no proxy, or a proxy elsewhere): an un-named
+// fake answer is refused with the private-address message, exactly as any
+// other private address is (H1). No probe name is looked up to tell a
+// fake-IP resolver from a published record: it proved only how the
+// resolver answered that name, never where this one goes, and it put a
+// lookup and its failures on every download. The trade-off is real: in
+// Clash, Surge or Loon's fake-IP mode an arbitrary caller's image URL is
+// refused until its host — or, with no proxy, its address range — is
+// named in fetchPrivate; a named host goes through either way. No
+// unverified destination passes, and no probe DNS is done. Through a
+// proxy on this computer the proxy is given the name only when the host
+// itself was named, never when only its address range was: the range is
+// not what the proxy connects to. The fake-IP resolver's own AAAA beside
+// its fake A (netguard.FakePaired, mihomo's fake-ip-range6) is left out
+// and never dialled. An address literal in the range, or an answer with
+// any other address beside the fake ones, is judged as ever. What the
+// name stands for is then the fake-IP resolver's to decide, where owl
+// can't see: a name that really points at the user's network is reached
+// if that resolver's rules send it there. The same holds for a provider's
+// icon (internal/provider/icon.go), which shares netguard.
 
 // imageRedirects is how many redirects a caller's image URL is followed
 // through.
@@ -229,18 +244,26 @@ func (pt publicTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// TUN when dialled directly, its address pinned, or by a proxy on
 	// this computer given the name, never the address (byName)
 	fake := !literal && fakeAnswer(addrs)
-	if !named && !allAllowed(allow, addrs) {
-		if !fake {
-			return nil, errPrivateAddress
-		}
-		if proxy != nil && !onThisComputer(proxy) {
-			// a proxy elsewhere has no fake-IP resolver of ours to ask:
-			// neither the name nor the address is known to reach the
-			// host the name stands for
-			return nil, errPrivateAddress
-		}
-	}
 	byName := fake && proxy != nil && onThisComputer(proxy)
+	// one the user named itself (fetchPrivate, a vendor's own host) is
+	// wanted wherever it leads, as any allowed address is
+	if byName && !named {
+		// the answer is in the fake range, and the proxy on this computer
+		// would resolve the name itself, where owl can't see. The address
+		// the user may have listed (a fetchPrivate range covering
+		// 198.18.0.0/15) isn't the one it connects to, so only the host's
+		// own name is an authorization owl can check, and this isn't one
+		// (H1: a published A record can be in 198.18.0.0/15 too)
+		return nil, fmt.Errorf("%w: %s answered with a fake-IP address and this computer's proxy resolves the name itself; name the host in settings.json's \"fetchPrivate\" to trust it", errPrivateAddress, host)
+	}
+	if !named && !allAllowed(allow, addrs) {
+		// Neither the host nor its address was named: a fake answer is
+		// no voucher for where it goes (a TUN is not something owl can
+		// prove), and one through a proxy elsewhere is no better: neither
+		// the name nor the address is known to reach the host it stands
+		// for
+		return nil, errPrivateAddress
+	}
 	var tc *tls.Config
 	if upstreamTLS != nil {
 		tc = upstreamTLS.Clone()

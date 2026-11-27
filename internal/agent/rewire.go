@@ -48,7 +48,12 @@ func Rewire(as []*Agent) (moved []string, err error) {
 	}
 	moved, errs := setAgain(off)
 	KeepCursorLocalEnv(context.Background())
-	if trouble := dshWiredOnce(); trouble != "" {
+	// dsh's own routes are owl's writes too, and a catalog sync's filter
+	// passes every edit write while it runs
+	explicitWrite.Lock()
+	trouble := dshWiredOnce()
+	explicitWrite.Unlock()
+	if trouble != "" {
 		errs = append(errs, fmt.Errorf("%s", trouble))
 	}
 	return moved, joinErrs(errs)
@@ -75,19 +80,30 @@ func Rekey(as []*Agent) (moved []string, err error) {
 // owl, and says the names of those it set and what one failed with.
 func setAgain(as []*Agent) (moved []string, errs []error) {
 	for _, a := range as {
-		// set again on the old URL, an agent reads as not routed through
-		// owl yet, and its set notes the old URL, owl's token and
-		// model as what it had before owl: what it really had is kept,
-		// for switching it off to put back
-		was := stashLoad()
-		e := reset(a)
-		keepOriginals(a, was)
+		// one explicit write at a time, as a pick is: a catalog sync's
+		// kept-away filter is never on this agent's files while it is
+		// set again (#4133)
+		e := func() error {
+			explicitWrite.Lock()
+			defer explicitWrite.Unlock()
+			// set again on the old URL, an agent reads as not routed
+			// through owl yet, and its set notes the old URL, owl's token
+			// and model as what it had before owl: what it really had is
+			// kept, for switching it off to put back
+			was := stashLoad()
+			if err := reset(a); err != nil {
+				keepOriginals(a, was)
+				return err
+			}
+			keepOriginals(a, was)
+			if a.Sync != nil {
+				_ = a.Sync()
+			}
+			return nil
+		}()
 		if e != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", a.Name, e))
 			continue
-		}
-		if a.Sync != nil {
-			_ = a.Sync()
 		}
 		moved = append(moved, a.Name)
 	}
@@ -207,7 +223,9 @@ func reset(a *Agent) error {
 			return err
 		}
 	}
-	return a.Reapply()
+	// setAgain holds the explicit-write lock, so the unlocked body is used:
+	// Reapply's own lock would wait on itself
+	return a.reapply()
 }
 
 // wiredAt ends a stash key holding the gateway address owl last wrote

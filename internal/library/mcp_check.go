@@ -100,7 +100,37 @@ const checkAtOnce = 4
 
 const mcpProtocol = "2025-06-18"
 
-var checkClient = &http.Client{Transport: checkTransport()}
+var checkClient = &http.Client{Transport: checkTransport(), CheckRedirect: checkRedirect}
+
+// checkRedirect follows a redirect only on the server's own origin (or its
+// http address moving to https), and never to another scheme: the check
+// adds no headers but its own, and a server that answers a redirect could
+// otherwise send the check, and the key it carries, to a host it names
+// (#H27). A 307 or 308 keeps the request as it was; since the origin must
+// match, nothing of the caller's crosses to another host.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	// the hop before this one, not the first: an upgrade to https must not
+	// let the next hop fall back to http on the first one's origin
+	from, to := via[len(via)-1].URL, req.URL
+	if sameOrigin(from, to) || upgradeToHTTPS(from, to) {
+		return nil
+	}
+	return fmt.Errorf("it redirected to %s, another origin: owl follows only a redirect on the server's own origin", to.Redacted())
+}
+
+// upgradeToHTTPS is whether b is a's address moved from http to https on
+// the same host: the one cross-scheme redirect a server may ask of the
+// check.
+func upgradeToHTTPS(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, "http") && strings.EqualFold(b.Scheme, "https") &&
+		strings.EqualFold(a.Hostname(), b.Hostname())
+}
 
 func checkTransport() http.RoundTripper {
 	t := http.DefaultTransport.(*http.Transport).Clone()

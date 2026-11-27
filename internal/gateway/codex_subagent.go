@@ -98,13 +98,13 @@ func (s *Server) codexSubagentPick(r *http.Request, agent, kind, asked string, b
 		pick.Kept = sealedKept
 		return pick
 	}
-	if who, held := keyHolds(r); held {
-		if p, model, ok := provider.Resolve(to); !ok || !modelAllowed(who, p, model) {
-			pick.Kept = "the gateway key may not use it"
-		}
-	} else if withGatewayKey(r) {
-		// a routing group bound to other keys (groupBarred)
-		if g, _, ok := provider.FindGroup(to); ok && groupBarred(who, g) {
+	if who, held := keyHolds(r); held || withGatewayKey(r) {
+		// as a request to it is held: a routing group by groupGiven
+		// (groupAllowed for a key held to some models, groupBarred for
+		// one held to none), a model by modelAllowed
+		g, ms, isGroup := provider.FindGroup(to)
+		p, model, ok := provider.Resolve(to)
+		if isGroup && !groupGiven(r, who, held, g, ms) || held && !isGroup && (!ok || !modelAllowed(who, p, model)) {
 			pick.Kept = "the gateway key may not use it"
 		}
 	}

@@ -460,9 +460,11 @@ func (l *Library) syncInstructions(t *Target, all []*Target, b *backups, res *Re
 // ~/.gemini/config/GEMINI.md; one switched off takes nothing out of the
 // file the other is switched on for.
 func (l *Library) instrOwner(t *Target, all []*Target) string {
-	p := filepath.Clean(t.Instructions)
+	// the shared file is found through links too: an agent's path to it may
+	// be a link while another's is the file itself (#L11)
+	p := realDir(t.Instructions)
 	for _, o := range all {
-		if o.Instructions != "" && o.Field == t.Field && filepath.Clean(o.Instructions) == p && slices.Contains(l.Instructions.Agents, o.Agent.ID) {
+		if o.Instructions != "" && o.Field == t.Field && realDir(o.Instructions) == p && slices.Contains(l.Instructions.Agents, o.Agent.ID) {
 			return o.Agent.ID
 		}
 	}

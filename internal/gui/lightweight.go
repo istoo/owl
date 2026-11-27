@@ -101,8 +101,13 @@ func (h *host) makeMain(url string) *application.WebviewWindow {
 				return
 			}
 			sw, sh := fitScreen(w)
-			if s := settings.Load(); settle(&s, wd, ht, sw, sh, w.IsMaximised()) {
-				settings.Save(s)
+			// the write re-reads under the settings lock, so a change another
+			// place made in between stands (M41)
+			if s, err := settings.LoadChecked(); err == nil && settle(&s, wd, ht, sw, sh, w.IsMaximised()) {
+				_, _ = settings.Update(func(x *settings.Settings) error {
+					settle(x, wd, ht, sw, sh, w.IsMaximised())
+					return nil
+				})
 			}
 			h.keepAt(w) // a resize by the top or left edge moves it too
 		})

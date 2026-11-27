@@ -340,9 +340,12 @@ func TestUsageOverBudgetPageIsCached(t *testing.T) {
 	cacheBudget(t, 128)
 	got := QueryPage(All, Filter{}, 0, 100)
 	equalPage(t, got, pageFromLedger(All, Filter{}, 0, 100, LedgerOf(All, Filter{})))
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.Local).In(Zone(""))
+	zone, off := now.Zone()
 	requestCache.Lock()
 	defer requestCache.Unlock()
-	if _, ok := requestCache.pages[pageKey{All, Filter{}, 0, 100, "2026-09-30"}]; !ok {
+	if _, ok := requestCache.pages[pageKey{Period: All, Filter: Filter{}, Offset: 0, Limit: 100,
+		Date: now.Format(time.DateOnly), DayStart: 0, Zone: zone, ZoneOffset: off}]; !ok {
 		t.Fatal("page of an over-budget history not cached")
 	}
 }

@@ -321,15 +321,23 @@ func forwardCallback(w http.ResponseWriter, r *http.Request) bool {
 		ForwardCallbacks("")
 		return false
 	}
+	// a transport of this call's own, its connections closed with it: one
+	// made every callback and never closed leaked its idle connection and
+	// the goroutines reading it (#M4)
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		},
+		DisableKeepAlives: true,
+	}
+	defer tr.CloseIdleConnections()
 	p := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(&url.URL{Scheme: "http", Host: "predecessor"})
 			pr.Out.URL.Path, pr.Out.URL.RawPath = r.URL.Path, r.URL.RawPath
 		},
-		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", sock)
-		}},
+		Transport:     tr,
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			if !errors.Is(err, io.EOF) {

@@ -130,13 +130,13 @@ const (
 )
 
 // syncProjects places the library's skills in every project as it says.
-func (l *Library) syncProjects(res *Result) {
+func (l *Library) syncProjects(res *Result, b *backups) {
 	for _, p := range l.Projects {
-		l.syncProject(p, res)
+		l.syncProject(p, res, b)
 	}
 }
 
-func (l *Library) syncProject(p *Project, res *Result) {
+func (l *Library) syncProject(p *Project, res *Result, b *backups) {
 	if fi, err := os.Stat(p.Dir); err != nil || !fi.IsDir() {
 		if len(p.Skills) > 0 || len(p.Servers) > 0 || len(p.Subagents) > 0 || len(p.ServersOff) > 0 || len(p.SkillsOff) > 0 || p.holds() {
 			res.Problems = append(res.Problems, Problem{Agent: p.Dir, What: "project:", Error: "the folder is gone"})
@@ -145,7 +145,7 @@ func (l *Library) syncProject(p *Project, res *Result) {
 	}
 	hubs := l.projectHubs(p)
 	l.syncFolder(p, res, hubs)
-	l.syncClaudeLocal(p, hubs["claude"], func(what string, err error) {
+	l.syncClaudeLocal(p, hubs["claude"], b, func(what string, err error) {
 		res.Problems = append(res.Problems, Problem{Agent: p.Dir, What: "project:" + what, Error: err.Error()})
 	})
 	l.syncTrees(p, res, hubs)
@@ -484,12 +484,12 @@ func RemoveProject(dir string, keep bool) (*Result, error) {
 		if fi, err := os.Stat(p.Dir); errors.Is(err, os.ErrNotExist) || err == nil && !fi.IsDir() {
 			// Claude Code's record of it isn't in the folder
 			p.ServersOff = nil
-			l.syncClaudeLocal(p, nil, func(string, error) {})
+			l.syncClaudeLocal(p, nil, newBackups(), func(string, error) {})
 			l.Projects = slices.DeleteFunc(l.Projects, func(x *Project) bool { return x == p })
 			return nil
 		}
 		p.Skills, p.Servers, p.ServersOff, p.SkillsOff, p.Subagents = nil, nil, nil, nil, nil
-		l.syncProject(p, &Result{})
+		l.syncProject(p, &Result{}, newBackups())
 		if !p.holds() && p.Claude == nil && !slices.ContainsFunc(p.Trees, (*Project).holds) {
 			l.Projects = slices.DeleteFunc(l.Projects, func(x *Project) bool { return x == p })
 		}

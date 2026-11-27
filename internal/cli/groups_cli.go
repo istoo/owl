@@ -711,7 +711,7 @@ func groupCmd(args []string) error {
 		}
 		return nil
 	case "pick", "use":
-		if len(rest) != 2 {
+		if len(rest) != 2 || flagValue(rest[1]) {
 			return fmt.Errorf("owl group pick <id> <model>")
 		}
 		g, err := setGroup(rest[0], []string{"pick=" + rest[1]})

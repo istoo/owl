@@ -343,12 +343,46 @@ func hasShapes(b []byte) bool {
 	return false
 }
 
+// shapeSpans are where a made-up key already in s lies, for a caller that
+// must leave it whole (nameMaskRuns).
+func shapeSpans(s string) []span {
+	mu.RLock()
+	defer mu.RUnlock()
+	if len(shapes) == 0 {
+		return nil
+	}
+	lower := ""
+	var out []span
+	for f, kind := range shapes {
+		in := s
+		if foldStandIn(kind) {
+			if lower == "" {
+				lower = lowerASCII(s)
+			}
+			in = lower
+		}
+		for i := 0; ; {
+			a := strings.Index(in[i:], f)
+			if a < 0 {
+				break
+			}
+			a += i
+			out = append(out, span{a, a + len(f), "", "", 0, false})
+			i = a + len(f)
+		}
+	}
+	return out
+}
+
 // outsideShapes is found without what lies in a made-up key already in s,
 // as a placeholder's inside is left alone: a key that came back unrestored
 // is not masked again as a key of its own.
 func outsideShapes(s string, found []span) []span {
 	mu.RLock()
 	defer mu.RUnlock()
+	if len(shapes) == 0 {
+		return found
+	}
 	lower := lowerASCII(s)
 	for f, kind := range shapes {
 		in := s

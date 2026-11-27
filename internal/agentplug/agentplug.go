@@ -306,12 +306,12 @@ func current() *set {
 	if s != nil && (now < n || !nextCheck.CompareAndSwap(n, now+int64(time.Second))) {
 		return s
 	}
-	st := stamp()
-	if s != nil && s.stamp == st {
-		return s
-	}
 	loadMu.Lock()
 	defer loadMu.Unlock()
+	// the stamp is read under the lock Reload takes: one computed outside
+	// it can name a plugin set that was dropped and reloaded meanwhile, and
+	// the stale snapshot is stored back (#4133)
+	st := stamp()
 	if s := cur.Load(); s != nil && s.stamp == st {
 		return s
 	}
@@ -338,7 +338,11 @@ func modules() []found {
 	return out
 }
 
-func stamp() string {
+// stamp names the plugin set the agents are loaded from. It is read under
+// loadMu, the same lock Reload takes, so a reload in between never stores
+// a set named for what was dropped (#4133). A var so a test can hold it,
+// and see Reload wait.
+var stamp = func() string {
 	var b strings.Builder
 	b.WriteString(plugin.ListStamp())
 	for _, f := range modules() {
