@@ -128,7 +128,7 @@ func readZhipuPlan(b []byte) (string, []QuotaWindow, error) {
 	for _, l := range r.Data.Limits {
 		w := QuotaWindow{}
 		if l.Percentage != nil {
-			w.Used = *l.Percentage
+			w.Used = clampPercent(*l.Percentage)
 		}
 		if l.NextResetTime > 0 {
 			t := time.UnixMilli(l.NextResetTime)
@@ -192,7 +192,7 @@ func readOpenCodeGo(b []byte) (string, []QuotaWindow, error) {
 		if !ok || w.Percent == nil {
 			continue
 		}
-		q := QuotaWindow{Name: x.name, Used: *w.Percent, Span: x.span}
+		q := QuotaWindow{Name: x.name, Used: clampPercent(*w.Percent), Span: x.span}
 		if t, err := time.Parse(time.RFC3339, w.ResetsAt); err == nil && *w.Percent > 0 {
 			q.ResetsAt = &t
 		}
@@ -869,9 +869,11 @@ func PlanQuotas(ctx context.Context) []SubscriptionQuota {
 				if strings.HasSuffix(j.src.url, "/api/monitor/usage/quota/limit") && !team { // Zhipu, Z.ai
 					// the plan's term and its resets (#1191), asked together
 					root := zcodeRoot(j.src.url)
+					// through the provider's own proxy, as its requests go (#H17)
+					via := j.p.Via(ctx)
 					resets := make(chan *ResetCredits, 1)
-					go func() { resets <- zhipuPersonalResets(ctx, root, j.key) }()
-					q.Until, q.Renew = zhipuTerm(ctx, root, j.key)
+					go func() { resets <- zhipuPersonalResets(via, root, j.key) }()
+					q.Until, q.Renew = zhipuTerm(via, root, j.key)
 					q.Resets = <-resets
 				}
 			}

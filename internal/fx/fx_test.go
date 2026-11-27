@@ -216,3 +216,36 @@ func TestKnownIsNeverAGuess(t *testing.T) {
 		t.Fatalf("a failed refresh changed the known rate: %+v %v", r, ok)
 	}
 }
+
+// A caller that went away is not the endpoint failing: a canceled fetch
+// doesn't stop the next look from asking for ten minutes (#M20).
+func TestCanceledFetchIsNoCooldown(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	Reset()
+	t.Cleanup(Reset)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Write([]byte(`{"result":"success","rates":{"CNY":7.25}}`))
+	}))
+	defer server.Close()
+	defer SetRateURL(server.URL)()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if r := Get(ctx); r.CNYPerUSD != Fallback {
+		t.Fatalf("a canceled fetch = %v, want Fallback %v", r.CNYPerUSD, Fallback)
+	}
+	mu.Lock()
+	failedAt := failed
+	mu.Unlock()
+	if !failedAt.IsZero() {
+		t.Fatal("a canceled fetch set the ten-minute failure cooldown")
+	}
+	if r := Get(context.Background()); r.CNYPerUSD != 7.25 {
+		t.Fatalf("the next look = %v, want the fetched 7.25", r.CNYPerUSD)
+	}
+	if calls != 1 {
+		t.Fatalf("fetched %d times, want 1", calls)
+	}
+}

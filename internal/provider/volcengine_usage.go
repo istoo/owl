@@ -324,7 +324,7 @@ func volcReadCodingPlan(result json.RawMessage) []QuotaWindow {
 		if !ok {
 			continue
 		}
-		w.Used, w.ResetsAt = used, volcTime(u.ResetTimestamp)
+		w.Used, w.ResetsAt = clampPercent(used), volcTime(u.ResetTimestamp)
 		out = append(out, w)
 	}
 	return out
@@ -372,7 +372,7 @@ func volcReadAFP(result json.RawMessage) ([]QuotaWindow, string) {
 			used = n / of * 100
 			w.Amount, w.Limit = n, of
 		}
-		w.Used = used
+		w.Used = clampPercent(used)
 		if w.ResetsAt = volcTime(b.b.ResetTime); w.ResetsAt == nil {
 			w.ResetsAt = volcTime(b.b.ResetTimestamp)
 		}

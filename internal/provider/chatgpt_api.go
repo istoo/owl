@@ -392,11 +392,27 @@ func siwcFromToken(tok siwcTokenReply, c siwcCreds) (siwcCreds, error) {
 var siwcDead = []string{"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired",
 	"refresh_token_invalidated", "refresh_token_reused"}
 
-// siwcRefreshing keeps two requests from refreshing at once, in this
-// owl and across owls (two run at once while a restart hands the
-// gateway over): the refresh token rotates, and the second would send the
-// one the first used up. The account is looked up again once it is held.
-var siwcRefreshing = filelock.Mutex{Path: func() string { return loginsPath() + ".siwc.lock" }}
+// siwcLockPath is the cross-process lock a refresh holds: the refresh token
+// rotates, and two owls refreshing at once would spend one token twice.
+func siwcLockPath() string { return loginsPath() + ".siwc.lock" }
+
+// siwcMu is siwcLockPath's lock, within this owl and across the owls on the
+// computer.
+var siwcMu = filelock.Mutex{Path: siwcLockPath}
+
+// siwcLock takes that lock, strictly: one that can't be had is an error,
+// never a refresh outside it (#H10).
+func siwcLock() (func(), error) {
+	if err := siwcMu.LockStrict(); err != nil {
+		return nil, fmt.Errorf("another owl is refreshing this ChatGPT sign-in; try again: %w", err)
+	}
+	return siwcMu.Unlock, nil
+}
+
+// siwcBeforeLock runs after the account is first looked up and before the
+// refresh lock is waited for; a test changes or removes the credential in
+// that window, to prove the lock is followed by a fresh read.
+var siwcBeforeLock = func() {}
 
 // siwcFresh is an account's credentials with an access token that isn't
 // about to expire, refreshed when it is, or when force is set (OpenAI
@@ -409,12 +425,26 @@ func siwcFresh(ctx context.Context, user string, force bool) (siwcCreds, error) 
 	if !force && time.Until(c.Expires) > siwcMargin {
 		return c, nil
 	}
-	siwcRefreshing.Lock()
-	defer siwcRefreshing.Unlock()
+	siwcBeforeLock()
+	unlock, err := siwcLock()
+	if err != nil {
+		return siwcCreds{}, err
+	}
+	defer unlock()
 	// refreshed by another request while this one waited
-	if n, ok := siwcLookup(user); ok && n.Refresh != c.Refresh && time.Until(n.Expires) > siwcMargin {
+	n, ok := siwcLookup(user)
+	if !ok {
+		// signed out meanwhile: never refresh a token whose account is gone
+		return siwcCreds{}, fmt.Errorf("no ChatGPT account %q", user)
+	}
+	if n.Refresh != c.Refresh && time.Until(n.Expires) > siwcMargin {
 		return n, nil
 	}
+	// the token in hand may have rotated while this waited even if the new
+	// one is already near its end: going on with the consumed one would be
+	// turned away as refresh_token_reused, which revokes the account
+	// (#H10)
+	c = n
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	tok, err := siwcPostToken(ctx, url.Values{"grant_type": {"refresh_token"}, "client_id": {c.ClientID},

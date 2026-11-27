@@ -226,6 +226,9 @@ func ImportGoogleAccounts(ctx context.Context, agent string, files []string) ([]
 	loginsMu.Unlock()
 
 	out := make([]ImportedAccount, len(all))
+	// a refresh token in the files twice is one account: the second is
+	// said, not imported again over the first (#M12)
+	seen := map[string]bool{}
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
 	for i, e := range all {
@@ -240,6 +243,12 @@ func ImportGoogleAccounts(ctx context.Context, agent string, files []string) ([]
 		case haveTok[e.refreshToken] != "":
 			out[i] = ImportedAccount{User: haveTok[e.refreshToken], Status: "exists"}
 			continue
+		case e.refreshToken != "" && seen[e.refreshToken]:
+			out[i] = ImportedAccount{User: name, Status: "failed", Error: "in the files twice"}
+			continue
+		}
+		if e.refreshToken != "" {
+			seen[e.refreshToken] = true
 		}
 		wg.Add(1)
 		go func() {

@@ -84,12 +84,13 @@ var signInGone = lazyre.New(`(?i)sign-in has (expired|lapsed)|sign in again`)
 // accounts, l.Agent being "plugin:" and its id.
 func pluginLoginQuota(ctx context.Context, l Login) SubscriptionQuota {
 	pp, ok := pluginOfAgent(l.Agent)
+	if !ok {
+		// no card is made for a provider that isn't there: pluginCard
+		// would read a zero one (#L8)
+		return SubscriptionQuota{Provider: "", Name: "", Plan: l.Plan, User: l.User, Windows: []QuotaWindow{}, Error: "no such plugin provider"}
+	}
 	name, icon := pluginCard(pp)
 	q := SubscriptionQuota{Provider: PluginID(pp.ID), Name: name, Icon: icon, Plan: l.Plan, User: l.User, Windows: []QuotaWindow{}}
-	if !ok {
-		q.Error = "no such plugin provider"
-		return q
-	}
 	key := ""
 	for _, x := range pluginLogins(pp) {
 		if strings.EqualFold(x.User, l.User) {

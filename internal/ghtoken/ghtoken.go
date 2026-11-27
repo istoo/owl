@@ -81,10 +81,21 @@ func isRefused(t string) bool {
 	return refused.m[t]
 }
 
-func markRefused(t string) {
+// lastRefused is the token GitHub refused last, and where it came from:
+// after markRefused Token may name none or another variable's, and the
+// error still has to say which token was refused, not blame the next one.
+var lastRefused struct {
+	sync.Mutex
+	token, from string
+}
+
+func markRefused(t, from string) {
 	refused.Lock()
 	refused.m[t] = true
 	refused.Unlock()
+	lastRefused.Lock()
+	lastRefused.token, lastRefused.from = t, from
+	lastRefused.Unlock()
 }
 
 func markSettingsRefused(t string) {
@@ -136,7 +147,7 @@ func Do(req *http.Request, api string, send func(*http.Request) (*http.Response,
 		}
 		again.Body = b
 	}
-	markRefused(t)
+	markRefused(t, from)
 	if from == "settings" {
 		markSettingsRefused(t)
 	}
@@ -176,10 +187,23 @@ func authorize(req *http.Request, api string) (token, from string) {
 // Refused is the error for a 401 from GitHub to a request that carried the
 // token: which token it was, never the token itself.
 func Refused() error {
-	_, from := Token()
+	// the token refused was dropped already, so Token may give none or the
+	// next variable's: the one to name is the last refused, when it isn't
+	// the one still carried (#H15)
+	t, from := Token()
+	lastRefused.Lock()
+	refusedToken, refusedFrom := lastRefused.token, lastRefused.from
+	lastRefused.Unlock()
+	if t != refusedToken && refusedFrom != "" {
+		from = refusedFrom
+	}
 	where := "the GitHub token in Settings → Network and sharing"
-	if _, ok := SettingsRefused(); !ok && from != "settings" {
-		where = from + " (no GitHub token is set in Settings → Network and sharing)"
+	if from == "" {
+		where = "the GitHub token"
+	} else if from != "settings" {
+		if _, ok := SettingsRefused(); !ok {
+			where = from + " (no GitHub token is set in Settings → Network and sharing)"
+		}
 	}
 	return fmt.Errorf("GitHub refused %s: it may have expired or been revoked", where)
 }

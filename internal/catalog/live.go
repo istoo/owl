@@ -459,7 +459,9 @@ func saveLive(provider, base, asked string, models []Model, sides map[string][]M
 		Since: liveSince(provider, models, now), Asked: asked}
 	same := sameLive(p, f)
 	b, _ := json.MarshalIndent(f, "", "  ")
-	if err := os.WriteFile(p, b, 0o644); err != nil {
+	// through a file beside it renamed over: a reader asking for the list
+	// while it is written reads the old one, never half of the new (#M22)
+	if err := writeWhole(p, b, time.Time{}); err != nil {
 		return err
 	}
 	if same {

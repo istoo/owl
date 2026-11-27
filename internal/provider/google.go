@@ -333,11 +333,39 @@ var googleState = struct {
 	tokens   map[string]googleAuth // by refresh token
 	projects map[string]googleProject
 	flags    map[string]geminiFlags // by refresh token and project
+	// one lock per account's refresh token: concurrent requests for an
+	// account about to expire refresh it once (#H13)
+	refreshing map[string]*sync.Mutex
 	// when Google last refused each tier named in an account's
 	// fetchAvailableModels with a 400, by refresh token, project and tier
 	// (tierRefusedFor)
 	refused map[string]time.Time
-}{tokens: map[string]googleAuth{}, projects: map[string]googleProject{}, flags: map[string]geminiFlags{}, refused: map[string]time.Time{}}
+}{tokens: map[string]googleAuth{}, projects: map[string]googleProject{}, flags: map[string]geminiFlags{}, refreshing: map[string]*sync.Mutex{}, refused: map[string]time.Time{}}
+
+// googleRefreshLock is the mutex a refresh of the account with refresh
+// token t holds, made the first time.
+func googleRefreshLock(t string) *sync.Mutex {
+	googleState.Lock()
+	defer googleState.Unlock()
+	m := googleState.refreshing[t]
+	if m == nil {
+		m = &sync.Mutex{}
+		googleState.refreshing[t] = m
+	}
+	return m
+}
+
+// googleTokenNow is the account's access token if the cache has one that
+// isn't about to expire.
+func googleTokenNow(refresh string) (string, bool) {
+	googleState.Lock()
+	defer googleState.Unlock()
+	t, ok := googleState.tokens[refresh]
+	if ok && t.AccessToken != "" && time.Until(time.UnixMilli(t.Expiry)) > 2*time.Minute {
+		return t.AccessToken, true
+	}
+	return "", false
+}
 
 // tierRefusedFor is how long a tier Google answered an account's
 // fetchAvailableModels 400 for is left out of its next ones. A Google AI
@@ -423,6 +451,19 @@ func (p googleProject) entitlements() []string {
 
 // token is a live access token for the account.
 func (g googleAccount) token(ctx context.Context) (string, error) {
+	if t, ok := googleTokenNow(g.auth.RefreshToken); ok {
+		return t, nil
+	}
+	// one refresh per account at a time: Antigravity and Gemini CLI ask
+	// through many requests at once, and each about-to-expire token was
+	// refreshed by every one of them (#H13)
+	lock := googleRefreshLock(g.auth.RefreshToken)
+	lock.Lock()
+	defer lock.Unlock()
+	// refreshed by the request that held the lock while this one waited
+	if t, ok := googleTokenNow(g.auth.RefreshToken); ok {
+		return t, nil
+	}
 	googleState.Lock()
 	t, ok := googleState.tokens[g.auth.RefreshToken]
 	googleState.Unlock()
@@ -438,16 +479,22 @@ func (g googleAccount) token(ctx context.Context) (string, error) {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int64  `json:"expires_in"`
 	}
-	if err := postToken(ctx, googleTokenURL, "application/x-www-form-urlencoded", []byte(form.Encode()), &fresh); err != nil || fresh.AccessToken == "" {
+	err := postToken(ctx, googleTokenURL, "application/x-www-form-urlencoded", []byte(form.Encode()), &fresh)
+	if err == nil && fresh.AccessToken == "" {
+		err = errors.New("Google sent back no token")
+	}
+	if err != nil {
+		// a network hiccup or a 5xx is not a signed-out account: say so,
+		// and let the next request try again rather than send the user to
+		// sign in for nothing (#H13)
+		if transientTokenError(err) {
+			return "", fmt.Errorf("%s: %s; try again", g.app.name, err)
+		}
 		how := "sign in again from owl"
 		if g.own {
 			how = "run gemini and sign in again"
 		}
-		msg := "no token"
-		if err != nil {
-			msg = err.Error()
-		}
-		return "", fmt.Errorf("%s is signed out (%s); %s", g.app.name, msg, how)
+		return "", fmt.Errorf("%s is signed out (%s); %s", g.app.name, err.Error(), how)
 	}
 	t = googleAuth{AccessToken: fresh.AccessToken, RefreshToken: g.auth.RefreshToken,
 		Expiry: time.Now().Add(time.Duration(fresh.ExpiresIn) * time.Second).UnixMilli()}
@@ -1771,10 +1818,10 @@ func googleLoginQuota(ctx context.Context, l Login) SubscriptionQuota {
 
 // startGoogleSignIn builds the Google sign-in page's link for the app.
 func startGoogleSignIn(s *signInFlow, app googleApp, port int, challenge string) {
-	s.redirect = fmt.Sprintf("http://%s:%d%s", app.loopback, port, app.callback)
+	redirect := fmt.Sprintf("http://%s:%d%s", app.loopback, port, app.callback)
 	q := url.Values{}
 	q.Set("client_id", app.clientID)
-	q.Set("redirect_uri", s.redirect)
+	q.Set("redirect_uri", redirect)
 	q.Set("response_type", "code")
 	q.Set("scope", strings.Join(app.scopes, " "))
 	q.Set("access_type", "offline")
@@ -1782,7 +1829,11 @@ func startGoogleSignIn(s *signInFlow, app googleApp, port int, challenge string)
 	q.Set("state", s.state)
 	q.Set("code_challenge", challenge)
 	q.Set("code_challenge_method", "S256")
+	// begin may run after the window is already polling the state (#H9)
+	s.mu.Lock()
+	s.redirect = redirect
 	s.st.URL = googleAuthorizeURL + "?" + q.Encode()
+	s.mu.Unlock()
 }
 
 // googleExchange trades the code for tokens, finds whose account it is and

@@ -75,7 +75,7 @@ func copilotRenamed(was, now string) bool {
 }
 
 // renameTo names l now, remembering the name it was read under (was) so
-// its settings can follow it (renameSettled). Its stable id is pinned
+// its settings can follow it (renameMoves, settleRenames). Its stable id is pinned
 // first: a stand-in made of the new name would be another account's.
 func (l *savedLogin) renameTo(now string) {
 	if l.ID == "" {
@@ -101,16 +101,13 @@ func renameDue() bool {
 	return time.Since(renameFailedAt) > time.Minute
 }
 
-// renameSettled is ls as it is written: each account renamed on read
-// (renameTo) under its new name once the per-account settings kept by
-// its old one — proxy, models, cap, concurrency, in providers.json — are
-// moved to the new one (moveAccountSettings), and under its old name
-// still, its settings where they were, when they can't be: a
-// providers.json that can't be read is not one without settings. Before
-// #1220 a bare Copilot login named one account (another of that name
-// wrote over it), so what it kept is that account's. One whose old name
-// another account still bears leaves those settings to it.
-func renameSettled(ls []savedLogin) []savedLogin {
+// renameMoves is the old name -> new name each account renamed on read
+// (renameTo) asks for: the per-account settings kept by its old name —
+// proxy, models, cap, concurrency, in providers.json — go to the new one.
+// Before #1220 a bare Copilot login named one account (another of that
+// name wrote over it), so what it kept is that account's. One whose old
+// name another account still bears leaves those settings to it.
+func renameMoves(ls []savedLogin) map[string]string {
 	moves := map[string]string{}
 	for _, l := range ls {
 		if l.was == "" || slices.ContainsFunc(ls, func(o savedLogin) bool {
@@ -120,25 +117,56 @@ func renameSettled(ls []savedLogin) []savedLogin {
 		}
 		moves[l.was] = l.User
 	}
-	err := moveAccountSettings("copilot", moves)
-	if err != nil {
+	return moves
+}
+
+// settleRenames moves a renamed account's settings to its new name and
+// then writes logins.json under it. ls is the accounts read with the
+// rename on them (their was), since a parse of the file keeps an own
+// account under its old name. It takes providers.json's lock and
+// logins.json's one after the other, never one inside the other, and it
+// does nothing while providersMu is held by anyone: moving the settings
+// would take that lock again, which sync.Mutex doesn't re-enter (#H8).
+// The accounts stay under their old names until the next look outside a
+// providers write.
+func settleRenames(ls []savedLogin) {
+	if providersHeld.Load() > 0 {
+		return
+	}
+	moves := renameMoves(ls)
+	if len(moves) == 0 || !renameDue() {
+		return
+	}
+	if err := moveAccountSettings("copilot", moves); err != nil {
 		log.Printf("copilot accounts renamed with their host (#1220): their settings couldn't be moved (%v); kept under their old names for now", err)
 		renameMu.Lock()
 		renameFailedAt = time.Now()
 		renameMu.Unlock()
+		return
 	}
-	disk := slices.Clone(ls)
-	for i := range ls {
-		if ls[i].was == "" {
+	// an old name is matched as logins.json keeps accounts' names
+	byOld := make(map[string]string, len(moves))
+	for was, now := range moves {
+		byOld[accountKey(was)] = now
+	}
+	loginsMu.Lock()
+	defer loginsMu.Unlock()
+	// read afresh: a look may have kept an account meanwhile, and only
+	// those still here take the new name
+	cur := readLogins()
+	for i := range cur {
+		if cur[i].was != "" {
+			if _, moved := moves[cur[i].was]; moved {
+				cur[i].was = ""
+			}
 			continue
 		}
-		if err != nil {
-			disk[i].User = ls[i].was
-			continue
+		// one written under its old name, with no was to say so
+		if now, moved := byOld[accountKey(cur[i].User)]; moved && cur[i].Agent == "copilot" {
+			cur[i].User = now
 		}
-		ls[i].was, disk[i].was = "", ""
 	}
-	return disk
+	_ = writeLoginsTold(cur, false) // a name moved, no account did
 }
 
 // moveAccountSettings moves the per-account settings of the subscription

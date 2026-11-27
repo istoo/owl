@@ -111,10 +111,16 @@ func Asked(ctx context.Context) {
 		return
 	}
 	defer fetching.Store(false)
-	lastFetch.Store(time.Now().UnixNano())
 	if err := Sync(ctx); err != nil {
 		log.Println("catalog:", err)
+		// a caller that went away (a request ended, a page closed) didn't
+		// try the catalog: the next ask does, rather than wait ten
+		// minutes for a fetch that never happened (#L9)
+		if ctx.Err() != nil {
+			return
+		}
 	}
+	lastFetch.Store(time.Now().UnixNano())
 }
 
 // KeepFreshForTest has the catalog kept fresh from url, as the app's

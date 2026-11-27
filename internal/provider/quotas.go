@@ -18,6 +18,16 @@ func Quotas(ctx context.Context) []SubscriptionQuota {
 	return cardsServed(subs, plans, balances, LastServed())
 }
 
+// clampPercent is a vendor's percentage as owl keeps it: a number from 0
+// to 100. ParseFloat("NaN") succeeds, and upstream arithmetic can be
+// infinite, so a NaN or Inf is 0 rather than written out (#M19).
+func clampPercent(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	return math.Min(100, math.Max(0, v))
+}
+
 // InProviderOrder is qs in the order the user put the providers in on the
 // Providers page (SetOrder), each provider's cards as they came; a card of
 // no provider here (a remote owl's) after them all. The window's Usage

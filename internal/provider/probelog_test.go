@@ -22,13 +22,13 @@ func probeRows(t *testing.T) func() []probelog.Row {
 	var mu sync.Mutex
 	var rows []probelog.Row
 	sink, tr := probelog.Sink, http.DefaultClient.Transport
-	probelog.Sink = func(r probelog.Row) { mu.Lock(); rows = append(rows, r); mu.Unlock() }
+	probelog.SetSink(func(r probelog.Row) { mu.Lock(); rows = append(rows, r); mu.Unlock() })
 	next := tr
 	if next == nil {
 		next = http.DefaultTransport
 	}
 	http.DefaultClient.Transport = probelog.Transport(next)
-	t.Cleanup(func() { probelog.Sink, http.DefaultClient.Transport = sink, tr })
+	t.Cleanup(func() { probelog.SetSink(sink); http.DefaultClient.Transport = tr })
 	return func() []probelog.Row {
 		mu.Lock()
 		defer mu.Unlock()

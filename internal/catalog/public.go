@@ -36,7 +36,9 @@ func PublicDrawers(ctx context.Context, base string) []Model {
 	if err != nil {
 		return nil
 	}
-	at, ok := PublicCatalogs[strings.TrimPrefix(u.Hostname(), "www.")]
+	// a host is case-insensitive: AIHubMix.com is the same vendor
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+	at, ok := PublicCatalogs[host]
 	if !ok {
 		return nil
 	}

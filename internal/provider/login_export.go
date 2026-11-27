@@ -171,6 +171,12 @@ func exportName(agent string, a exportAccount) string {
 // exportRead reads one saved account's tokens; why says it can't be exported.
 func exportRead(agent string, l savedLogin) (exportAccount, string) {
 	a := exportAccount{user: l.User, plan: l.Plan}
+	if l.AccessOnly {
+		// kept by owl alone, never refreshed: exporting it would hand the
+		// file's refresh token on under an account that isn't its own
+		// (#L5)
+		return a, "an access-token-only account can't be exported"
+	}
 	switch agent {
 	case "codex":
 		var c codexAuth

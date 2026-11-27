@@ -13,8 +13,8 @@ func catch(t *testing.T) *[]Row {
 	t.Helper()
 	var rows []Row
 	old := Sink
-	Sink = func(r Row) { rows = append(rows, r) }
-	t.Cleanup(func() { Sink = old })
+	SetSink(func(r Row) { rows = append(rows, r) })
+	t.Cleanup(func() { SetSink(old) })
 	return &rows
 }
 

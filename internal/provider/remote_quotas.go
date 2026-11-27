@@ -410,10 +410,11 @@ func refreshRemote(ctx context.Context, p Provider, card, user string) {
 		path += "?" + q.Encode()
 	}
 	asked := time.Now()
-	if _, err := askRemote(ctx, p, http.MethodPost, path, remoteRefreshWait); err != nil {
-		keepRemoteCards(remoteCardsID(p), asked, nil, err)
-	}
-	remoteCards(ctx, p, true)
+	// the answer to the refresh is the cards read again: kept as they are,
+	// and a failure kept as the failure. A GET after it would ask a second
+	// time, and one that answered would hide why the refresh failed (#M24)
+	cards, err := askRemote(ctx, p, http.MethodPost, path, remoteRefreshWait)
+	keepRemoteCards(remoteCardsID(p), asked, cards, err)
 }
 
 // keepRemoteCards keeps what a read of a remote's cards asked at asked

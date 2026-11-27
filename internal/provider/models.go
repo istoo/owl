@@ -4412,11 +4412,18 @@ func DropContext(p Provider, model string) (bool, error) {
 	if _, ok := p.Contexts[model]; !ok {
 		return false, nil
 	}
-	delete(p.Contexts, model)
-	if err := Save(p); err != nil {
-		return false, err
-	}
-	return true, nil
+	// the stored record, changed under its lock: saving the p read here
+	// would write over a setting the user saved meanwhile (#H18)
+	dropped := false
+	err := updateProvider(p.ID, func(cur *Provider) bool {
+		if _, ok := cur.Contexts[model]; !ok {
+			return false
+		}
+		delete(cur.Contexts, model)
+		dropped = true
+		return true
+	})
+	return dropped, err
 }
 
 // AnyImageInput is a group's answer from two of its members': it takes

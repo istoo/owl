@@ -17,6 +17,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -42,8 +43,28 @@ type Row struct {
 	Error    string
 }
 
-// Sink takes each row; nil writes nothing. usage sets it to its log.
+// Sink takes each row; nil writes nothing. usage sets it to its log. Code
+// that sets it while requests may be in flight sets it through SetSink,
+// which takes sinkMu: a row and the sink it goes to are then one step.
 var Sink func(Row)
+
+var sinkMu sync.RWMutex
+
+// SetSink sets Sink under the lock a writer's read takes, so a row is
+// never handed to a sink that was replaced mid-write.
+func SetSink(f func(Row)) {
+	sinkMu.Lock()
+	Sink = f
+	sinkMu.Unlock()
+}
+
+// sinkNow is Sink as it is now, read as one step: checking it for nil and
+// calling it can't fall between two sinks (#M21).
+func sinkNow() func(Row) {
+	sinkMu.RLock()
+	defer sinkMu.RUnlock()
+	return Sink
+}
 
 type meta struct {
 	kind, provider, account, model string
@@ -109,7 +130,11 @@ func Pending(ctx context.Context) bool {
 // err. Nothing is written for a ctx with no mark.
 func Note(ctx context.Context, u, method string, start time.Time, status int, err error) {
 	m, ok := from(ctx)
-	if !ok || m.kind == "" || Sink == nil {
+	if !ok || m.kind == "" {
+		return
+	}
+	sink := sinkNow()
+	if sink == nil {
 		return
 	}
 	host, path := split(u)
@@ -127,7 +152,7 @@ func Note(ctx context.Context, u, method string, start time.Time, status int, er
 	if r.Provider == "" {
 		r.Provider = "owl" // never "": the log reads that as turned away
 	}
-	Sink(r)
+	sink(r)
 }
 
 // NoteResult writes down one request that isn't sent through an HTTP
@@ -135,7 +160,11 @@ func Note(ctx context.Context, u, method string, start time.Time, status int, er
 // test), from what came of it.
 func NoteResult(ctx context.Context, endpoint string, start time.Time, status int, errText string) {
 	m, ok := from(ctx)
-	if !ok || m.kind == "" || Sink == nil {
+	if !ok || m.kind == "" {
+		return
+	}
+	sink := sinkNow()
+	if sink == nil {
 		return
 	}
 	r := Row{Time: start, Kind: m.kind, Provider: m.provider, Account: m.account, Model: m.model,
@@ -143,7 +172,7 @@ func NoteResult(ctx context.Context, endpoint string, start time.Time, status in
 	if r.Provider == "" {
 		r.Provider = "owl"
 	}
-	Sink(r)
+	sink(r)
 }
 
 func split(u string) (host, path string) {

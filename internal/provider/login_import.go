@@ -424,12 +424,10 @@ func importLogins(ctx context.Context, agent string, files []string, accessOnly 
 	if l, ok := liveLogin(agent); ok {
 		ls = append(ls, l)
 	}
-	var kept []savedLogin
 	for _, l := range ls {
 		if l.Agent != agent {
 			continue
 		}
-		kept = append(kept, l)
 		if t := loginRefreshToken(l); t != "" {
 			have[t] = l.User
 		}
@@ -497,14 +495,14 @@ func importLogins(ctx context.Context, agent string, files []string, accessOnly 
 			c, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
 			if accessOnly {
-				out[i] = importAccessOnly(e, name, kept)
+				out[i] = importAccessOnly(e, name)
 				return
 			}
 			if e.setupToken != "" {
 				out[i] = importSetupToken(e.setupToken)
 				return
 			}
-			out[i] = importLogin(c, agent, e, name, kept)
+			out[i] = importLogin(c, agent, e, name)
 		}()
 	}
 	wg.Wait()
@@ -575,7 +573,7 @@ func loginAccessToken(l savedLogin) string {
 // importAccessOnly keeps one ChatGPT account access token only, as the
 // file has it: nothing is asked of ChatGPT, whose refresh would rotate
 // the file's sign-in. Its id_token says whose account it is.
-func importAccessOnly(e loginImport, name string, kept []savedLogin) ImportedAccount {
+func importAccessOnly(e loginImport, name string) ImportedAccount {
 	fail := func(msg string) ImportedAccount {
 		return ImportedAccount{User: name, Status: "failed", Error: msg}
 	}
@@ -590,8 +588,10 @@ func importAccessOnly(e loginImport, name string, kept []savedLogin) ImportedAcc
 		return fail(err.Error())
 	}
 	l.AccessOnly = true
+	importMu.Lock()
+	defer importMu.Unlock()
 	status := "added"
-	for _, k := range kept {
+	for _, k := range keptLogins("codex") {
 		if sameLogin(k, l) {
 			status = "updated"
 			break
@@ -648,8 +648,54 @@ func claudeNewerKept(e loginImport, kept []savedLogin, l savedLogin) (savedLogin
 	return savedLogin{}, false
 }
 
+// importMu keeps the accounts of one import from deciding on each other
+// from the snapshot read before it started: each account is checked
+// against the accounts as they are now, and kept, before the next (#M12).
+var importMu sync.Mutex
+
+// keptLogins is the accounts the agent has now, its own live sign-in
+// included.
+func keptLogins(agent string) []savedLogin {
+	ls := readLogins()
+	if l, ok := liveLogin(agent); ok {
+		ls = append(ls, l)
+	}
+	var kept []savedLogin
+	for _, l := range ls {
+		if l.Agent == agent {
+			kept = append(kept, l)
+		}
+	}
+	return kept
+}
+
+// keepImported keeps l, deciding against the accounts as they are now
+// rather than the batch's snapshot: an older Claude sign-in in the same
+// import than one another file just added is not taken (#M12).
+func keepImported(agent string, e loginImport, l savedLogin, name string) ImportedAccount {
+	importMu.Lock()
+	defer importMu.Unlock()
+	kept := keptLogins(agent)
+	if agent == "claude" {
+		if k, ok := claudeNewerKept(e, kept, l); ok {
+			return ImportedAccount{User: k.User, Status: "exists", Plan: k.Plan, Error: claudeImportOlder}
+		}
+	}
+	status := "added"
+	for _, k := range kept {
+		if sameLogin(k, l) {
+			status = "updated"
+			break
+		}
+	}
+	if _, err := addLogin(l); err != nil {
+		return ImportedAccount{User: name, Status: "failed", Error: err.Error()}
+	}
+	return ImportedAccount{User: l.User, Status: status, Plan: l.Plan}
+}
+
 // importLogin checks one account as a sign-in is finished and keeps it.
-func importLogin(ctx context.Context, agent string, e loginImport, name string, kept []savedLogin) ImportedAccount {
+func importLogin(ctx context.Context, agent string, e loginImport, name string) ImportedAccount {
 	fail := func(msg string) ImportedAccount {
 		return ImportedAccount{User: name, Status: "failed", Error: msg}
 	}
@@ -700,24 +746,9 @@ func importLogin(ctx context.Context, agent string, e loginImport, name string, 
 			acct["organizationName"] = e.claudeOrgName
 		}
 		l, err = claudeLogin(c, acct)
-		if err == nil {
-			if k, ok := claudeNewerKept(e, kept, l); ok {
-				return ImportedAccount{User: k.User, Status: "exists", Plan: k.Plan, Error: claudeImportOlder}
-			}
-		}
 	}
 	if err != nil {
 		return fail(err.Error())
 	}
-	status := "added"
-	for _, k := range kept {
-		if sameLogin(k, l) {
-			status = "updated"
-			break
-		}
-	}
-	if _, err := addLogin(l); err != nil {
-		return fail(err.Error())
-	}
-	return ImportedAccount{User: l.User, Status: status, Plan: l.Plan}
+	return keepImported(agent, e, l, name)
 }

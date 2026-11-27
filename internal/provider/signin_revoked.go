@@ -150,11 +150,21 @@ func NoteRevokedSignIn(ctx context.Context, a *Account, req *http.Request) {
 	}
 	if a.Agent == "codex" && a.token != nil {
 		// refreshed, the next request goes with the new token; refused
-		// or unanswered, the token sent is revoked all the same
+		// or unanswered, the token sent is revoked all the same. The token
+		// the request carried is named, so a second 401 for it takes the
+		// sign-in the first refresh kept instead of refreshing again, which
+		// OpenAI turns away as refresh_token_reused (#H11).
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
-		_, _, err := renewSavedLogin(rctx, a.Agent, a.User, true)
+		_, _, err := renewSavedLoginFrom(rctx, a.Agent, a.User, bearerToken(req.Header))
 		cancel()
 		if err == nil {
+			return
+		}
+		// only the vendor's refusal says the sign-in is gone: a network
+		// hiccup, a timeout or a canceled wait is transient and marks nothing,
+		// so the next request asks again rather than signing the account out for
+		// good (#H11)
+		if transientTokenError(err) {
 			return
 		}
 	}
@@ -179,6 +189,17 @@ func markRevoked(agent, user, m string) {
 		ls[i].Lapsed, ls[i].Refused = why, revokedPrefix+m
 		return ls, nil
 	})
+}
+
+// bearerToken is the access token a request carried as "Bearer tok", ""
+// for none.
+func bearerToken(h http.Header) string {
+	v := strings.TrimSpace(h.Get("Authorization"))
+	const prefix = "Bearer "
+	if len(v) > len(prefix) && strings.EqualFold(v[:len(prefix)], prefix) {
+		return strings.TrimSpace(v[len(prefix):])
+	}
+	return ""
 }
 
 // bearerMark is credentialMark of a request sent with access token tok,

@@ -157,6 +157,8 @@ func ImportGroup(text string) (Imported, error) { return importGroup(text, false
 func ImportGroupOver(text string) (Imported, error) { return importGroup(text, true) }
 
 func importGroup(text string, over bool) (Imported, error) {
+	groupAddMu.Lock()
+	defer groupAddMu.Unlock()
 	s, err := ReadShared(text)
 	if err != nil {
 		return Imported{}, err

@@ -37,9 +37,9 @@ func Rename(from, to string) error {
 		return nil
 	}
 	unlock := lockProviders()
-	defer unlock()
 	f, err := read()
 	if err != nil {
+		unlock()
 		return err
 	}
 	i := slices.IndexFunc(f.Providers, func(p Provider) bool { return p.ID == from })
@@ -50,22 +50,29 @@ func Rename(from, to string) error {
 	_, signedIn := find(Accounts(), from)
 	sub := subscriptionID(from)
 	if (signedIn || sub) && !custom {
+		unlock()
 		return fmt.Errorf("%s is a subscription: its id is its agent's", from)
 	}
 	switch {
 	case to == "owl" || to == "magpie":
+		unlock()
 		return errors.New(`"owl" is what agents call the gateway itself; pick another id`)
 	case to == strings.TrimSuffix(GroupPrefix, "/"):
+		unlock()
 		return errors.New(`"group" starts the ids of routing groups; pick another id`)
 	case to == autoID:
+		unlock()
 		return errAutoID
 	case subscriptionID(to):
+		unlock()
 		return fmt.Errorf("%q is the id of the %s subscription; pick another", to, to)
 	}
 	if i < 0 {
+		unlock()
 		return fmt.Errorf("no provider %q", from)
 	}
 	if slices.ContainsFunc(f.Providers, func(p Provider) bool { return p.ID == to }) {
+		unlock()
 		return fmt.Errorf("there is a provider %q already", to)
 	}
 	// an id another provider once had is this one's now; the calls
@@ -97,12 +104,17 @@ func Rename(from, to string) error {
 			f.Deleted[j].Into = to
 		}
 	}
-	// the vendor's list last fetched goes with it
-	os.Rename(catalog.LivePath(from), catalog.LivePath(to))
-	os.Rename(catalog.LivePath(decisionsID(from)), catalog.LivePath(decisionsID(to)))
 	if err := store(f); err != nil {
+		unlock()
 		return err
 	}
+	// written, the file is let go before what it names is told, as
+	// DeleteGroup does (#M16)
+	unlock()
+	// the vendor's list last fetched goes with it, once the rename is
+	// written: one that failed leaves the old id's lists where they were
+	os.Rename(catalog.LivePath(from), catalog.LivePath(to))
+	os.Rename(catalog.LivePath(decisionsID(from)), catalog.LivePath(decisionsID(to)))
 	// so are its StepFun, Qwen AI platform and Baidu Cloud console
 	// sign-ins, kept by provider id
 	if err := renameStepFun(from, to); err != nil {

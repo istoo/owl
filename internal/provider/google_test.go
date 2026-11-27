@@ -113,6 +113,7 @@ func resetGoogleState() {
 	googleState.projects = map[string]googleProject{}
 	googleState.flags = map[string]geminiFlags{}
 	googleState.refused = map[string]time.Time{}
+	googleState.refreshing = map[string]*sync.Mutex{}
 	googleState.Unlock()
 	antigravityVer.Lock()
 	antigravityVer.v, antigravityVer.at = "", time.Time{}
@@ -1051,5 +1052,45 @@ func TestAntigravityQuotaModelsReadAsGroupWeek(t *testing.T) {
 	// routing still reads each model's own window, none of the pools'
 	if a := allowanceOf(q.Windows, time.Now()); len(a) != 7 {
 		t.Errorf("allowance has %d limits, want the 7 models'", len(a))
+	}
+}
+
+// Concurrent requests for an account whose token is about to expire
+// refresh it once, not once each (#H13).
+func TestGoogleTokenRefreshesOnce(t *testing.T) {
+	f := &fakeGoogle{}
+	googleSandbox(t, f)
+	g := googleAccount{
+		app:  googleApp{name: "Test", clientID: "cid", clientSecret: "secret"},
+		auth: googleAuth{RefreshToken: "concurrent-refresh-token", AccessToken: "old", Expiry: 1},
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var got []string
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tok, err := g.token(context.Background())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			mu.Lock()
+			got = append(got, tok)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	f.mu.Lock()
+	refreshes := f.refreshes
+	f.mu.Unlock()
+	if refreshes != 1 {
+		t.Fatalf("the account refreshed %d times, want 1", refreshes)
+	}
+	for _, tok := range got {
+		if tok != "fresh-token" {
+			t.Fatalf("token = %q, want fresh-token", tok)
+		}
 	}
 }

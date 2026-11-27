@@ -344,8 +344,14 @@ func (t tencentPlan) window(now time.Time) (QuotaWindow, bool) {
 		// many months on, and never after the package does
 		start, err := time.Parse(time.RFC3339, strings.TrimSpace(pk.StartTime))
 		n, _ := volcNum(pk.CurrentCycle)
+		if n < 1 {
+			// a cycle count of 0 or less is the first: starting the walk
+			// below from a negative n stepped through every month since the
+			// start for nothing (#L9)
+			n = 1
+		}
 		if err == nil && (pk.CycleUnit == "" || strings.EqualFold(pk.CycleUnit, "month")) {
-			end := start.AddDate(0, max(int(n), 1), 0)
+			end := start.AddDate(0, int(n), 0)
 			for !end.After(now) && n < 1200 {
 				n++
 				end = start.AddDate(0, int(n), 0)

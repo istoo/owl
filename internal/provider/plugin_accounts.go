@@ -479,13 +479,16 @@ func notePluginLapseOf(agent, key string, status int, began uint64, text func(us
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
 	said := agent + "/" + key
-	if pluginSignInSaid[said] > began {
+	if told, known := pluginSignInSaid[said]; known && told > began {
+		// a note for a reading that began when this one did, or later,
+		// has already told the account: an old 200 arriving after a 401
+		// can't clear the lapsed mark it set (#H16)
 		return
 	}
-	if began == toldNow {
-		pluginSignInTold++
-		began = pluginSignInTold
-	}
+	// every write takes a new version, so a reading that began when this
+	// one did is older than what was just written
+	pluginSignInTold++
+	began = pluginSignInTold
 	pluginSignInSaid[said] = began
 	ls := readLogins()
 	for i, l := range ls {

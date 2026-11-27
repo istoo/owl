@@ -253,7 +253,10 @@ func checkAlerts(path string, qs []SubscriptionQuota, pct int, bal float64, lead
 	out = append(out, dueReminders(qs, marks, lead, now)...)
 	if after, _ := json.Marshal(marks); string(after) != string(before) {
 		os.MkdirAll(filepath.Dir(path), 0o755)
-		os.WriteFile(path, append(after, '\n'), 0o600)
+		// written beside and renamed over: a crash mid-write leaves the
+		// marks as they were rather than losing them and saying every
+		// alert again (#M18)
+		_ = writePrivate(path, append(after, '\n'))
 	}
 	return out
 }
@@ -280,6 +283,9 @@ func WatchQuotas(ctx context.Context, wake <-chan struct{}, send func(QuotaAlert
 			cx, cancel := context.WithTimeout(ctx, time.Minute)
 			qs := Quotas(cx)
 			cancel()
+			// a card or row the user hid from the Usage page is not one
+			// to alert on either (#M18)
+			qs = ShownQuotas(qs, s)
 			lead := time.Duration(s.ResetReminder) * time.Hour
 			for _, a := range checkAlerts(quotaAlertPath(), qs, s.UsageAlert, s.BalanceAlert, lead, time.Now()) {
 				log.Printf("usage alert: %s %s %s %s %.0f%% %s", a.Kind, a.Name, a.User, a.Window, a.Used, a.Balance)

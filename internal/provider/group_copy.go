@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 )
+
+// groupAddMu keeps a group made in a click from allocating an id another
+// click is allocating at the same moment: the two would pick one slug and
+// the later save would write over the earlier (#M15).
+var groupAddMu sync.Mutex
 
 // CopyGroup makes a group of the user's that is the group id as it is now
 // (lc on Discord): its models and patterns, routing, rules, classifier,
@@ -15,6 +21,8 @@ import (
 // it has now. The copy is on, whether the group was or not, and the
 // original is left as it is.
 func CopyGroup(id, name string) (Group, error) {
+	groupAddMu.Lock()
+	defer groupAddMu.Unlock()
 	all := Groups()
 	i := slices.IndexFunc(all, func(g Group) bool { return g.ID == id && !g.Hidden })
 	if i < 0 {
@@ -51,6 +59,9 @@ func CopyGroup(id, name string) (Group, error) {
 		}
 	}
 	if err := SetGroupOrder(order); err != nil {
+		// the copy is already saved: take it back out, so a failed order
+		// leaves no half-made group (#M15)
+		_ = DeleteGroup(g.ID)
 		return Group{}, err
 	}
 	for _, o := range Groups() {

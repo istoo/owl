@@ -10,6 +10,7 @@ package fx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,6 +64,10 @@ var (
 	mu     sync.Mutex
 	mem    *Rate     // this process's own copy, so a redraw never touches disk
 	failed time.Time // when a fetch last failed
+	// fetchMu makes one fetch at a time: a page's redraws, or the panel's
+	// rate beside a page's, must not each ask the endpoint for the same
+	// rate when the one before them is still out (#M20)
+	fetchMu sync.Mutex
 )
 
 // CachePath is where the rate is kept between runs.
@@ -86,7 +91,6 @@ func getAt(ctx context.Context, path string) Rate {
 		return r
 	}
 	have := mem != nil
-	recent := !failed.IsZero() && time.Since(failed) < retryAfter
 	mu.Unlock()
 
 	if !have {
@@ -100,10 +104,26 @@ func getAt(ctx context.Context, path string) Rate {
 		}
 	}
 
+	// one fetch at a time. A redraw that waited for another's fetch takes
+	// what it learned rather than asking again (#M20), and a cancel of
+	// this caller's ctx is no reason to keep every caller offline for ten
+	// minutes.
+	fetchMu.Lock()
+	mu.Lock()
+	if mem != nil && !mem.Stale() {
+		r := *mem
+		mu.Unlock()
+		fetchMu.Unlock()
+		return r
+	}
+	recent := !failed.IsZero() && time.Since(failed) < retryAfter
+	mu.Unlock()
+	var got *Rate
 	if !recent {
 		r, err := fetchLive(ctx)
 		// a fetch begun for another home (a test's, gone) tells this one nothing
 		if CachePath() != path {
+			fetchMu.Unlock()
 			return Rate{CNYPerUSD: Fallback}
 		}
 		if err == nil {
@@ -111,11 +131,19 @@ func getAt(ctx context.Context, path string) Rate {
 			mu.Lock()
 			mem, failed = &r, time.Time{}
 			mu.Unlock()
-			return r
+			got = &r
+		} else if !errors.Is(err, context.Canceled) {
+			// a caller going away isn't the endpoint failing: the next
+			// look asks again instead of showing yesterday's rate for ten
+			// minutes
+			mu.Lock()
+			failed = time.Now()
+			mu.Unlock()
 		}
-		mu.Lock()
-		failed = time.Now()
-		mu.Unlock()
+	}
+	fetchMu.Unlock()
+	if got != nil {
+		return *got
 	}
 
 	mu.Lock()
@@ -237,8 +265,32 @@ func writeCache(p string, r Rate) {
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	_ = os.WriteFile(p, b, 0o644)
+	// written beside and renamed over: another owl reading the cache while
+	// this one writes it reads the old rate or the new one, never a file
+	// cut short (#M20)
+	f, err := os.CreateTemp(dir, ".fxrate-*")
+	if err != nil {
+		return
+	}
+	name := f.Name()
+	fail := func() {
+		f.Close()
+		os.Remove(name)
+	}
+	if _, err := f.Write(b); err != nil {
+		fail()
+		return
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(name)
+		return
+	}
+	_ = os.Chmod(name, 0o644)
+	if err := os.Rename(name, p); err != nil {
+		os.Remove(name)
+	}
 }

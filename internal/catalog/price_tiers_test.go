@@ -113,3 +113,42 @@ func TestPriceJSON(t *testing.T) {
 		t.Errorf("part = %+v, want %+v", part.Tiers, want)
 	}
 }
+
+// A tier is found for a model named with its vendor's prefix, and a mode
+// that lists no cache write scales the 1-hour write by its input ratio
+// (#M25).
+func TestTierPriceBareIDAndCacheWrite(t *testing.T) {
+	writeCatalog(t, `{"openai":{"id":"openai","models":{
+		"gpt-6.1-sol":{"id":"gpt-6.1-sol","cost":{"input":2,"output":10,"cache_read":0.5,"cache_write":2.5,"cache_write_1h":4},
+			"experimental":{"modes":{"fast":{"cost":{"input":4,"output":20,"cache_read":1,"cache_write":5},
+				"provider":{"body":{"service_tier":"priority"}}}}}},
+		"gpt-no-write":{"id":"gpt-no-write","cost":{"input":2,"output":10,"cache_read":0.5,"cache_write":0,"cache_write_1h":4},
+			"experimental":{"modes":{"fast":{"cost":{"input":4,"output":20,"cache_read":1,"cache_write":0},
+				"provider":{"body":{"service_tier":"priority"}}}}}}}}}`)
+	std, ok := PriceOf("openai", "gpt-6.1-sol")
+	if !ok {
+		t.Fatal("no standard price")
+	}
+	at, ok := TierPrice(std, "openai/gpt-6.1-sol", "priority")
+	if !ok {
+		t.Fatal("a prefixed model id didn't find its tier")
+	}
+	if at.Input != 4 || at.Output != 20 || at.CacheRead != 1 || at.CacheWrite != 5 {
+		t.Fatalf("tier = %+v", at)
+	}
+	if !near(at.CacheWrite1h, 8) {
+		t.Fatalf("1h write = %v, want 8 (4 × the cache-write ratio)", at.CacheWrite1h)
+	}
+
+	std2, ok := PriceOf("openai", "gpt-no-write")
+	if !ok {
+		t.Fatal("no standard price for gpt-no-write")
+	}
+	at2, ok := TierPrice(std2, "openai/gpt-no-write", "priority")
+	if !ok {
+		t.Fatal("gpt-no-write: no tier")
+	}
+	if !near(at2.CacheWrite1h, 8) {
+		t.Fatalf("1h write with no cache write = %v, want 8 (4 × the input ratio)", at2.CacheWrite1h)
+	}
+}

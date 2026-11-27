@@ -3,12 +3,11 @@ package provider
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/plugin"
 	"github.com/istoo/owl/internal/testenv"
 )
@@ -96,29 +95,39 @@ func TestMoveExpiredInWords(t *testing.T) {
 	}
 }
 
-// A move's lock left by a owl killed mid-move (a hung move stopped by
-// hand) holds nothing: the next move takes it, where it used to be
-// refused as "another owl is moving" for a quarter of an hour.
-func TestMoveLockOfDeadOwl(t *testing.T) {
+// A move's lock is the system's on the file, not a file of a PID: one a
+// owl was holding when it died is let go with it, and none is left to
+// misread as held for a quarter of an hour (#H12).
+func TestMoveLockIsTheSystems(t *testing.T) {
 	claudeHome(t)
-	gone := exec.Command("true")
-	if err := gone.Run(); err != nil {
-		t.Skip(err)
-	}
 	p := migrationsPath() + ".lock"
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(strconv.Itoa(gone.Process.Pid)), 0o600); err != nil {
-		t.Fatal(err)
+	// another owl holds it: a second move is refused
+	other := filelock.Mutex{Path: func() string { return p }}
+	if err := other.LockStrictTimeout(0); err != nil {
+		t.Skip("this file system has no locks to test")
 	}
-	unlock, err := lockMoves()
-	if err != nil {
-		t.Fatalf("a dead owl's lock: %v", err)
-	}
-	// one held by a owl still running stays held
+	old := movesWait
+	movesWait = 10 * time.Millisecond
+	t.Cleanup(func() { movesWait = old })
 	if _, err := lockMoves(); err == nil {
 		t.Fatal("a live lock was taken")
+	}
+	other.Unlock()
+	unlock, err := lockMoves()
+	if err != nil {
+		t.Fatalf("a lock let go by its owl: %v", err)
+	}
+	unlock()
+	// and the lock file left behind holds nothing by itself
+	if err := os.WriteFile(p, []byte("999999999"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err = lockMoves()
+	if err != nil {
+		t.Fatalf("a file left with no lock on it: %v", err)
 	}
 	unlock()
 }

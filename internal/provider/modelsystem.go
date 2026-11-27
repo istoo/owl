@@ -9,6 +9,7 @@ package provider
 // it too, as the gateway adds it before a request is translated for them.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -57,16 +58,29 @@ func setModelSystemPrompt(ref, text string) (bool, error) {
 	if s.ModelSystemPrompts[key] == text {
 		return false, nil
 	}
-	if text == "" {
-		delete(s.ModelSystemPrompts, key)
-	} else {
-		if s.ModelSystemPrompts == nil {
-			s.ModelSystemPrompts = map[string]string{}
+	// changed from the settings as they are stored now, under their lock:
+	// a concurrent edit of another field stands (#H18)
+	changed := false
+	_, err = settings.Update(func(s *settings.Settings) error {
+		if s.ModelSystemPrompts[key] == text {
+			return errNoSettingsChange
 		}
-		s.ModelSystemPrompts[key] = text
+		if text == "" {
+			delete(s.ModelSystemPrompts, key)
+		} else {
+			if s.ModelSystemPrompts == nil {
+				s.ModelSystemPrompts = map[string]string{}
+			}
+			s.ModelSystemPrompts[key] = text
+		}
+		changed = true
+		return nil
+	})
+	if errors.Is(err, errNoSettingsChange) {
+		return false, nil
 	}
-	if err := settings.Save(s); err != nil {
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	return changed, nil
 }

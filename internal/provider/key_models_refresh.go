@@ -128,29 +128,31 @@ func refreshKeyModels(id string, before, now map[string]map[string]bool) int {
 	if n == 0 {
 		return 0
 	}
-	// read again: the user may have set a key's models while the lists
-	// were asked for, and what they set stands
-	q, err := Find(id)
-	if err != nil {
-		return 0
-	}
-	merged := make(map[string][]string, len(q.AccountModels))
-	for k, v := range q.AccountModels {
-		merged[k] = v
-	}
+	// read again under providers.json's lock, and only a key whose models
+	// are still what was read first: the user may have set a key's models
+	// while the lists were asked for, and what they set stands (#H18)
 	n = 0
-	for k, v := range am {
-		if !slices.Equal(q.AccountModels[k], p.AccountModels[k]) || q.AccountModelsAll[k] != p.AccountModelsAll[k] {
-			continue
+	err = updateProvider(id, func(cur *Provider) bool {
+		merged := make(map[string][]string, len(cur.AccountModels))
+		for k, v := range cur.AccountModels {
+			merged[k] = v
 		}
-		merged[k] = v
-		n++
-	}
-	if n == 0 {
-		return 0
-	}
-	q.AccountModels = merged
-	if Save(*q) != nil {
+		changed := 0
+		for k, v := range am {
+			if !slices.Equal(cur.AccountModels[k], p.AccountModels[k]) || cur.AccountModelsAll[k] != p.AccountModelsAll[k] {
+				continue
+			}
+			merged[k] = v
+			changed++
+		}
+		if changed == 0 {
+			return false
+		}
+		cur.AccountModels = merged
+		n = changed
+		return true
+	})
+	if err != nil {
 		return 0
 	}
 	return n

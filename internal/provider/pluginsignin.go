@@ -46,6 +46,7 @@ func StartPluginSignInWith(id string, method int, inputs map[string]string, o Si
 		return SignInState{}, err
 	}
 	signIns.Lock()
+	pruneSignInsLocked()
 	for sid, o := range signIns.m {
 		if o.st.Agent == s.st.Agent {
 			o.finish(SignInState{State: "canceled"})
@@ -148,16 +149,28 @@ func InstallPluginCLI(ctx context.Context, id string) error {
 // pluginBegin asks the plugin for the page to open and waits for the
 // sign-in to finish there, or for the code the page shows.
 func (s *signInFlow) pluginBegin(id string, method int, inputs map[string]string) error {
+	// canceled while the CLI was installed: nothing is asked of the plugin,
+	// so no session is made to leave behind (#H9)
+	s.mu.Lock()
+	over := s.finished || s.st.State != "waiting" && s.st.State != "installing"
+	s.mu.Unlock()
+	if over {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(s.via(context.Background()), time.Minute)
 	a, err := plugin.Authorize(ctx, id, method, inputs, plugin.NewAccount)
 	cancel()
 	if err != nil {
 		return err
 	}
-	wait, stop := context.WithTimeout(context.Background(), signInTimeout)
+	wait, stop := context.WithTimeout(s.via(context.Background()), signInTimeout)
 	s.mu.Lock()
 	if s.st.State != "waiting" && s.st.State != "installing" {
-		// canceled while the CLI was installed
+		// canceled while the CLI was installed. The plugin host drops a
+		// session as soon as its callback is asked for, and that callback
+		// may trade the code and keep an account: a canceled sign-in is
+		// left for the host to drop rather than finished with nothing
+		// (#H9)
 		s.mu.Unlock()
 		stop()
 		return nil
@@ -212,6 +225,10 @@ func (s *signInFlow) pluginCode(code string) error {
 		return errors.New("paste the code the sign-in page showed")
 	}
 	s.mu.Lock()
+	// one paste takes the session, whatever comes of it: the plugin host
+	// drops its session as soon as the callback is asked for, so a second
+	// Finish would be a different one (or none), and a kept session could
+	// never really be pasted again (#M23)
 	session := s.plugin
 	s.plugin = ""
 	waiting := s.st.State == "waiting"
@@ -219,7 +236,9 @@ func (s *signInFlow) pluginCode(code string) error {
 	if session == "" || !waiting {
 		return errors.New("this sign-in is over; start it again")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// through the proxy the sign-in goes through, as its other requests
+	// (#M23)
+	ctx, cancel := context.WithTimeout(s.via(context.Background()), 2*time.Minute)
 	defer cancel()
 	saved, err := plugin.Finish(ctx, session, code)
 	s.pluginDone(saved, err)

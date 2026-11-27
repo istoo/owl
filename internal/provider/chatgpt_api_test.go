@@ -479,3 +479,84 @@ func TestChatGPTAPIUsageSaysWhere(t *testing.T) {
 		t.Errorf("OpenAI was asked %d times for it", len(f.forms)-n)
 	}
 }
+
+// A refresh that waited on the cross-process lock takes the credential as
+// it is once the lock is had: rotated meanwhile, it refreshes the new
+// token; removed, it says the account is gone rather than spend a token
+// it no longer holds (#H10).
+func TestChatGPTAPIRefreshWaitsThenRereads(t *testing.T) {
+	claudeHome(t)
+	user := "race@example.com"
+	save := func(refresh string, expires time.Time) {
+		t.Helper()
+		auth, _ := json.Marshal(siwcCreds{ClientID: "cid", Refresh: refresh, Access: "at-" + refresh, Expires: expires})
+		if err := addSideLogin(savedLogin{Agent: ChatGPTAPIID, User: user, Auth: auth}, "", func(savedLogin) {}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	refreshes := 0
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		refreshes++
+		mu.Unlock()
+		http.Error(w, "unexpected", http.StatusInternalServerError)
+	}))
+	defer tok.Close()
+	oldURL := siwcTokenURL
+	siwcTokenURL = tok.URL
+	t.Cleanup(func() { siwcTokenURL = oldURL })
+
+	type result struct {
+		c   siwcCreds
+		err error
+	}
+	// start runs a forced refresh and stops it just before it waits for
+	// the lock, at the point the account was first read.
+	start := func() (<-chan result, func()) {
+		t.Helper()
+		ready, release := make(chan struct{}), make(chan struct{})
+		out := make(chan result, 1)
+		old := siwcBeforeLock
+		siwcBeforeLock = func() {
+			close(ready)
+			<-release
+		}
+		t.Cleanup(func() { siwcBeforeLock = old })
+		go func() {
+			c, err := siwcFresh(context.Background(), user, true)
+			out <- result{c, err}
+		}()
+		<-ready
+		return out, func() { close(release) }
+	}
+
+	save("rt-old", time.Now().Add(time.Minute))
+	out, release := start()
+	save("rt-new", time.Now().Add(48*time.Hour))
+	release()
+	r := <-out
+	if r.err != nil {
+		t.Fatalf("a rotated credential: %v", r.err)
+	}
+	if r.c.Refresh != "rt-new" || r.c.Access != "at-rt-new" {
+		t.Fatalf("refreshed from %+v, want the credential saved while it waited", r.c)
+	}
+
+	save("rt-gone", time.Now().Add(time.Minute))
+	out, release = start()
+	if err := ForgetLogin(ChatGPTAPIID, user); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	r = <-out
+	if r.err == nil || !strings.Contains(r.err.Error(), "no ChatGPT account") {
+		t.Fatalf("a removed credential: %+v, want the account said gone", r)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if refreshes != 0 {
+		t.Fatalf("the token endpoint was asked %d times; neither case should refresh", refreshes)
+	}
+}

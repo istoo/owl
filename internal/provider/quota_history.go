@@ -63,6 +63,20 @@ type QuotaPoint struct {
 // sampling preserves, including refills with an unchanged deadline.
 func (p QuotaPoint) StartsCycleAfter(previous QuotaPoint) bool { return newCycle(previous, p) }
 
+// sameQuotaPoint is whether a and b are the same reading: the times by
+// their value, not by which pointer holds them.
+func sameQuotaPoint(a, b QuotaPoint) bool {
+	return a.At.Equal(b.At) && a.Left == b.Left && sameTimePtr(a.Start, b.Start) && sameTimePtr(a.ResetsAt, b.ResetsAt)
+}
+
+// sameTimePtr is whether both pointers are nil, or hold the same instant.
+func sameTimePtr(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
+}
+
 // QuotaLine is one window's points, oldest first.
 type QuotaLine struct {
 	Name   string       `json:"name"`
@@ -310,7 +324,10 @@ func noteQuotaHistory(qs []SubscriptionQuota, now time.Time) {
 	}
 	// A batch of cached readings notes nothing new: every reading's time is
 	// no newer than what was last noted for its account, so the file need
-	// not be read and parsed for that batch again (#1358).
+	// not be read and parsed for that batch again (#1358). Noted by window,
+	// not by account alone: a second card of the same provider and user
+	// (Antigravity's pools, a plan's several windows) is a reading of its
+	// own and must not be taken for one already noted (#H19).
 	skip := true
 	for _, q := range qs {
 		if q.Error != "" || q.AsOf != nil || q.Provider == "" {
@@ -321,9 +338,15 @@ func noteQuotaHistory(qs []SubscriptionQuota, now time.Time) {
 			at = *q.ReadAt
 		}
 		key := quotaHistKey(q.Provider, q.User)
-		if lastNoted[key].Before(at) {
-			lastNoted[key] = at
-			skip = false
+		for _, w := range q.Windows {
+			if _, ok := pointOf(w, at, now); !ok {
+				continue // a window with nothing to draw notes nothing
+			}
+			nk := key + "|" + w.LineName()
+			if lastNoted[nk].Before(at) {
+				lastNoted[nk] = at
+				skip = false
+			}
 		}
 	}
 	if skip {
@@ -359,7 +382,10 @@ func noteQuotaHistory(qs []SubscriptionQuota, now time.Time) {
 				last = before[k-1]
 			}
 			after := addPoint(before, p)
-			if len(after) != k || k > 0 && after[k-1] != last {
+			// a point's Start and ResetsAt are pointers, made new for each
+			// reading: comparing them as pointers said every reading had
+			// changed the last point and rewrote the file each poll (#H19)
+			if len(after) != k || k > 0 && !sameQuotaPoint(after[k-1], last) {
 				changed = true
 			}
 			h[key][name] = after

@@ -89,8 +89,10 @@ func keepPlugIcon(k, icon string) {
 	plugIcons.kept[k] = icon
 	delete(plugIcons.tried, k)
 	if b, err := json.Marshal(plugIcons.kept); err == nil {
-		_ = os.MkdirAll(filepath.Dir(plugIcons.from), 0o755)
-		_ = os.WriteFile(plugIcons.from, b, 0o644)
+		os.MkdirAll(filepath.Dir(plugIcons.from), 0o755)
+		// beside and renamed over: a reader (the page's next draw) never
+		// reads half of it (#L7)
+		_ = writePrivate(plugIcons.from, b)
 	}
 }
 
@@ -148,7 +150,10 @@ func pluginOwnIcon(said string) string {
 		defer cancel()
 		ic, err := fetch(ctx, u)
 		plugIcons.Lock()
-		if err == nil {
+		// the home this started for may be gone (a test's, or another
+		// config folder): the picture is not kept into the one now read
+		// (#L7)
+		if err == nil && plugIcons.from == plugIconsPath() {
 			keepPlugIcon(k, ic)
 		}
 		delete(plugIcons.busy, k)

@@ -400,7 +400,10 @@ func (s *signInFlow) claudePaste(raw string) error {
 	port, in := cl.port, cl.in
 	cl.mu.Unlock()
 	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-		if port == "" || u.Port() != port || !isLoopback(u.Hostname()) || u.Query().Get("code") == "" {
+		// Claude's page comes back to /callback: another path is another
+		// sign-in's address, and the code it carries must go nowhere else
+		// (#M13)
+		if port == "" || u.Port() != port || !isLoopback(u.Hostname()) || u.Path != "/callback" || u.Query().Get("code") == "" {
 			return errors.New("that address isn't from this sign-in: paste the one its browser tab ended on")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -409,7 +412,12 @@ func (s *signInFlow) claudePaste(raw string) error {
 		if err != nil {
 			return err
 		}
-		c := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		// the address carries the authorization code: never hand it to a
+		// proxy this machine is set to use (#M13)
+		c := http.Client{
+			Transport:     &http.Transport{Proxy: nil},
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 		res, err := c.Do(req)
 		if err != nil {
 			return errors.New("Claude Code didn't take that address: " + err.Error())

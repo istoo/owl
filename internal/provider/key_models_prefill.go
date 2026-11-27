@@ -142,31 +142,31 @@ func PrefillNewKeys(ctx context.Context, before map[string]map[string]bool, ids 
 	}
 	n := 0
 	for pid, keys := range give {
-		// read again: the user may have set a key's models, or removed
-		// it, while its list was asked for
-		p, err := Find(pid)
-		if err != nil {
-			continue
-		}
-		am := map[string][]string{}
-		for k, v := range p.AccountModels {
-			am[k] = v
-		}
-		changed := 0
-		for kid, ms := range keys {
-			if am[accountKey(kid)] != nil || !p.HasKeyID(kid) {
-				continue
+		// read again under providers.json's lock: the user may have set a
+		// key's models, or removed it, while its list was asked for
+		// (#H18)
+		_ = updateProvider(pid, func(p *Provider) bool {
+			add := map[string][]string{}
+			for kid, ms := range keys {
+				if p.AccountModels[accountKey(kid)] != nil || !p.HasKeyID(kid) {
+					continue
+				}
+				add[accountKey(kid)] = ms
 			}
-			am[accountKey(kid)] = ms
-			changed++
-		}
-		if changed == 0 {
-			continue
-		}
-		p.AccountModels = am
-		if Save(*p) == nil {
-			n += changed
-		}
+			if len(add) == 0 {
+				return false
+			}
+			am := make(map[string][]string, len(p.AccountModels)+len(add))
+			for k, v := range p.AccountModels {
+				am[k] = v
+			}
+			for k, v := range add {
+				am[k] = v
+			}
+			p.AccountModels = am
+			n += len(add)
+			return true
+		})
 	}
 	return n
 }

@@ -24,15 +24,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/istoo/owl/internal/catalog"
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/lastgood"
 )
 
-// codexGoneMu guards the record's file.
-var codexGoneMu sync.Mutex
+// codexGoneMu guards the record's file, across this owl and the others on
+// the computer: a GUI and a CLI both running Codex wrote over each other
+// (#L6).
+var codexGoneMu = filelock.Mutex{Path: func() string { return codexGonePath() + ".lock" }}
 
 // codexGonePath is the record: a Codex home's folder to the hash of the
 // refresh token OpenAI refused for good there.

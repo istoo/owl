@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/istoo/owl/internal/settings"
 )
@@ -262,5 +263,25 @@ func TestMirrorAnswerIsNotTheToken(t *testing.T) {
 		if tok, _ := Token(); tok != "ghp_settings_good" {
 			t.Fatalf("%d from a mirror: Token() = %q", status, tok)
 		}
+	}
+}
+
+// After GITHUB_TOKEN is refused and Token falls through to GH_TOKEN, the
+// refusal still names the token GitHub refused, never the next variable's
+// (#H15).
+func TestRefusedNamesTheRefusedSource(t *testing.T) {
+	f := newFakeAPI(t)
+	f.good = "good-h15"
+	setToken(t, "", fmt.Sprintf("bad-h15-%d", time.Now().UnixNano()), "good-h15")
+	f.get(t) // the request carries GITHUB_TOKEN, is refused, and goes again without it
+	err := Refused()
+	if err == nil {
+		t.Fatal("no refusal error")
+	}
+	if !strings.Contains(err.Error(), "GITHUB_TOKEN") {
+		t.Fatalf("refusal = %q, want GITHUB_TOKEN named", err)
+	}
+	if strings.Contains(err.Error(), "GH_TOKEN") {
+		t.Fatalf("refusal blamed GH_TOKEN: %q", err)
 	}
 }

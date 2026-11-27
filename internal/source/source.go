@@ -248,6 +248,21 @@ func do(c *http.Client, req *http.Request, urls []string) (*http.Response, error
 	// it can't answer (a version it hasn't copied yet, say) is asked of
 	// the official one
 	official := slices.Index(urls, req.URL.String())
+	// HTTP's NoBody is not a body to send again: req.Body is non-nil for
+	// it with no GetBody, which used to end the fallbacks here (#H14).
+	hasBody := req.Body != nil && req.Body != http.NoBody
+	// a body with no GetBody can't be made again: it goes once, to the
+	// official source alone. Reading it into memory to replay it would be
+	// unbounded, and neither a mirror nor a second address may be sent an
+	// empty body in its place (#H14).
+	couldNotReplay := hasBody && req.GetBody == nil && len(urls) > 1
+	if couldNotReplay {
+		if official < 0 {
+			return nil, errors.New("the request body can't be sent again")
+		}
+		urls = urls[official : official+1]
+		official = 0
+	}
 	for i, raw := range urls {
 		r := req.Clone(req.Context())
 		if raw != req.URL.String() {
@@ -260,18 +275,19 @@ func do(c *http.Client, req *http.Request, urls []string) (*http.Response, error
 			r.Host = ""
 			// only a request bare allows has one here (Do)
 			r.Header.Del("Authorization")
-			if r.Body != nil {
-				if r.GetBody == nil {
-					break
-				}
-				body, err := r.GetBody()
-				if err != nil {
-					last = err
-					break
-				}
-				r.Body = body
-			}
 		}
+		if hasBody && req.GetBody != nil {
+			// every address gets a body of its own: a mirror that answered
+			// nothing left the previous one used up
+			body, err := req.GetBody()
+			if err != nil {
+				last = errors.Join(last, fmt.Errorf("%s: %w", raw, err))
+				continue
+			}
+			r.Body = body
+		}
+		// with no GetBody r.Body is the caller's: it is sent once, and
+		// urls is the official address alone (couldNotReplay)
 		var cancel context.CancelFunc
 		var stop func() bool
 		if len(urls) > 1 {
@@ -301,6 +317,11 @@ func do(c *http.Client, req *http.Request, urls []string) (*http.Response, error
 	}
 	if last == nil {
 		last = fmt.Errorf("no address for %s", req.URL)
+	}
+	if couldNotReplay {
+		// say why no mirror was asked, rather than read as every address
+		// having refused the request
+		return nil, fmt.Errorf("the request body can't be sent again, so only the official source was asked: %w", last)
 	}
 	return nil, last
 }

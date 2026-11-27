@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -775,7 +776,7 @@ func pluginFetch(pp plugin.Provider, account string, req *http.Request) (*http.R
 		// a URL of the vendor's own outside the base (Provider.Origin's),
 		// signed by the plugin as its other requests: only at the host the
 		// plugin sends to, never anywhere else with the account's sign-in
-		if HostOf(rest) != HostOf(base) {
+		if !sameOrigin(rest, base) {
 			return nil, fmt.Errorf("%s's plugin sends to %s, not %s", pp.Name, HostOf(base), HostOf(rest))
 		}
 		url = rest
@@ -799,6 +800,44 @@ func pluginFetch(pp plugin.Provider, account string, req *http.Request) (*http.R
 		notePluginSignIn(pp, account, resp)
 	}
 	return resp, err
+}
+
+// sameOrigin reports whether rest is an absolute URL that goes to the
+// same origin as base: the same scheme (so https is never downgraded to
+// http, which HostOf alone let through), the same host and port, and no
+// userinfo or backslash that could hide where the request really goes
+// (#C7). A plugin's other URL carries the account's sign-in, so it may go
+// to the host its loader sends to and nowhere else.
+func sameOrigin(rest, base string) bool {
+	if strings.ContainsAny(rest, "\\") {
+		return false // a client may read one as a path break and send elsewhere
+	}
+	ru, err := url.Parse(strings.TrimSpace(rest))
+	if err != nil || !ru.IsAbs() || ru.Host == "" || ru.User != nil {
+		return false
+	}
+	rb, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || !rb.IsAbs() || rb.Host == "" {
+		return false
+	}
+	if !strings.EqualFold(ru.Scheme, rb.Scheme) {
+		return false
+	}
+	return strings.EqualFold(ru.Hostname(), rb.Hostname()) && urlPort(ru) == urlPort(rb)
+}
+
+// urlPort is u's port, its scheme's default when it names none.
+func urlPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 // pluginRequestBase is the base URL a plugin provider's request for m goes

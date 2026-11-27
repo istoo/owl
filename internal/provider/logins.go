@@ -150,7 +150,7 @@ type savedLogin struct {
 	HeldAs string `json:"heldAs,omitempty"`
 	// was is the name a Copilot account read under a new one had in the
 	// file (#1220): its per-account settings are still kept by it, and
-	// move to the new one before the new name is written (renameSettled).
+	// move to the new one before the new name is written (settleRenames).
 	was string
 }
 
@@ -316,9 +316,16 @@ func writeLoginsTold(ls []savedLogin, tell bool) error {
 		ls[i].ID = loginID(ls[i])
 	}
 	sortLogins(ls)
-	// a Copilot account renamed on read is written under its new name
-	// once its settings have moved to it; until they can, under its old
-	disk := renameSettled(ls)
+	// a Copilot account renamed on read is written under its old name
+	// until its settings have moved to the new one (settleRenames): that
+	// move takes providers.json's lock, which is never taken while
+	// logins.json's is held (#H8)
+	disk := slices.Clone(ls)
+	for i := range disk {
+		if disk[i].was != "" {
+			disk[i].User = disk[i].was
+		}
+	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {
 		return err
@@ -1034,9 +1041,9 @@ func rememberLogins(force bool) {
 		return
 	}
 	loginsMu.Lock()
-	defer loginsMu.Unlock()
 	// another ask may have looked while this one waited for the lock
 	if !force && !loginsLookDue() {
+		loginsMu.Unlock()
 		return
 	}
 	loginsSeenAt.Store(time.Now().UnixNano())
@@ -1082,6 +1089,11 @@ func rememberLogins(force bool) {
 	if changed && !onlySeenMoved(was, ls, now) {
 		_ = writeLoginsTold(ls, !sameButSeen(was, ls))
 	}
+	loginsMu.Unlock()
+	// a rename whose settings can be moved now is settled with logins.json's
+	// lock let go: settling takes providers.json's, and the two are taken
+	// one after the other, never inside each other (#H8)
+	settleRenames(ls)
 }
 
 // seenEvery is how often an account still signed in has the time it was

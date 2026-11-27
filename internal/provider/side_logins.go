@@ -42,6 +42,10 @@ func sideLogins(agent, ownUser string, usable func(savedLogin) bool) []sideLogin
 		loginsMu.Lock()
 		ls, _ = keepSideLogins(readLogins(), agent, ownUser, false)
 		loginsMu.Unlock()
+		// the write above kept a renamed account under its old name; move
+		// its settings and write the new name now that logins.json's lock
+		// is let go (#H8)
+		settleRenames(ls)
 	}
 	return listSideLogins(ls, agent, ownUser, usable)
 }

@@ -391,3 +391,139 @@ func TestDoLastSourceUsesRemainingBudget(t *testing.T) {
 func TestDoLastSourceUsesRemainingBudgetWhenLate(t *testing.T) {
 	checkLastSourceBudget(t, 350*time.Millisecond)
 }
+
+// A GET with no body (http.NoBody) falls back to the next address: the
+// body is not a body to send again, and it used to end the fallbacks
+// (#H14).
+func TestDoNoBodyFallsBack(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "from the second")
+	}))
+	defer second.Close()
+	req, err := http.NewRequest(http.MethodGet, first.URL+"/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// what a stack that built the request itself leaves: a body that is
+	// no body, with none to replay
+	req.Body = http.NoBody
+	if req.Body != http.NoBody || req.GetBody != nil {
+		t.Fatalf("the test needs a NoBody request: Body %v, GetBody %v", req.Body, req.GetBody != nil)
+	}
+	resp, err := do(http.DefaultClient, req, []string{first.URL + "/x", second.URL + "/x"})
+	if err != nil {
+		t.Fatalf("the NoBody request didn't fall back: %v", err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != "from the second" {
+		t.Fatalf("answer = %q", b)
+	}
+}
+
+// A body that can be made again (GetBody) is sent whole to each address:
+// the fallback never gets the body the try before it used up (#H14).
+func TestDoBodyReplayedWithGetBody(t *testing.T) {
+	var bodies []string
+	var mu sync.Mutex
+	rec := func(code int, body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			bodies = append(bodies, string(b))
+			mu.Unlock()
+			w.WriteHeader(code)
+			fmt.Fprint(w, body)
+		}
+	}
+	first := httptest.NewServer(rec(http.StatusBadGateway, "down"))
+	defer first.Close()
+	second := httptest.NewServer(rec(http.StatusOK, "ok"))
+	defer second.Close()
+	// strings.Reader gives the request a GetBody
+	req, err := http.NewRequest(http.MethodPost, first.URL+"/x", strings.NewReader("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.GetBody == nil {
+		t.Fatal("the test needs a body with a GetBody")
+	}
+	resp, err := do(http.DefaultClient, req, []string{first.URL + "/x", second.URL + "/x"})
+	if err != nil {
+		t.Fatalf("the request didn't fall back: %v", err)
+	}
+	resp.Body.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 || bodies[0] != "hello" || bodies[1] != "hello" {
+		t.Fatalf("bodies sent = %q, want hello twice", bodies)
+	}
+}
+
+// A body that can't be made again (no GetBody) is sent once, to the
+// official source alone: no mirror is sent an empty body in its place and
+// nothing is read into memory to replay it (#H14).
+func TestDoBodyWithoutGetBodySentOnce(t *testing.T) {
+	var firstBodies, secondCalls int
+	var mu sync.Mutex
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		firstBodies++
+		mu.Unlock()
+		if string(b) != "hello" {
+			t.Errorf("the official source got %q, want hello", b)
+		}
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		secondCalls++
+		mu.Unlock()
+		fmt.Fprint(w, "ok")
+	}))
+	defer second.Close()
+	raw := io.NopCloser(strings.NewReader("hello"))
+	req, err := http.NewRequest(http.MethodPost, first.URL+"/x", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.GetBody != nil {
+		t.Fatal("the test needs a body with no GetBody")
+	}
+	// the official source's own answer is given back, not a mirror's
+	resp, err := do(http.DefaultClient, req, []string{first.URL + "/x", second.URL + "/x"})
+	if err != nil {
+		t.Fatalf("the official source's answer: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want the official 502", resp.StatusCode)
+	}
+	mu.Lock()
+	if firstBodies != 1 {
+		t.Fatalf("the official source was asked %d times, want 1", firstBodies)
+	}
+	if secondCalls != 0 {
+		t.Fatalf("a mirror was asked %d times with no body to send", secondCalls)
+	}
+	mu.Unlock()
+
+	// a transport failure has no answer to give: the request says the body
+	// couldn't be sent again, rather than offer a mirror with none
+	raw = io.NopCloser(strings.NewReader("hello"))
+	req, err = http.NewRequest(http.MethodPost, first.URL+"/y", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	_, err = do(http.DefaultClient, req, []string{first.URL + "/y", second.URL + "/y"})
+	if err == nil || !strings.Contains(err.Error(), "body can't be sent again") {
+		t.Fatalf("error = %v, want the one-shot body said", err)
+	}
+}

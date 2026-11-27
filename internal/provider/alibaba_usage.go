@@ -456,7 +456,7 @@ func aliReadWindows(raw []byte) []QuotaWindow {
 	})
 	var out []QuotaWindow
 	for _, w := range all {
-		q := QuotaWindow{Used: *w.used * 100, Span: time.Duration(w.n) * hours[w.unit], ResetsAt: volcTime(w.at)}
+		q := QuotaWindow{Used: clampPercent(*w.used * 100), Span: time.Duration(w.n) * hours[w.unit], ResetsAt: volcTime(w.at)}
 		switch {
 		case w.n == 5 && w.unit == "Hour":
 			q.Name = "5 hours"

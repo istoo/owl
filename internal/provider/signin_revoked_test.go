@@ -173,8 +173,20 @@ func TestRevokedCodexRefreshedFirst(t *testing.T) {
 	}
 
 	refuse = true
-	NoteRevokedSignIn(context.Background(), a, revokedReq(t, "fresh-old"))
-	if _, ok := RevokedSignIn(a, revokedReq(t, "fresh-old")); !ok {
+	// the token the account has now, as a 401's request carries it: with
+	// another, the sign-in was refreshed since and isn't refreshed again
+	// (#H11)
+	b, _, err := readCodexLogin(codexHome(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cur codexAuth
+	if err := json.Unmarshal(b, &cur); err != nil {
+		t.Fatal(err)
+	}
+	stale := cur.Tokens.AccessToken
+	NoteRevokedSignIn(context.Background(), a, revokedReq(t, stale))
+	if _, ok := RevokedSignIn(a, revokedReq(t, stale)); !ok {
 		t.Fatal("its refresh refused, the account isn't marked")
 	}
 	if got := lapsed(); !strings.Contains(got, "sign in again") {

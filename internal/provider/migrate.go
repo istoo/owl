@@ -33,16 +33,15 @@ import (
 	"log"
 	"maps"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/filememo"
 	"github.com/istoo/owl/internal/lastgood"
 	"github.com/istoo/owl/internal/lazyre"
@@ -410,7 +409,19 @@ func MovePackage(id string) string {
 
 func migrationsPath() string { return filepath.Join(filepath.Dir(Path()), "migrations.json") }
 
-var migrationsMu sync.Mutex
+// migrationsMu is migrations.json's lock within this owl and across the
+// owls on the computer.
+var migrationsMu = filelock.Mutex{Path: func() string { return migrationsPath() + ".mutex.lock" }}
+
+// lockMigrations guards migrations.json strictly: a lock that can't be had
+// is an error, never a write outside it (#H12).
+func lockMigrations() (func(), error) {
+	if err := migrationsMu.LockStrict(); err != nil {
+		return nil, fmt.Errorf("another owl is changing migrations.json; try again: %w", err)
+	}
+	filememo.Look(migrationsPath())
+	return migrationsMu.Unlock, nil
+}
 
 // readMigrations is held while a request reads: the GUI's state asks each
 // provider's move several times over, thousands of looks at the file.
@@ -485,8 +496,11 @@ func movingNow(id string) bool {
 }
 
 func setMigration(id string, f func(m *Migration)) error {
-	migrationsMu.Lock()
-	defer migrationsMu.Unlock()
+	unlock, err := lockMigrations()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	all := map[string]Migration{}
 	for k, v := range readMigrationsFile() {
 		all[k] = v
@@ -512,35 +526,22 @@ func setMigration(id string, f func(m *Migration)) error {
 	return writePrivate(migrationsPath(), append(b, '\n'))
 }
 
+// movesWait is how long lockMoves waits for another owl's move to end.
+var movesWait = filelock.Wait
+
+// movesMu is the lock a move holds, within this owl and across the owls on
+// the computer.
+var movesMu = filelock.Mutex{Path: func() string { return migrationsPath() + ".lock" }}
+
 // lockMoves keeps two owls (the app and a CLI, a dev build beside a
-// release) from moving at once.
+// release) from moving at once: an OS file lock, which the system lets go
+// when the process holding it ends however it ends, so a move cut short
+// by a killed owl never holds the next one out (#H12).
 func lockMoves() (func(), error) {
-	p := migrationsPath() + ".lock"
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return nil, err
+	if err := movesMu.LockStrictTimeout(movesWait); err != nil {
+		return nil, fmt.Errorf("another owl is moving subscriptions to plugins; try again: %w", err)
 	}
-	for range 2 {
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			fmt.Fprint(f, os.Getpid())
-			f.Close()
-			return func() { os.Remove(p) }, nil
-		}
-		// one left by a owl that died moving (killed, or stopped
-		// mid-move) holds nothing
-		if b, rerr := os.ReadFile(p); rerr == nil {
-			if pid, perr := strconv.Atoi(strings.TrimSpace(string(b))); perr == nil && pid != os.Getpid() && !update.Alive(pid) {
-				os.Remove(p)
-				continue
-			}
-		}
-		if fi, serr := os.Stat(p); serr == nil && time.Since(fi.ModTime()) > 15*time.Minute {
-			os.Remove(p)
-			continue
-		}
-		return nil, errors.New("another owl is moving subscriptions to plugins")
-	}
-	return nil, errors.New("another owl is moving subscriptions to plugins")
+	return movesMu.Unlock, nil
 }
 
 // Hooks the tests stand in for.

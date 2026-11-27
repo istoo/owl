@@ -1017,13 +1017,25 @@ func TierPrice(std Price, model, tier string) (Price, bool) {
 	if tier == "" || tier == "default" || tier == "auto" {
 		return Price{}, false
 	}
+	// models.dev's keys carry no vendor prefix ("openai/gpt-6.1-sol" is
+	// gpt-6.1-sol there): without this a prefixed id missed and its tier
+	// was billed at the standard price (#M25)
+	model = bareID(model)
 	all := load()
 	for _, maker := range []string{"openai", "anthropic"} {
 		m, ok := all[maker].Models[model]
 		if !ok || m.Cost == nil || !m.Cost.Same(std) {
 			continue
 		}
-		for _, mode := range m.Experimental.Modes {
+		// the modes are a map: walk them by name so the same model, tier
+		// and catalog price the same way every time
+		names := make([]string, 0, len(m.Experimental.Modes))
+		for name := range m.Experimental.Modes {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			mode := m.Experimental.Modes[name]
 			c, body := mode.Cost, mode.Provider.Body
 			if c == nil || !(strings.EqualFold(body.ServiceTier, tier) || tier == "fast" && body.Speed == "fast") {
 				continue
@@ -1036,7 +1048,14 @@ func TierPrice(std Price, model, tier string) (Price, bool) {
 			}
 			at := Price{Input: c.Input, Output: c.Output, CacheRead: c.CacheRead, CacheWrite: c.CacheWrite, CacheWrite1h: c.CacheWrite1h, Peak: std.Peak}
 			if at.CacheWrite1h == 0 {
-				at.CacheWrite1h = std.CacheWrite1h * ratio(c.CacheWrite, std.CacheWrite)
+				// a mode that lists no 1-hour write is scaled by its own
+				// cache-write ratio; one with no cache write either takes
+				// its input ratio, its surcharge being on input
+				if std.CacheWrite == 0 {
+					at.CacheWrite1h = std.CacheWrite1h * ratio(c.Input, std.Input)
+				} else {
+					at.CacheWrite1h = std.CacheWrite1h * ratio(c.CacheWrite, std.CacheWrite)
+				}
 			}
 			for _, t := range std.Tiers {
 				at.Tiers = append(at.Tiers, Tier{Above: t.Above, Input: t.Input * ratio(c.Input, std.Input), Output: t.Output * ratio(c.Output, std.Output),

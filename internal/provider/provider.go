@@ -930,6 +930,11 @@ func Routings() ([]string, error) {
 // earlier one's.
 var providersMu = filelock.Mutex{Path: func() string { return Path() + ".lock" }}
 
+// providersHeld is how many callers hold providersMu, or wait for it: a
+// caller that holds it must never take it again through a path that also
+// moves accounts' settings, since sync.Mutex doesn't re-enter (#H8).
+var providersHeld atomic.Int32
+
 // lockProviders takes providers.json's lock for a read-change-write and
 // returns the unlock. It is taken before the read the change is made
 // from; a look that only reads needs none, since store renames its file
@@ -940,8 +945,12 @@ var providersMu = filelock.Mutex{Path: func() string { return Path() + ".lock" }
 // read-change-write that writes the file itself (Rename, the orders, the
 // restores) takes it around its own read and store.
 func lockProviders() func() {
+	providersHeld.Add(1)
 	providersMu.Lock()
-	return providersMu.Unlock
+	return func() {
+		providersMu.Unlock()
+		providersHeld.Add(-1)
+	}
 }
 
 // store replaces providers.json whole, through a file renamed over it, so
@@ -1457,6 +1466,28 @@ func Save(p Provider) error {
 	return nil
 }
 
+// updateProvider changes the stored provider id in one read-change-write
+// under providers.json's lock: a background refresh that read the provider
+// before the user saved it must not write its old copy over the user's
+// (#H18). change gets the record as the file holds it, not a snapshot read
+// earlier, and reports whether it changed it.
+func updateProvider(id string, change func(p *Provider) bool) error {
+	unlock := lockProviders()
+	defer unlock()
+	f, err := read()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(f.Providers, func(q Provider) bool { return q.ID == id })
+	if i < 0 {
+		return fmt.Errorf("no provider %q", id)
+	}
+	if !change(&f.Providers[i]) {
+		return nil
+	}
+	return store(f)
+}
+
 // sameStored is whether a and b are written to providers.json alike.
 func sameStored(a, b Provider) bool {
 	x, err := json.Marshal(a)
@@ -1822,20 +1853,24 @@ func ShowAccount(id string) error {
 // from Hidden or by signing in); signing out is each account's Remove.
 func Delete(id string) error {
 	unlock := lockProviders()
-	defer unlock()
 	f, err := read()
 	if err != nil {
+		unlock()
 		return err
 	}
 	if _, ok := find(Accounts(), id); ok {
 		for i := range f.Providers {
 			if f.Providers[i].ID == id {
 				f.Providers[i].Hidden = true
-				return store(f)
+				err = store(f)
+				unlock()
+				return err
 			}
 		}
 		f.Providers = append(f.Providers, Provider{ID: id, Hidden: true})
-		return store(f)
+		err = store(f)
+		unlock()
+		return err
 	}
 	keep := f.Providers[:0]
 	found := false
@@ -1850,12 +1885,18 @@ func Delete(id string) error {
 		keep = append(keep, p)
 	}
 	if !found {
+		unlock()
 		return fmt.Errorf("no provider %q", id)
 	}
 	f.Providers = keep
 	if err := store(f); err != nil {
+		unlock()
 		return err
 	}
+	// the file is written: settings and sign-ins are told outside its
+	// lock, as DeleteGroup does, so the two locks are never held together
+	// (#M16)
+	unlock()
 	// a visibility or a pick that names it would keep a provider added
 	// under its id out of an agent's lists
 	if err := forgetProvider(id); err != nil {

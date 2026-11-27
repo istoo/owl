@@ -79,11 +79,13 @@ func startCopilotSignIn(s *signInFlow) error {
 		cancel()
 		return errors.New("GitHub gave no device code")
 	}
+	s.mu.Lock()
 	s.st.URL, s.st.Code = dc.URI, dc.UserCode
 	if s.st.URL == "" {
 		s.st.URL = copilotDevicePage(host)
 	}
 	s.stop = cancel
+	s.mu.Unlock()
 	interval := devicePoll(dc.Interval)
 	site := firstNonEmpty(host, "github.com")
 	go func() {

@@ -216,6 +216,19 @@ var signIns = struct {
 	m map[string]*signInFlow
 }{m: map[string]*signInFlow{}}
 
+// pruneSignInsLocked drops the sign-ins that are over: finish closes
+// done, and nothing else removed them from the map, so one was kept for
+// every sign-in ever started (#H9). The caller holds signIns.
+func pruneSignInsLocked() {
+	for id, o := range signIns.m {
+		select {
+		case <-o.done:
+			delete(signIns.m, id)
+		default:
+		}
+	}
+}
+
 func randomToken(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
@@ -278,6 +291,9 @@ func StartSignInWith(agent string, o SignInOptions) (SignInState, error) {
 	}()
 
 	signIns.Lock()
+	// a sign-in that is over is kept no longer: the map would otherwise
+	// hold every one ever started, its URL and account with it (#H9)
+	pruneSignInsLocked()
 	// only one sign-in per agent at a time: a newer one replaces the older
 	for id, o := range signIns.m {
 		if o.st.Agent == agent {
@@ -357,10 +373,10 @@ func (s *signInFlow) begin() error {
 			blocked = callbackBlocked(err, runtime.GOOS)
 		}
 		_, port, _ := net.SplitHostPort(codexCallbackAddr)
-		s.redirect = "http://localhost:" + port + "/auth/callback"
+		redirect := "http://localhost:" + port + "/auth/callback"
 		q.Set("response_type", "code")
 		q.Set("client_id", codexClientID)
-		q.Set("redirect_uri", s.redirect)
+		q.Set("redirect_uri", redirect)
 		q.Set("scope", codexScopes)
 		q.Set("code_challenge", challenge)
 		q.Set("code_challenge_method", "S256")
@@ -368,7 +384,10 @@ func (s *signInFlow) begin() error {
 		q.Set("codex_cli_simplified_flow", "true")
 		q.Set("state", s.state)
 		q.Set("originator", "codex_cli_rs")
+		s.mu.Lock()
+		s.redirect = redirect
 		s.st.URL = codexAuthorizeURL + "?" + q.Encode()
+		s.mu.Unlock()
 	case ChatGPTAPIID:
 		// OpenAI's Sign in with ChatGPT, which registers owl on the way
 		if s.hostID, err = siwcHostID(); err != nil {
@@ -377,10 +396,11 @@ func (s *signInFlow) begin() error {
 		if ln, err = listenSIWCCallback(); err != nil {
 			return err
 		}
-		s.redirect = fmt.Sprintf("http://127.0.0.1:%d/auth/callback", ln.Addr().(*net.TCPAddr).Port)
-		s.nonce = randomToken(24)
+		redirect := fmt.Sprintf("http://127.0.0.1:%d/auth/callback", ln.Addr().(*net.TCPAddr).Port)
+		nonce := randomToken(24)
 		s.mu.Lock()
-		s.st.URL = siwcAuthorize(s.redirect, s.state, s.nonce, challenge, s.hostID)
+		s.redirect, s.nonce = redirect, nonce
+		s.st.URL = siwcAuthorize(redirect, s.state, nonce, challenge, s.hostID)
 		s.mu.Unlock()
 	case "copilot":
 		// GitHub's device code, as Copilot's editors sign in
@@ -673,10 +693,30 @@ func (s *signInFlow) finish(out SignInState) bool {
 	return true
 }
 
+// crossSite says a request came from another site's page: it names an
+// Origin, or a browser says its initiator was another site. Go's own
+// client sends neither, so the sign-in's own /cancel call passes.
+func crossSite(r *http.Request) bool {
+	if r.Header.Get("Origin") != "" {
+		return true
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
+		return false
+	}
+	return true
+}
+
 func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/callback", "/auth/callback", "/oauth2callback", "/oauth-callback":
 	case "/cancel":
+		// only from this machine's own process, or a page it served: a
+		// cross-site page must not be able to stop a sign-in (#M13)
+		if crossSite(r) {
+			http.NotFound(w, r)
+			return
+		}
 		s.finish(SignInState{State: "canceled"})
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -689,6 +729,13 @@ func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 		signInPage(w, false, "This sign-in is over", "Start it again from owl.")
 		return
 	}
+	if q.Get("state") != s.state {
+		// not ours: someone else's page, or a stale tab. Checked before
+		// the error below, so a page that isn't this sign-in's can neither
+		// finish it nor fail it (#M13)
+		signInPage(w, false, "This link isn't from owl's sign-in", "Start it again from owl.")
+		return
+	}
 	if e := q.Get("error"); e != "" {
 		msg := q.Get("error_description")
 		if msg == "" {
@@ -698,7 +745,7 @@ func (s *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 		signInPage(w, false, "Sign-in didn't finish", msg)
 		return
 	}
-	if q.Get("state") != s.state || q.Get("code") == "" {
+	if q.Get("code") == "" {
 		// not ours: someone else's page, or a stale tab
 		signInPage(w, false, "This link isn't from owl's sign-in", "Start it again from owl.")
 		return
@@ -825,6 +872,28 @@ type tokenRefused struct {
 
 func (e *tokenRefused) Error() string {
 	return fmt.Sprintf("the sign-in was refused (%d): %s", e.status, e.msg)
+}
+
+// transientTokenError says a token endpoint's failure is one to try again,
+// not the sign-in being gone: a canceled or time-out wait, a network
+// error, or a 5xx or 429 from the endpoint. A 400 invalid_grant or a 401
+// is the sign-in itself refused (#H13).
+func transientTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return true
+	}
+	var refused *tokenRefused
+	if errors.As(err, &refused) {
+		return refused.status >= 500 || refused.status == http.StatusTooManyRequests
+	}
+	return false
 }
 
 // claudeLogin is a Claude sign-in as owl keeps it.

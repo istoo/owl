@@ -2367,9 +2367,19 @@ func DeleteGroups(ids []string) error {
 			left = append(left, id)
 		}
 	}
+	// every check, every removal and the one write happen under the same
+	// lock, so a refusal removes none and a store that fails keeps them
+	// all: all or none (#M14)
+	unlock := lockProviders()
+	f, err := read()
+	if err != nil {
+		unlock()
+		return err
+	}
 	all := groupsIn(providerEntries())
 	for _, id := range left {
 		if !slices.ContainsFunc(all, func(g Group) bool { return g.ID == id && !g.Hidden }) {
+			unlock()
 			return fmt.Errorf("no group %q", id)
 		}
 	}
@@ -2380,25 +2390,63 @@ func DeleteGroups(ids []string) error {
 		}
 		for _, id := range left {
 			if slices.Contains(g.Members, GroupPrefix+id) {
+				unlock()
 				return fmt.Errorf("%s is in %s: take it out first", id, g.Name)
 			}
 			if g.Classifier == GroupPrefix+id {
+				unlock()
 				return fmt.Errorf("%s is %s's classifier: choose another first", id, g.Name)
 			}
 		}
 	}
-	for len(left) > 0 {
-		var next []string
-		var last error
-		for _, id := range left {
-			if err := DeleteGroup(id); err != nil {
-				next, last = append(next, id), err
+	entries := groupEntries(providerEntries())
+	found := foundGroups(providerEntries())
+	hiddenFor := map[string]bool{}
+	refs := map[string][]string{}
+	for _, id := range left {
+		hiddenFor[id] = slices.ContainsFunc(found, func(g Group) bool { return g.ID == id })
+		if hiddenFor[id] {
+			continue
+		}
+		for _, e := range entries {
+			if e.Group == id {
+				refs[id] = append(refs[id], e.ID, PublicRef(e.ID))
 			}
 		}
-		if len(next) == len(left) {
-			return last
+	}
+	for _, id := range left {
+		hit := false
+		f.Groups = slices.DeleteFunc(f.Groups, func(g Group) bool {
+			if g.ID == id {
+				hit = true
+				return true
+			}
+			return false
+		})
+		if hiddenFor[id] {
+			// a found group's removal is a hiding, kept to come back
+			f.Groups = append(f.Groups, Group{ID: id, Hidden: true})
+			hit = true
 		}
-		left = next
+		if !hit {
+			unlock()
+			return fmt.Errorf("no group %q", id)
+		}
+	}
+	if err := store(f); err != nil {
+		unlock()
+		return err
+	}
+	unlock()
+	for _, id := range left {
+		if hiddenFor[id] {
+			continue
+		}
+		// a visibility or a pick that names it would keep a group added
+		// under its id out of an agent's lists
+		if err := forgetGroup(id, refs[id]); err != nil {
+			return err
+		}
 	}
 	// Removing every group owl found says the user wants none: a model
 	// a provider serves later, or one it lists after a refresh, must not
@@ -2459,7 +2507,13 @@ func PickGroup(id, pick string) error {
 	if g.Routing != Manual {
 		return fmt.Errorf("%s doesn't route by hand: its card picks a model only in Manual routing", g.Name)
 	}
-	if !slices.Contains(g.Members, pick) {
+	// the members as it has them now, a pattern's among them, and the pick
+	// as SaveGroup keeps one ("owl/" off, cleaned): a manual group with a
+	// matched member could otherwise never pick it (#M17)
+	entries := providerEntries()
+	members := append(slices.Clone(g.Members), matchesIn(entries, *g)...)
+	pick = cleanMember(entries, strings.TrimPrefix(strings.TrimSpace(pick), "owl/"))
+	if !slices.Contains(members, pick) {
 		return fmt.Errorf("%s is not in %s", pick, g.Name)
 	}
 	if g.Pick == pick {

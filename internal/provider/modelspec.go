@@ -237,25 +237,39 @@ func isAuto(v string) bool {
 	return false
 }
 
+// errNoSettingsChange aborts a settings.Update that would change nothing,
+// so no write (and no catalog rebuild) happens for it.
+var errNoSettingsChange = errors.New("no settings change")
+
 // setOutput is SetModelOutput without telling the agents: n over 0 is the
-// limit, 0 takes the user's away. It reports whether anything changed.
+// limit, 0 takes the user's away. It reports whether anything changed. The
+// change is made from the settings as they are stored now, under their
+// lock, so a concurrent edit of another field stands (#H18).
 func setOutput(key string, n int) (bool, error) {
-	s := settings.Load()
-	if n == 0 {
-		if _, ok := s.ModelOutputs[key]; !ok {
-			return false, nil
+	_, err := settings.Update(func(s *settings.Settings) error {
+		if n == 0 {
+			if _, ok := s.ModelOutputs[key]; !ok {
+				return errNoSettingsChange
+			}
+			delete(s.ModelOutputs, key)
+			return nil
 		}
-		delete(s.ModelOutputs, key)
-	} else {
 		if s.ModelOutputs[key] == n {
-			return false, nil
+			return errNoSettingsChange
 		}
 		if s.ModelOutputs == nil {
 			s.ModelOutputs = map[string]int{}
 		}
 		s.ModelOutputs[key] = n
+		return nil
+	})
+	switch {
+	case errors.Is(err, errNoSettingsChange):
+		return false, nil
+	case err != nil:
+		return false, err
 	}
-	return true, settings.Save(s)
+	return true, nil
 }
 
 // ResetModelSpec takes every spec the user gave a provider's model away —
@@ -280,26 +294,31 @@ func ResetModelSpec(ref string) ([]string, error) {
 		p, pid = found, found.ID
 	}
 	key := pid + "/" + model
-	s := settings.Load()
 	var gone []string
-	if _, ok := s.ModelOutputs[key]; ok {
-		delete(s.ModelOutputs, key)
-		gone = append(gone, "output")
-	}
-	if _, ok := s.ModelImages[key]; ok {
-		delete(s.ModelImages, key)
-		gone = append(gone, "vision")
-	}
-	_, narrowed := s.ModelEfforts[key]
-	if narrowed || s.ModelReasonless[key] {
-		delete(s.ModelEfforts, key)
-		delete(s.ModelReasonless, key)
-		gone = append(gone, "reasoning")
-	}
-	if len(gone) > 0 {
-		if err := settings.Save(s); err != nil {
-			return nil, err
+	// settings as they are stored now, under their lock: the rest of the
+	// user's settings stand (#H18)
+	if _, err := settings.Update(func(s *settings.Settings) error {
+		gone = gone[:0]
+		if _, ok := s.ModelOutputs[key]; ok {
+			delete(s.ModelOutputs, key)
+			gone = append(gone, "output")
 		}
+		if _, ok := s.ModelImages[key]; ok {
+			delete(s.ModelImages, key)
+			gone = append(gone, "vision")
+		}
+		_, narrowed := s.ModelEfforts[key]
+		if narrowed || s.ModelReasonless[key] {
+			delete(s.ModelEfforts, key)
+			delete(s.ModelReasonless, key)
+			gone = append(gone, "reasoning")
+		}
+		if len(gone) == 0 {
+			return errNoSettingsChange
+		}
+		return nil
+	}); err != nil && !errors.Is(err, errNoSettingsChange) {
+		return nil, err
 	}
 	if p != nil {
 		dropped, err := DropContext(*p, model) // its Save tells the agents

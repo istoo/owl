@@ -179,9 +179,11 @@ func TestRemoteOwlCards(t *testing.T) {
 	}
 }
 
-// A remote card's refresh asks the other owl to read that card again,
-// and then what it has now; the remote's own card (nothing read there
-// yet) asks it to read every card.
+// A remote card's refresh asks the other owl to read that card again, and
+// keeps the cards its answer carries; the remote's own card (nothing read
+// there yet) asks it to read every card. No second read follows: a GET
+// would ask again, and one that answered would hide a failed refresh
+// (#M24).
 func TestRemoteOwlCardRefresh(t *testing.T) {
 	peer := &fakePeer{}
 	remoteQuotaHome(t, peer)
@@ -202,8 +204,8 @@ func TestRemoteOwlCardRefresh(t *testing.T) {
 	if len(cs) != 1 || cs[0].Provider != "office/codex" || cs[0].Windows[0].Used != 70 {
 		t.Errorf("after refresh: %+v", cs)
 	}
-	if peer.gets != 3 {
-		t.Errorf("cards asked %d times, want 3 (once, then after each refresh)", peer.gets)
+	if peer.gets != 1 {
+		t.Errorf("cards asked %d times, want 1: the refresh's own answer is what was kept (#M24)", peer.gets)
 	}
 	// a card of this computer's own isn't sent there
 	RefreshUsage(ctx, "codex", "")
