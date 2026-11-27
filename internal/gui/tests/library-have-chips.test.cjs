@@ -83,7 +83,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.setDefaultTimeout(5000);
         const errors = [];
         page.on("pageerror", (e) => errors.push(e.message));
-        await page.route("**/*", server(lang));
+        // the page's own address only: a blob: URL (a grey copy of a
+        // picture) is left to the browser, which WebKit asks for too
+        await page.route("http://owl.test/**", server(lang));
         try {
           await page.goto("http://owl.test/");
           await navTo(page, "library");

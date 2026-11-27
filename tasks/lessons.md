@@ -205,3 +205,9 @@ CI 日志、`ls`、`npm config` 里出现的那个 8 字符小写串，是 npm �
 - 规则：一行左边是名字、右边是按钮时，中间那些可长的字（标签、说明、列表名）必须能缩、能以省略号结尾（`flex: 0 1 auto; min-width: 0` + 文字在自己的 `span` 里带 `overflow: hidden; text-overflow: ellipsis`，全文留在 `title`），按钮永远整体在行内；窄到一行放不下时，让这枚标签落到行下面单独一行（≤560px 的 `grid` 第二行），而不是把按钮挤到第三行或挤出列表。
 - 原因：「Agent 中已有」的行加了「在 Qoder, Grok Build, Pi 中不同」这类按 Agent 数变长的琥珀色标签后，`.lib-tag` 是 `flex: none; white-space: nowrap`，窗宽 734px 时标签把「导入」截掉一半、垃圾桶整个被 `.lib-list` 的 `overflow: hidden` 吞掉（用户截图）；≤560px 时标签、按钮各占一行、三个行高。
 - 怎么验证：`internal/gui/tests/library-have-chips.test.cjs` 在 900 / 734（用户窗宽）/ 440px、中英文下断言两行的「导入」「删除」完整且在行内、行内没有溢出、标签在 734px 时被省略号截断、440px 时落到行下；去掉 `flex: 0 1 auto` 时 734px 那四条红（`text lib-icon danger: 6px out`），换回 `flex: none` 即刻复现用户截图的形状。
+
+## 新的 GUI 测试用 `http://owl.test/**` 拦截，不要用 `**/*`（2026-11-27）
+
+- 规则：测试要画的页面里有「灰色图标副本」（`greyIcon` 把图片读成 blob 再画）时，路由写成 `page.route("http://owl.test/**", …)`，让 `blob:` 地址交给浏览器本身；兜底的 `**/*` 会把 WebKit 自己的 blob 请求也送进 handler，`url.pathname` 变成 `http://owl.test/<uuid>`，读文件抛 ENOENT，整个 context 被关掉，六个子测试全红。
+- 原因：v0.2.39 新增的 `library-have-chips.test.cjs` 用的 `**/*`，Chromium 不问 blob，本地一直绿；装了 webkit-2395 后同一文件 6/6 红在 `ENOENT …/assets/http:/owl.test/<uuid>`。CI 的 GUI 只在夜间全量跑 webkit 分片，这个文件还没被跑到过，第二天夜里才会红。
+- 怎么验证：`BROWSER=webkit scripts/gui-suite.sh library-have-chips.test.cjs` 改前 6 红、改后 6 绿，两引擎合计 14/14；同一写法的先例在 `library-items.test.cjs:109`。本机装了 webkit-2395 之后，GUI 改动可以不再只靠 CI 验 WebKit。
