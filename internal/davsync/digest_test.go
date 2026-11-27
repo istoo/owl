@@ -17,12 +17,15 @@ import (
 // and answers a Basic header with a Digest challenge, as Apache's
 // mod_auth_digest and nginx's auth modules do.
 type fakeDigest struct {
-	mu       sync.Mutex
-	alg      string
-	newHash  func() hash.Hash
-	basic    int // requests that came with Basic
-	digested int // requests that passed
-	seenNC   map[string]bool
+	mu      sync.Mutex
+	alg     string
+	newHash func() hash.Hash
+	// realm and nonce, "" for the fixture's own: two servers told apart
+	realm, nonce string
+	basic        int // requests that came with Basic
+	digested     int // requests that passed
+	unauthorized int // 401s answered
+	seenNC       map[string]bool
 }
 
 func (f *fakeDigest) h(s string) string {
@@ -38,11 +41,18 @@ func (f *fakeDigest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(auth, "Basic ") {
 		f.basic++
 	}
+	realm, nonce := f.realm, f.nonce
+	if realm == "" {
+		realm = "fixture realm"
+	}
+	if nonce == "" {
+		nonce = "fixturenonce"
+	}
 	if strings.HasPrefix(auth, "Digest ") {
 		p := authParams(auth[7:])
-		ha1 := f.h("me:fixture realm:pw")
+		ha1 := f.h("me:" + realm + ":pw")
 		ha2 := f.h(r.Method + ":" + r.URL.RequestURI())
-		want := f.h(ha1 + ":fixturenonce:" + p["nc"] + ":" + p["cnonce"] + ":auth:" + ha2)
+		want := f.h(ha1 + ":" + nonce + ":" + p["nc"] + ":" + p["cnonce"] + ":auth:" + ha2)
 		if p["response"] == want && p["username"] == "me" && p["uri"] == r.URL.RequestURI() &&
 			p["qop"] == "auth" && p["algorithm"] == f.alg && p["opaque"] == "op" && !f.seenNC[p["nc"]] {
 			f.seenNC[p["nc"]] = true
@@ -57,7 +67,8 @@ func (f *fakeDigest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	w.Header().Add("WWW-Authenticate", `Digest realm="fixture realm", nonce="fixturenonce", opaque="op", algorithm=`+f.alg+`, qop="auth"`)
+	f.unauthorized++
+	w.Header().Add("WWW-Authenticate", `Digest realm="`+realm+`", nonce="`+nonce+`", opaque="op", algorithm=`+f.alg+`, qop="auth"`)
 	w.WriteHeader(http.StatusUnauthorized)
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/istoo/owl/internal/appdir"
 	"github.com/istoo/owl/internal/backup"
 	"github.com/istoo/owl/internal/provider"
+	"github.com/istoo/owl/internal/settings"
 )
 
 // A computer joining a folder keeps the gateway keys it holds that the
@@ -190,11 +191,91 @@ func TestGatewayKeysJoinWithoutStoreKeepsKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	who, ok := access.Authenticate(laptop)
+	if !ok {
+		t.Fatal("fixture: the added key does not authenticate")
+	}
 	if err := Configure(cfg); err != nil {
 		t.Fatal(err)
 	}
 	now()
 	if _, ok := access.Authenticate(laptop); !ok {
 		t.Error("joining a folder with no key store destroyed this computer's key")
+	}
+	got := remote()
+	if got.GatewayKeys == nil || !slices.ContainsFunc(*got.GatewayKeys, func(k access.Key) bool { return k.ID == who.KeyID }) {
+		t.Errorf("the joined key was not pushed to the folder's new store: %+v", got.GatewayKeys)
+	}
+}
+
+// A computer joining a folder whose settings part has no account groups
+// pushes the groups its own keys may name in the same write: merged, not
+// only remote, holds them (#H46).
+func TestJoinPushesUnseenAccountGroups(t *testing.T) {
+	fake := &fakeDAV{files: map[string][]byte{}, etags: map[string]string{}, dirs: map[string]bool{"/dav": true}, cond: true, putETag: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	cfg := Config{URL: srv.URL + "/dav/", User: "me", Password: "pw", Passphrase: "gateway group join passphrase", Keys: true}
+	a, b := newComputer(t), newComputer(t)
+	use := func(c computer) {
+		t.Helper()
+		c.use(t)
+		appdir.UseExecutable("")
+		provider.ForgetAccounts()
+	}
+	t.Cleanup(provider.ForgetAccounts)
+	now := func() {
+		t.Helper()
+		if err := Now(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remote := func() backup.Bundle {
+		t.Helper()
+		fake.mu.Lock()
+		data := append([]byte(nil), fake.files["/dav/owl/owl.owl-backup"]...)
+		fake.mu.Unlock()
+		got, err := backup.Open(data, cfg.Passphrase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	// Computer B writes the folder first, with a setting of its own and no
+	// account groups.
+	use(b)
+	if err := settings.Save(settings.Settings{Theme: "dark"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Configure(cfg); err != nil {
+		t.Fatal(err)
+	}
+	now()
+	if got := remote(); got.AccountGroups != nil {
+		t.Fatal("fixture: the folder holds account groups")
+	}
+
+	// Computer A joins with a group its own keys may name.
+	use(a)
+	if err := settings.Save(settings.Settings{Theme: "light"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := access.ConfigureLAN(true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := access.Update("add-key", access.Change{Name: "Laptop"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := access.RestoreGroups([]access.AccountGroup{{ID: "g1", Name: "Team", Accounts: []string{"acme/one"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Configure(cfg); err != nil {
+		t.Fatal(err)
+	}
+	now()
+	got := remote()
+	if got.AccountGroups == nil || !slices.ContainsFunc(*got.AccountGroups, func(g access.AccountGroup) bool { return g.ID == "g1" }) {
+		t.Fatalf("the joined account group was not pushed: %+v", got.AccountGroups)
 	}
 }

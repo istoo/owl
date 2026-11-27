@@ -2,6 +2,7 @@ package filelock
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,5 +95,49 @@ func TestLockMakesFolderOnlyWhenMissing(t *testing.T) {
 	}
 	if made != 1 {
 		t.Fatalf("20 takes in a folder that is there made it %d more times", made-1)
+	}
+}
+
+// Mutex.Lock has the same contract as Lock: a wait that passes goes on
+// without the file's lock rather than hang, and says so (#M41).
+func TestMutexLockTimeoutSaysWhenItWentOnWithout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "f.json.lock")
+	m := Mutex{Path: func() string { return path }}
+	if !m.LockTimeout(time.Second) {
+		t.Fatal("not held when nothing else held it")
+	}
+	m.Unlock()
+
+	unlock, held := Lock(path, time.Second)
+	if !held {
+		t.Fatal("the test could not take the lock")
+	}
+	defer unlock()
+	m2 := Mutex{Path: func() string { return path }}
+	start := time.Now()
+	if m2.LockTimeout(50 * time.Millisecond) {
+		t.Fatal("held while another lock was held")
+	}
+	if time.Since(start) < 50*time.Millisecond {
+		t.Fatal("went on before the wait passed")
+	}
+	if m2.Held() {
+		t.Fatal("Held says the file's lock was taken")
+	}
+	m2.Unlock()
+}
+
+// LockStrict fails rather than go on without the file's lock: a write that
+// must be exclusive across owls uses it (#H43). The lock's path is under a
+// regular file here, a local synthetic failure.
+func TestMutexLockStrictFailsWhenItCannotTakeTheLock(t *testing.T) {
+	base := t.TempDir()
+	blocker := filepath.Join(base, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := Mutex{Path: func() string { return filepath.Join(blocker, "f.lock") }}
+	if err := m.LockStrictTimeout(20 * time.Millisecond); !errors.Is(err, ErrNotHeld) {
+		t.Fatalf("LockStrictTimeout = %v, want ErrNotHeld", err)
 	}
 }

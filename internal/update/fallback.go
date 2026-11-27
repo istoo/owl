@@ -126,7 +126,10 @@ func githubLatest(ctx context.Context, lang string) (*Release, error) {
 // of a SHA256SUMS.sig (signed.go's signingOn is false until owl's release
 // workflow signs), and reads it as the feed's Release.
 func githubLatestFile(ctx context.Context, base, page, lang string, files map[string]ghFile) (*Release, error) {
-	b, err := githubFile(ctx, base+feedAsset, files[feedAsset].api)
+	// latest.json names the release's files and their hashes, and is not
+	// itself signed while signingOn is false: it comes from GitHub alone,
+	// never through a mirror a user gave, which could name its own bytes.
+	b, err := githubFileOfficial(ctx, base+feedAsset, files[feedAsset].api)
 	if err != nil {
 		return nil, fmt.Errorf("the release has no %s: %w", feedAsset, err)
 	}
@@ -176,7 +179,9 @@ func githubTag(ctx context.Context) (tag, notes, page string, files map[string]g
 		return
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	res, aerr := source.Do(client, req)
+	// the tag, notes and asset list decide the version and its files, and
+	// are not signed: GitHub itself is asked, never a mirror (#C2)
+	res, aerr := source.DoOfficial(client, req)
 	if aerr == nil {
 		defer res.Body.Close()
 		if res.StatusCode == 200 {
@@ -209,7 +214,7 @@ func githubTag(ctx context.Context) (tag, notes, page string, files map[string]g
 	if err != nil {
 		return
 	}
-	pres, perr := source.Do(&c, pr)
+	pres, perr := source.DoOfficial(&c, pr)
 	if perr != nil {
 		err = fmt.Errorf("GitHub: %w", errors.Join(aerr, perr))
 		return
@@ -237,11 +242,37 @@ func githubTag(ctx context.Context) (tag, notes, page string, files map[string]g
 // that is known. Its bytes are trusted for nothing until the signature
 // over them is checked.
 func githubFile(ctx context.Context, raw, api string) (string, error) {
-	var errs []error
-	tries := []struct {
+	return githubFileTries(ctx, raw, api, true)
+}
+
+// githubFileOfficial reads a release file from GitHub alone: its github.com
+// address and the API route, never the user's mirror. The file it reads
+// describes itself (latest.json, before owl's releases carry a signature),
+// so nothing verifies bytes from a mirror there; only a file whose own
+// signature is checked may come through one.
+func githubFileOfficial(ctx context.Context, raw, api string) (string, error) {
+	return githubFileTries(ctx, raw, api, false)
+}
+
+func githubFileTries(ctx context.Context, raw, api string, allowMirror bool) (string, error) {
+	type try struct {
 		u   string
 		api bool
-	}{{mirrored(mirrorOf(ctx), raw), false}, {api, true}}
+	}
+	direct := raw
+	if allowMirror {
+		direct = mirrored(mirrorOf(ctx), raw)
+	}
+	// An unsigned file is read from the official addresses alone, with
+	// neither the user's update mirror nor the global source mirror in
+	// front of them (#C2). A signed one may come through either: its bytes
+	// are checked.
+	do := source.Do
+	if !allowMirror {
+		do = source.DoOfficial
+	}
+	tries := []try{{direct, false}, {api, true}}
+	var errs []error
 	for _, try := range tries {
 		if try.u == "" {
 			continue
@@ -253,7 +284,7 @@ func githubFile(ctx context.Context, raw, api string) (string, error) {
 		if try.api {
 			req.Header.Set("Accept", "application/octet-stream")
 		}
-		res, err := source.Do(client, req)
+		res, err := do(client, req)
 		if err != nil {
 			errs = append(errs, err)
 			continue

@@ -17,6 +17,9 @@ func ownGroup(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
+	// a session leader is its own group already, and setpgid on one is
+	// EPERM: cancelTree's Setpgid is dropped when a session is wanted
+	cmd.SysProcAttr.Setpgid = false
 	cmd.SysProcAttr.Setsid = true
 }
 

@@ -48,8 +48,21 @@ func derived(pass string, e envelope) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys[k] = key
+	rememberKey(k, key)
 	return key, nil
+}
+
+// maxKeys bounds the derived keys kept: a gateway that has synced with
+// many computers and passphrases would otherwise keep every PBKDF2 result
+// for the life of the process (#L14).
+const maxKeys = 64
+
+// rememberKey keeps a derived key, dropping the cache when it is full.
+func rememberKey(k [32]byte, key []byte) {
+	if len(keys) >= maxKeys {
+		clear(keys)
+	}
+	keys[k] = key
 }
 
 // SealData seals data under the passphrase, as Seal does a bundle.

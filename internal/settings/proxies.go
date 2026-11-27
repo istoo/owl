@@ -192,6 +192,27 @@ func rememberProxyNames(m map[string]string, ps []NamedProxy) map[string]string 
 	return m
 }
 
+// WithoutProxyLogin is an inline proxy choice with a login left out:
+// socks5://user:pass@host:1080 becomes socks5://host:1080. A saved proxy's
+// reference ("@id") and a choice with no login are returned as they are;
+// the saved proxy's password travels (or not) with Proxies.
+func WithoutProxyLogin(choice string) string {
+	t := strings.TrimSpace(choice)
+	if t == "" || t == "direct" || IsProxyRef(t) {
+		return choice
+	}
+	u, err := url.Parse(withScheme(t))
+	if err != nil || u.User == nil {
+		return choice
+	}
+	u.User = nil
+	out := u.String()
+	if !strings.Contains(t, "://") {
+		out = strings.TrimPrefix(out, "http://")
+	}
+	return out
+}
+
 // WithoutProxyPasswords is ps with each password left out: what goes
 // where credentials don't.
 func WithoutProxyPasswords(ps []NamedProxy) []NamedProxy {
@@ -240,13 +261,13 @@ func MergeProxies(cur, in []NamedProxy, keys bool) []NamedProxy {
 }
 
 // RestoreProxies puts the proxies another computer sent into this one's
-// (MergeProxies), where a restore or a sync brings them.
+// (MergeProxies), where a restore or a sync brings them. It is merged with
+// what the file holds under its lock, so a save made meanwhile keeps every
+// field it changed.
 func RestoreProxies(in []NamedProxy, keys bool) error {
-	s := Load()
-	merged := MergeProxies(s.Proxies, in, keys)
-	if slices.Equal(merged, s.Proxies) {
+	_, err := Update(func(s *Settings) error {
+		s.Proxies = MergeProxies(s.Proxies, in, keys)
 		return nil
-	}
-	s.Proxies = merged
-	return Save(s)
+	})
+	return err
 }

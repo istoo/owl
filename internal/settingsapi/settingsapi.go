@@ -135,25 +135,38 @@ func Body(cur settings.Settings, key string, value json.RawMessage) ([]byte, err
 // tray menu and alerts). web is a page served to a browser, whose fonts are
 // another computer's and never saved.
 func Apply(body []byte, web bool) (in, cur settings.Settings, err error) {
-	// Unreadable settings are never carried as the defaults (an empty
-	// allow list, every address let in): Save would refuse them too.
-	cur, err = settings.LoadChecked()
-	if err != nil {
-		return in, cur, err
+	// The body is merged with what the file holds and saved only if the
+	// file still holds that, under settings' own lock: a CLI or another
+	// route that changed a field meanwhile makes the save a no-op, and the
+	// merge is redone over the newer file, so neither change is lost
+	// (#H43). Merge resolves models through settings, which cannot run
+	// inside the lock those reads take.
+	for try := 0; try < 10; try++ {
+		// Unreadable settings are never carried as the defaults (an empty
+		// allow list, every address let in): the save refuses them too.
+		cur, err = settings.LoadChecked()
+		if err != nil {
+			return in, cur, err
+		}
+		in, err = Merge(body, cur, web)
+		if err != nil {
+			return in, cur, err
+		}
+		saved, ok, err := settings.SaveIfUnchanged(cur, in)
+		if err != nil {
+			return in, cur, err
+		}
+		if !ok {
+			continue
+		}
+		// whether agents are told every model takes images follows Vision
+		// (provider.Described)
+		if strings.TrimSpace(saved.Vision) != strings.TrimSpace(cur.Vision) {
+			catalog.Touched()
+		}
+		return saved, cur, nil
 	}
-	in, err = Merge(body, cur, web)
-	if err != nil {
-		return in, cur, err
-	}
-	if err := settings.Save(in); err != nil {
-		return in, cur, err
-	}
-	// whether agents are told every model takes images follows Vision
-	// (provider.Described)
-	if strings.TrimSpace(in.Vision) != strings.TrimSpace(cur.Vision) {
-		catalog.Touched()
-	}
-	return in, cur, nil
+	return in, cur, fmt.Errorf("the settings were being saved by another owl; try again")
 }
 
 // Merge is the settings body sets over cur: the page's own choices from

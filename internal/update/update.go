@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -201,7 +202,10 @@ func latestFrom(ctx context.Context, feed, lang string) (*Release, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := source.Do(client, req)
+	// the feed decides the version and each file's hash, and is unsigned
+	// while signingOn is false: it is read from its own address, never
+	// through a mirror (#C2)
+	res, err := source.DoOfficial(client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -454,26 +458,98 @@ func Stage(ctx context.Context, rel *Release, bundle string) (string, error) {
 }
 
 // sameSigner accepts app only if its signature is intact and made by the
-// team that signed the bundle it replaces.
+// identity that signed the bundle it replaces: the same team, or, for an
+// app signed with a certificate that names no team (istoo/owl's own
+// self-signed build), the same certificate. Two empty team identifiers are
+// not a match (#M41): an ad-hoc signature is accepted only when the
+// installed app is ad-hoc too, which is a build made on this computer, not
+// a downloaded one.
 func sameSigner(ctx context.Context, bundle, app string) error {
 	if b, err := proc.CommandContext(ctx, "codesign", "--verify", "--deep", "--strict", app).CombinedOutput(); err != nil {
 		return fmt.Errorf("the downloaded app's signature is broken: %s", strings.TrimSpace(string(b)))
 	}
-	want, got := team(ctx, bundle), team(ctx, app)
-	if want != got {
-		return fmt.Errorf("the downloaded app is signed by %q, not %q", got, want)
-	}
-	return nil
+	return sameSignerCheck(signerOf(ctx, bundle), signerOf(ctx, app))
 }
 
-func team(ctx context.Context, app string) string {
-	b, _ := proc.CommandContext(ctx, "codesign", "-dv", app).CombinedOutput()
+// signerID is what an app's signature says of who made it.
+type signerID struct {
+	team  string // TeamIdentifier, when the certificate names one
+	cert  string // SHA-256 of the signing certificate, else
+	adhoc bool   // Signature=adhoc: no certificate at all
+}
+
+func (s signerID) String() string {
+	switch {
+	case s.team != "":
+		return "the team " + s.team
+	case s.cert != "":
+		return "the certificate " + s.cert
+	case s.adhoc:
+		return "an ad-hoc signature"
+	}
+	return "no signing identity"
+}
+
+// sameSignerCheck is the decision sameSigner makes, apart from codesign.
+func sameSignerCheck(want, got signerID) error {
+	if want.team != "" || got.team != "" {
+		if want.team == "" || want.team != got.team {
+			return fmt.Errorf("the downloaded app is signed by %s, not by %s", got, want)
+		}
+		return nil
+	}
+	if want.cert != "" || got.cert != "" {
+		if want.cert == "" || !strings.EqualFold(want.cert, got.cert) {
+			return fmt.Errorf("the downloaded app is signed with %s, not with %s", got, want)
+		}
+		return nil
+	}
+	if want.adhoc && got.adhoc {
+		// both made here: no certificate identifies either
+		return nil
+	}
+	return fmt.Errorf("the downloaded app is %s, and the installed one is %s", got, want)
+}
+
+// signerOf is what codesign says of app's signer.
+func signerOf(ctx context.Context, app string) signerID {
+	b, _ := proc.CommandContext(ctx, "codesign", "-dv", "--verbose=4", app).CombinedOutput()
+	var s signerID
 	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "TeamIdentifier="); ok && v != "not set" {
-			return v
+		l = strings.TrimSpace(l)
+		if v, ok := strings.CutPrefix(l, "TeamIdentifier="); ok && v != "" && v != "not set" {
+			s.team = v
+		}
+		if l == "Signature=adhoc" {
+			s.adhoc = true
 		}
 	}
-	return ""
+	if s.team == "" {
+		s.cert = certificateHash(ctx, app)
+	}
+	return s
+}
+
+// certificateHash is the SHA-256 of app's leaf signing certificate, "" when
+// codesign has none to extract (an ad-hoc signature has no certificate).
+func certificateHash(ctx context.Context, app string) string {
+	dir, err := os.MkdirTemp("", "owl-signer")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(dir)
+	prefix := filepath.Join(dir, "cert")
+	// the prefix is given as one argument with the option; codesign reads
+	// a separate word as the path to display
+	if _, err := proc.CommandContext(ctx, "codesign", "-d", "--extract-certificates="+prefix, app).CombinedOutput(); err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(prefix + "0")
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // stagedName is what the new app is unpacked as in stageDir, and asideName
@@ -668,16 +744,19 @@ func relaunchOpen(bundle string, window, quiet bool) string {
 	return openCommand(bundle, window, quiet)
 }
 
-// openCommand is the open of relaunchOpen and openBeside.
+// openCommand is the open of relaunchOpen and openBeside. The bundle is
+// quoted for /bin/sh: it runs inside a shell command, and %q's double
+// quotes let `$(...)`, backticks and $VAR in a path be expanded by that
+// shell (#C4).
 func openCommand(bundle string, window, quiet bool) string {
 	g := ""
 	if quiet || !window {
 		g = "-g "
 	}
 	if window {
-		return fmt.Sprintf("open -n %s%q", g, bundle)
+		return fmt.Sprintf("open -n %s%s", g, shellQuote(bundle))
 	}
-	return fmt.Sprintf("open -n %s%q --args tray", g, bundle)
+	return fmt.Sprintf("open -n %s%s --args tray", g, shellQuote(bundle))
 }
 
 // ReplaceBinary puts the release's build for this binary where the
@@ -1144,11 +1223,35 @@ func fileHash(path string) string {
 
 // InstallBinaryAsAdmin is InstallBinary with the administrator's password.
 func InstallBinaryAsAdmin(staged, exe string) error {
-	err := asAdmin("mv -f " + shellQuote(staged) + " " + shellQuote(exe))
-	if err != nil && !errors.Is(err, ErrCanceled) {
+	err := asAdmin(installBinaryAsAdminScript(staged, exe))
+	if err == nil {
+		// the download is kept until the swap has gone through: a failed
+		// or cancelled install leaves nothing to go back to otherwise
 		os.Remove(staged)
 	}
 	return err
+}
+
+// installBinaryAsAdminScript copies the download to a temporary file made
+// exclusively in exe's folder, then renames it over exe. A cross-filesystem
+// mv -f that is interrupted leaves a truncated or missing exe (the cache
+// and /usr/local/bin are often on different partitions); the copy is made
+// in the destination's folder, then the replacement is one rename on that
+// filesystem (#H49).
+//
+// The temporary name comes from mktemp, so two installs never share one.
+// Copying exe onto it first, with -p, gives it exe's mode and owner (which
+// run as root keeps), not the downloader's; the download's bytes are then
+// copied into that file, whose metadata is left as it is. An exe that isn't
+// there has no metadata to keep, so the download's own is used.
+func installBinaryAsAdminScript(staged, exe string) string {
+	tmpl := filepath.Join(filepath.Dir(exe), filepath.Base(exe)+".owl-new.XXXXXX")
+	s, t, e := shellQuote(staged), shellQuote(tmpl), shellQuote(exe)
+	fail := "{ rm -f \"$tmp\"; exit 1; }"
+	return "tmp=$(mktemp " + t + ") || exit 1; " +
+		"if [ -f " + e + " ]; then cp -p " + e + " \"$tmp\" || " + fail + "; cp " + s + " \"$tmp\" || " + fail + "; " +
+		"else cp -p " + s + " \"$tmp\" || " + fail + "; fi; " +
+		"mv -f \"$tmp\" " + e + " || " + fail
 }
 
 // RelaunchBinary starts exe again: with its window on view when window is
@@ -1668,20 +1771,139 @@ func (rel *Release) githubAddresses() {
 
 // zipSafe refuses a download with an entry that leaves the folder it is
 // unpacked into: ditto writes the bundle before sameSigner checks it, so
-// ../x or an absolute name would be written first (#4134).
+// ../x, an absolute name, a trailing /.. or a link out of the folder would
+// be written first (#4134, #C3).
 func zipSafe(path string) error {
 	z, err := zip.OpenReader(path)
 	if err != nil {
 		return fmt.Errorf("the download isn't a zip: %w", err)
 	}
 	defer z.Close()
+	type node struct {
+		name string // as zipSafe reads a path: slashes, no trailing /
+		dir  bool
+		link string // a symlink's target, "" otherwise
+	}
+	var nodes []node
+	links, files := map[string]string{}, map[string]node{}
 	for _, f := range z.File {
 		name := f.Name
 		slash := strings.ReplaceAll(name, `\`, "/")
-		if name == "" || filepath.IsAbs(name) || slash == ".." ||
-			strings.HasPrefix(slash, "../") || strings.Contains(slash, "/../") {
+		key := strings.TrimSuffix(slash, "/")
+		if name == "" || key == "" || strings.HasPrefix(slash, "/") || slash == ".." ||
+			strings.HasPrefix(slash, "../") || strings.Contains(slash, "/../") ||
+			strings.HasSuffix(slash, "/..") ||
+			!filepath.IsLocal(filepath.FromSlash(key)) {
 			return fmt.Errorf("the download has an entry outside it: %q", name)
+		}
+		if _, twice := files[key]; twice {
+			// one name twice is ambiguous: which bytes land is the
+			// extractor's choice
+			return fmt.Errorf("the download has the entry %q twice", name)
+		}
+		n := node{name: key, dir: strings.HasSuffix(name, "/") || f.Mode().IsDir()}
+		if f.Mode()&os.ModeSymlink != 0 {
+			target, err := zipLinkTarget(f)
+			if err != nil {
+				return fmt.Errorf("the download's link %q can't be read: %w", name, err)
+			}
+			n.link = strings.ReplaceAll(target, `\`, "/")
+			links[key] = n.link
+		}
+		nodes = append(nodes, n)
+		files[key] = n
+	}
+	// Every entry's final path is resolved through the archive's own links,
+	// not only the link's text: a link to a link, or a path written through
+	// one, is judged where it ends. A path written under a link or a file
+	// is ambiguous, and refused.
+	for _, n := range nodes {
+		final, err := resolveZipPath(n.name, links, 0)
+		if err != nil {
+			return fmt.Errorf("the download's entry %q: %w", n.name, err)
+		}
+		if final != "." && !filepath.IsLocal(filepath.FromSlash(final)) {
+			return fmt.Errorf("the download's entry %q resolves to %q, outside it", n.name, final)
+		}
+		parts := strings.Split(n.name, "/")
+		for i := 1; i < len(parts); i++ {
+			anc := strings.Join(parts[:i], "/")
+			if a, ok := files[anc]; ok {
+				if a.link != "" {
+					return fmt.Errorf("the download writes %q through the link %q", n.name, anc)
+				}
+				if !a.dir {
+					return fmt.Errorf("the download writes %q under the file %q", n.name, anc)
+				}
+			}
 		}
 	}
 	return nil
+}
+
+// maxLink bounds a symlink's target, which is a path, not a file.
+const maxLink = 4096
+
+// zipLinkTarget reads a symlink entry's target.
+func zipLinkTarget(f *zip.File) (string, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(io.LimitReader(rc, maxLink+1))
+	if err != nil {
+		return "", err
+	}
+	if len(b) > maxLink {
+		return "", fmt.Errorf("the target is too long")
+	}
+	target := strings.ReplaceAll(string(b), `\`, "/")
+	if target == "" {
+		return "", fmt.Errorf("the link names nothing")
+	}
+	if strings.HasPrefix(target, "/") || pathpkg.IsAbs(target) {
+		return "", fmt.Errorf("the link is absolute: %q", b)
+	}
+	return target, nil
+}
+
+// resolveZipPath is path as it lands after following the archive's links:
+// a link is replaced by its target taken from its own folder, and what
+// follows it is resolved from there. A path that climbs out of the unpack
+// folder, or a chain of links that never ends, is an error.
+func resolveZipPath(p string, links map[string]string, depth int) (string, error) {
+	if depth > 40 {
+		return "", fmt.Errorf("the links never end")
+	}
+	parts := strings.Split(p, "/")
+	out := []string{}
+	for i, c := range parts {
+		switch c {
+		case "", ".":
+			continue
+		case "..":
+			if len(out) == 0 {
+				return "", fmt.Errorf("it climbs outside the download")
+			}
+			out = out[:len(out)-1]
+			continue
+		}
+		out = append(out, c)
+		cur := strings.Join(out, "/")
+		target, linked := links[cur]
+		if !linked {
+			continue
+		}
+		rest := strings.Join(parts[i+1:], "/")
+		joined := pathpkg.Join(pathpkg.Dir(cur), target)
+		if rest != "" {
+			joined = pathpkg.Join(joined, rest)
+		}
+		return resolveZipPath(joined, links, depth+1)
+	}
+	if len(out) == 0 {
+		return ".", nil
+	}
+	return strings.Join(out, "/"), nil
 }

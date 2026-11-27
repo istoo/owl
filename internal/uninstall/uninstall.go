@@ -251,6 +251,7 @@ func Data(r *Report) {
 	// is owl's is over there, and deleting the link alone would leave every
 	// file behind (#79)
 	place := appdir.Where()
+	home, _ := os.UserHomeDir()
 	for _, p := range remove {
 		d := Done{What: p}
 		at := p
@@ -259,6 +260,29 @@ func Data(r *Report) {
 			at = place.ConfigAt
 		case samePath(p, place.Cache) && place.CacheAt != "":
 			at = place.CacheAt
+		}
+		// The link followed may have been made by hand to something that
+		// isn't owl's, and RemoveAll follows it: check the folder actually
+		// removed, not only the link's path (#H48).
+		if !removable(at, home) {
+			d.Err = fmt.Sprintf("refusing to remove %s: it isn't one of owl's folders", at)
+			r.Data = append(r.Data, d)
+			continue
+		}
+		// A link to a folder owl moved its files into carries the marker
+		// Move writes. Without it, the folder is the user's (a hand-made
+		// link to a dotfiles or data folder): only the link goes, never
+		// its files (#H48).
+		if at != p && !appdir.MovedOwns(at) {
+			var lerr error
+			if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+				lerr = err
+				d.Err = lerr.Error()
+				r.Data = append(r.Data, d)
+			} else {
+				r.Kept = append(r.Kept, Done{What: at, Err: "left as it is: owl didn't move its files there, so only the link was removed"})
+			}
+			continue
 		}
 		var err error
 		if keep != "" && within(keep, p) {

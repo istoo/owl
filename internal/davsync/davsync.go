@@ -732,8 +732,9 @@ func keepAside(data []byte, tag string, n int) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	name := filepath.Join(dir, time.Now().Format("2006-01-02-150405")+"-"+tag+backup.Ext)
+	name := asideFile(dir, tag, time.Now())
 	if err := edit.WriteAtomicMode(name, data, 0o600); err != nil {
+		os.Remove(name) // the reservation asideFile made
 		return err
 	}
 	os.Chmod(name, 0o600)
@@ -744,6 +745,28 @@ func keepAside(data []byte, tag string, n int) error {
 		old = old[1:]
 	}
 	return nil
+}
+
+// asideFile is the name keepAside writes at now: its milliseconds told
+// apart two kept inside one second, and a name already taken (the same
+// millisecond) gets a number of its own, so a kept copy is never written
+// over (#L14).
+func asideFile(dir, tag string, now time.Time) string {
+	base := now.Format("2006-01-02-150405.000")
+	name := filepath.Join(dir, base+"-"+tag+backup.Ext)
+	for n := 2; ; n++ {
+		// O_EXCL reserves the name: two kept in the same millisecond, by
+		// two syncs or a restore, get names of their own
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			f.Close()
+			return name
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return name // the write that follows reports why
+		}
+		name = filepath.Join(dir, fmt.Sprintf("%s-%d-%s%s", base, n, tag, backup.Ext))
+	}
 }
 
 func sum(b []byte) string {
@@ -1286,33 +1309,49 @@ func bring(b backup.Bundle, part string) error {
 // wins; the default key (LAN) follows the folder's settings either way.
 // This runs on the first sync alone: afterwards absence from a store this
 // computer has seen means a removal, which must go from every computer.
-func keepUnseenGatewayKeys(remote *backup.Bundle, local backup.Bundle) {
+// The account groups it holds are added the same way. What is added must
+// reach the push as well as the store brought in: the sync writes merged,
+// and a part changed only on the server is brought in whole, so a group or
+// key omitted from merged is lost on the next sync (#H46).
+func keepUnseenGatewayKeys(merged *backup.Bundle, local backup.Bundle) {
 	// the account groups this computer's keys may name, by id, the same
 	// way (LeiWang_2000 on X): one the folder holds is the folder's
 	if local.AccountGroups != nil && len(*local.AccountGroups) > 0 {
-		if remote.AccountGroups == nil {
-			remote.AccountGroups = &[]access.AccountGroup{}
+		groups := []access.AccountGroup{}
+		if merged.AccountGroups != nil {
+			groups = slices.Clone(*merged.AccountGroups)
 		}
 		for _, g := range *local.AccountGroups {
-			if !slices.ContainsFunc(*remote.AccountGroups, func(o access.AccountGroup) bool { return o.ID == g.ID }) {
-				*remote.AccountGroups = append(*remote.AccountGroups, g)
+			if !slices.ContainsFunc(groups, func(o access.AccountGroup) bool { return o.ID == g.ID }) {
+				groups = append(groups, g)
 			}
 		}
+		merged.AccountGroups = &groups
 	}
-	if local.GatewayKeys == nil || len(*local.GatewayKeys) == 0 || remote.GatewayKeys == nil {
+	if local.GatewayKeys == nil || len(*local.GatewayKeys) == 0 {
 		return
 	}
+	// no store in the folder yet (an older owl's file, or none was ever
+	// written): the keys this computer holds are the first it has
+	out := []access.Key{}
+	if merged.GatewayKeys != nil {
+		out = append(out, *merged.GatewayKeys...)
+	}
 	seen := map[string]bool{}
-	for _, k := range *remote.GatewayKeys {
+	for _, k := range out {
 		seen[k.ID], seen[k.Secret] = true, true
 	}
 	for _, k := range *local.GatewayKeys {
 		if k.LAN || k.Secret == "" || seen[k.ID] || seen[k.Secret] {
 			continue
 		}
-		*remote.GatewayKeys = append(*remote.GatewayKeys, k)
+		out = append(out, k)
 		seen[k.ID], seen[k.Secret] = true, true
 	}
+	if len(out) == 0 && merged.GatewayKeys == nil {
+		return
+	}
+	merged.GatewayKeys = &out
 }
 
 // syncOnce syncs once. With pv, it is a preview: the server's file is
@@ -1515,7 +1554,7 @@ func syncOnce(ctx context.Context, c Config, st *state, pv *Plan) error {
 	}
 	// R compares with the last sync as its hashes were; Rafter is the
 	// server's file as this sync leaves it read, both before the merge
-	// below changes remote (a join's unseen gateway keys)
+	// below builds merged (a join's unseen gateway keys included there)
 	R, Rafter := hashesOwn(remote, prev), hashesOwn(remote, afterW)
 	first := st.Local == nil
 	// plugins removed on one side since the last sync: gone from the other
@@ -1585,7 +1624,12 @@ func syncOnce(ctx context.Context, c Config, st *state, pv *Plan) error {
 			there = append(there, p)
 		case rc && !lc:
 			if first && p == "settings" {
+				// the parts are brought in from remote below, and the
+				// push is built from merged: both need the unseen store,
+				// and a nil pointer replaced in remote is not seen through
+				// merged's copy of it (#H46)
 				keepUnseenGatewayKeys(&remote, local)
+				merged.AccountGroups, merged.GatewayKeys = remote.AccountGroups, remote.GatewayKeys
 			}
 			bringIn = append(bringIn, p)
 			if first {

@@ -28,7 +28,13 @@ func fakes(t *testing.T, os_ string) (log, dir string) {
 		t.Skip("the fakes are shell scripts")
 	}
 	prev, prevSelf, prevAuto, prevWiden := goos, self, autostartEnabled, widenPath
-	t.Cleanup(func() { goos, self, autostartEnabled, widenPath = prev, prevSelf, prevAuto, prevWiden })
+	prevWait, prevPoll := unloadWait, unloadPoll
+	t.Cleanup(func() {
+		goos, self, autostartEnabled, widenPath = prev, prevSelf, prevAuto, prevWiden
+		unloadWait, unloadPoll = prevWait, prevPoll
+	})
+	// the fake keeps saying the agent is loaded; no test waits out the poll
+	unloadWait = 0
 	// the login shell of whoever runs the tests is no test's PATH
 	widenPath = func() {}
 	goos = os_

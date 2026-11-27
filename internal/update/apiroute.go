@@ -55,7 +55,9 @@ func apiRoute(ctx context.Context, a Asset) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	res, err := source.Do(client, req)
+	// the answer names the file's address, unsigned: GitHub itself is
+	// asked, never a mirror (#C2)
+	res, err := source.DoOfficial(client, req)
 	if err != nil {
 		return "", err
 	}

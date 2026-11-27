@@ -44,15 +44,34 @@ func (t *Tree) Wait() error {
 	return err
 }
 
-// Kill ends the command and every process of its tree.
+// groupWait is how long Kill and Stop wait for the group to be gone before
+// returning: a signal to a group is quick, and a group that won't go (or
+// whose leader no one is waiting for yet) must not hold the caller.
+var groupWait = 2 * time.Second
+
+// Kill ends the command and every process of its tree, and waits a moment
+// for the group to be gone. It does not keep the tree's lock while it
+// waits: Wait must be able to reap the leader, which is what lets a Unix
+// group's kill see it is gone (#M41).
 func (t *Tree) Kill() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.done {
+		t.mu.Unlock()
 		return
 	}
-	_ = t.kill(t.cmd)
+	gone := t.kill(t.cmd)
 	_ = t.cmd.Process.Kill()
+	t.mu.Unlock()
+	waitGone(gone)
+}
+
+// waitGone waits for a group's kill to see its processes gone, at most
+// groupWait.
+func waitGone(gone <-chan struct{}) {
+	select {
+	case <-gone:
+	case <-time.After(groupWait):
+	}
 }
 
 // Stop asks the command to end, so it can clean up first, and ends its tree
@@ -64,19 +83,27 @@ func (t *Tree) Kill() {
 // ended. A tree no one Waits for is killed after grace.
 func (t *Tree) Stop(grace time.Duration) <-chan struct{} {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.stopped != nil {
-		return t.stopped
+		stopped := t.stopped
+		t.mu.Unlock()
+		return stopped
 	}
 	t.stopped = make(chan struct{})
 	if t.done || t.term(t.cmd) != nil {
+		var gone <-chan struct{}
 		if !t.done {
-			_ = t.kill(t.cmd)
+			gone = t.kill(t.cmd)
 			_ = t.cmd.Process.Kill()
+		}
+		t.mu.Unlock()
+		// the channel closes once the tree is ended, not merely asked
+		if gone != nil {
+			waitGone(gone)
 		}
 		close(t.stopped)
 		return t.stopped
 	}
+	t.mu.Unlock()
 	go func() {
 		defer close(t.stopped)
 		select {

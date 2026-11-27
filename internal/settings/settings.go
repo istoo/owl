@@ -28,6 +28,7 @@ import (
 	"github.com/istoo/owl/internal/capre"
 	"github.com/istoo/owl/internal/catalog"
 	"github.com/istoo/owl/internal/edit"
+	"github.com/istoo/owl/internal/filelock"
 	"github.com/istoo/owl/internal/filememo"
 	"github.com/istoo/owl/internal/fonts"
 	"github.com/istoo/owl/internal/lastgood"
@@ -1958,13 +1959,34 @@ var fileMu sync.RWMutex
 // held second would be written over. Only set or read under fileMu.
 var writing bool
 
-// lockFile takes fileMu for a write, and returns what lets it go.
+// fileLock is settings.json's lock across the owls on a computer. A write is
+// made from what is read after it is held, so a GUI and a CLI saving at once
+// don't write over each other's fields (#H43). It is taken before fileMu, so
+// a read here is never held up by a write waiting on another owl.
+var fileLock = &filelock.Mutex{
+	Path:   func() string { return Path() + ".lock" },
+	Locked: filememo.Forget,
+}
+
+// writeLockErr is set while fileMu is held for a write whose cross-process
+// lock couldn't be taken: the save then refuses rather than run beside
+// another owl (see saveOwn). Only set or read under fileMu.
+var writeLockErr error
+
+// lockFile takes fileLock and fileMu for a write, and returns what lets
+// them go. A write that can't have the file's lock does not write: the
+// setters read as usual, and save/saveOwn returns writeLockErr.
 func lockFile() (unlock func()) {
+	err := fileLock.LockStrict()
 	fileMu.Lock()
-	writing = true
+	writing, writeLockErr = true, err
 	return func() {
+		writeLockErr = nil
 		writing = false
 		fileMu.Unlock()
+		if err == nil {
+			fileLock.Unlock()
+		}
 	}
 }
 
@@ -2268,11 +2290,33 @@ func Save(s Settings) error {
 	return save(s, false)
 }
 
+// SaveIfUnchanged saves s only when the file still holds was, under the
+// file's own lock; ok is false when another owl or route saved in between,
+// and the caller reads again and redoes its change. It is for a change
+// whose merging reads settings (resolving a model, catalog lookups): such
+// a change cannot run inside Update's lock, which those readers need.
+func SaveIfUnchanged(was, s Settings) (saved Settings, ok bool, err error) {
+	defer lockFile()()
+	cur, err := loadChecked()
+	if err != nil {
+		return Settings{}, false, err
+	}
+	if !reflect.DeepEqual(cur, was) {
+		return Settings{}, false, nil
+	}
+	if err := save(s, false); err != nil {
+		return Settings{}, false, err
+	}
+	return load(), true, nil
+}
+
 // Update changes the settings as they are stored now, under the file's own
 // lock: fn is given what the file holds as this is called, not a copy a
 // request read before, and what it changes is saved. Two routes changing
 // one field each at once therefore both stand: neither writes over the
-// other's change with a snapshot read before it (a lost update).
+// other's change with a snapshot read before it (a lost update). fn must
+// not read settings again (Load, Shared): this holds the lock those reads
+// take; a change that must read them uses SaveIfUnchanged instead.
 func Update(fn func(*Settings) error) (Settings, error) {
 	defer lockFile()()
 	s, err := loadChecked()
@@ -2423,7 +2467,7 @@ func SetRouterNote(note string) error {
 		return err
 	}
 	s.RouterNote = CleanRouterNote(note)
-	return save(s, true)
+	return save(s, false)
 }
 
 // SetRouterAllTools sets RouterAllTools alone, from what the file holds
@@ -2435,7 +2479,7 @@ func SetRouterAllTools(on bool) error {
 		return err
 	}
 	s.RouterAllTools = on
-	return save(s, true)
+	return save(s, false)
 }
 
 // TakeStable puts UpdateChannel on Stable when no channel is set, from
@@ -2608,6 +2652,9 @@ func save(s Settings, recording bool) error { return saveOwn(s, recording, false
 // saveOwn is save; reads says s's SessionReads is the one to write, where
 // any other save keeps the file's.
 func saveOwn(s Settings, recording, reads bool) error {
+	if writeLockErr != nil {
+		return fmt.Errorf("couldn't lock the settings file: %w", writeLockErr)
+	}
 	defer filememo.Forget() // read again, where a request holds it
 	// what is written is settled: a Settings read from an older file was
 	// settled as it was read, and one made without reading has its Dock

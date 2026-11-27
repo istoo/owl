@@ -275,6 +275,15 @@ func Collect(keys bool, app string) (Bundle, error) {
 			s.OTel.Headers = nil
 			s.GitHubToken = ""
 			s.BarkKey = ""
+			// a proxy typed as socks5://user:pass@host is a password in
+			// clear, in a file that isn't sealed when keys aren't carried
+			// (#H45)
+			s.Proxy = settings.WithoutProxyLogin(s.Proxy)
+			s.ProxyCustom = settings.WithoutProxyLogin(s.ProxyCustom)
+			s.PluginProxy = settings.WithoutProxyLogin(s.PluginProxy)
+			s.PluginProxyCustom = settings.WithoutProxyLogin(s.PluginProxyCustom)
+			s.UpdateProxy = settings.WithoutProxyLogin(s.UpdateProxy)
+			s.UpdateProxyCustom = settings.WithoutProxyLogin(s.UpdateProxyCustom)
 		}
 		b.Settings = &s
 	}
@@ -553,41 +562,70 @@ func Restore(b Bundle, parts Parts) (Result, error) {
 	}
 	if parts.Settings && (b.Settings != nil || b.GatewayKeys != nil) {
 		keys := b.scopedKeys("settings")
-		// the window's size, the proxy, the menu bar's usage are this machine's own
-		cur := settings.Load()
-		s := cur
-		if b.Settings != nil {
-			s = *b.Settings
+		// The restored settings are merged with what the file holds at the
+		// moment of the save, under settings' lock: a field another route
+		// or CLI changed meanwhile is kept, not written over from this
+		// read (#H43).
+		// An older backup may carry a marker without its named-key store;
+		// the store is read before settings' lock, which its own readers
+		// may want (they take settings' read lock under theirs).
+		lanKeyThere := false
+		if keys && b.GatewayKeys == nil {
+			listed, lerr := access.List()
+			if lerr != nil {
+				return r, lerr
+			}
+			lanKeyThere = slices.ContainsFunc(listed, func(k access.Key) bool { return k.LAN })
 		}
-		s.KeepOwn(cur)
-		if !keys {
-			s.LANKey, s.LANKeyID = cur.LANKey, cur.LANKeyID
-			s.GitHubToken = cur.GitHubToken
-			s.BarkKey = cur.BarkKey
-			s.OTel.Headers = nil
-			if strings.TrimRight(strings.TrimSpace(s.OTel.Endpoint), "/") == cur.OTel.Endpoint {
-				s.OTel.Headers = cur.OTel.Headers
+		var cur settings.Settings
+		restored, err := settings.Update(func(s *settings.Settings) error {
+			cur = *s
+			merged := cur
+			if b.Settings != nil {
+				merged = *b.Settings
 			}
-		} else if b.GatewayKeys == nil {
-			// An older backup may carry a marker without its named-key store.
-			s.LANKeyID = ""
-			keys, err := access.List()
-			if err != nil {
-				return r, err
+			// the window's size, the proxy, the menu bar's usage are this machine's own
+			merged.KeepOwn(cur)
+			if !keys {
+				merged.LANKey, merged.LANKeyID = cur.LANKey, cur.LANKeyID
+				merged.GitHubToken = cur.GitHubToken
+				merged.BarkKey = cur.BarkKey
+				merged.OTel.Headers = nil
+				if strings.TrimRight(strings.TrimSpace(merged.OTel.Endpoint), "/") == cur.OTel.Endpoint {
+					merged.OTel.Headers = cur.OTel.Headers
+				}
+			} else if b.GatewayKeys == nil {
+				// An older backup may carry a marker without its named-key store.
+				merged.LANKeyID = ""
+				if lanKeyThere {
+					// Its missing store must not detach this machine's default key.
+					merged.LANKey, merged.LANKeyID = cur.LANKey, cur.LANKeyID
+				}
 			}
-			if slices.ContainsFunc(keys, func(k access.Key) bool { return k.LAN }) {
-				// Its missing store must not detach this machine's default key.
-				s.LANKey, s.LANKeyID = cur.LANKey, cur.LANKeyID
-			}
-		}
-		if err := settings.Save(s); err != nil {
+			*s = merged
+			return nil
+		})
+		if err != nil {
 			return r, err
+		}
+		// put back what was there before the restore read it, but only
+		// if the file still holds what the restore wrote: a save made
+		// meanwhile is not written over by an older snapshot (#H43)
+		rollback := func() error {
+			_, ok, uerr := settings.SaveIfUnchanged(restored, cur)
+			if uerr != nil {
+				return uerr
+			}
+			if !ok {
+				return errors.New("the settings changed meanwhile; not writing the old ones over them")
+			}
+			return nil
 		}
 		// the groups before the keys that name them
 		if keys && b.AccountGroups != nil {
 			if err := access.RestoreGroups(*b.AccountGroups); err != nil {
-				if rollback := settings.Save(cur); rollback != nil {
-					return r, errors.Join(err, fmt.Errorf("could not restore original settings after account-group restore failed: %w", rollback))
+				if rerr := rollback(); rerr != nil {
+					return r, errors.Join(err, fmt.Errorf("could not restore original settings after account-group restore failed: %w", rerr))
 				}
 				return r, err
 			}
@@ -596,8 +634,8 @@ func Restore(b Bundle, parts Parts) (Result, error) {
 			if err := access.Restore(*b.GatewayKeys); err != nil {
 				// Settings must be writable before replacing credentials. If the
 				// store refuses the write, restore their original association.
-				if rollback := settings.Save(cur); rollback != nil {
-					return r, errors.Join(err, fmt.Errorf("could not restore original settings after gateway-key restore failed: %w", rollback))
+				if rerr := rollback(); rerr != nil {
+					return r, errors.Join(err, fmt.Errorf("could not restore original settings after gateway-key restore failed: %w", rerr))
 				}
 				return r, err
 			}

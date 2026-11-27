@@ -54,6 +54,24 @@ const (
 	moveResult = "move-result.json" // in Config: why the last one wasn't made
 )
 
+// MovedMark is the file owl writes in a folder it moved its files into. It
+// is what tells uninstall that the folder behind a link is owl's, not one
+// the user pointed the link at by hand (#H48).
+const MovedMark = ".owl-moved"
+
+// MovedOwns says whether dir is a folder owl moved its files into: it holds
+// the marker Move writes. A folder without it is never deleted through a
+// link; only the link goes, and its files stay.
+func MovedOwns(dir string) bool {
+	fi, err := os.Stat(filepath.Join(dir, MovedMark))
+	return err == nil && fi.Mode().IsRegular()
+}
+
+// markMoved writes the marker into dir, after a move into it succeeded.
+func markMoved(dir string) error {
+	return os.WriteFile(filepath.Join(dir, MovedMark), []byte("owl's files are kept here\n"), 0o600)
+}
+
 // Place is where owl's folders are.
 type Place struct {
 	Config   string `json:"config"`             // where owl reaches its files (~/.config/owl)
@@ -264,7 +282,37 @@ func Move(root string) error {
 		return err
 	}
 	if err := moveOne(cache, cacheTo); err != nil {
+		// put the settings folder back: half a move leaves owl reading one
+		// folder here and the other there, and a retry can't tell which
+		// half is new (#M41)
+		var back error
+		switch {
+		case root != "":
+			// cfg is now a link to cfgTo: moveOne(cfg, cfg) brings it home
+			back = moveOne(cfg, cfg)
+		case prev != "":
+			// moved home from another disk: put it back on that disk,
+			// with its link here, as it was
+			back = moveOne(cfg, prev)
+		}
+		if back != nil {
+			return errors.Join(fmt.Errorf("owl's files moved, but its cache didn't: %w", err), fmt.Errorf("and putting them back failed: %w", back))
+		}
 		return fmt.Errorf("owl's files moved, but its cache didn't: %w", err)
+	}
+	if root != "" {
+		// both folders are owl's now: the marker is what lets uninstall
+		// delete them through the links, and only them (#H48)
+		for _, d := range []string{cfgTo, cacheTo} {
+			if err := markMoved(d); err != nil {
+				log.Printf("appdir: couldn't mark %s as owl's: %v", d, err)
+			}
+		}
+	} else {
+		// moved home: the marker, if the folder came from a disk, is not
+		// this folder's now
+		os.Remove(filepath.Join(cfg, MovedMark))
+		os.Remove(filepath.Join(cache, MovedMark))
 	}
 	if root == "" && prev != "" {
 		// the folder they were in on the other disk, if nothing else is in it

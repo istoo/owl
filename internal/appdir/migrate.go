@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // This build keeps its files in owl's own folders, but a user coming from
@@ -25,10 +26,25 @@ func legacyCaches(home string) []string {
 	return []string{filepath.Join(home, ".cache", legacyUpName)}
 }
 
+// migrateMu makes one migration at a time within this process: Config and
+// Cache are asked for on many paths, and two first looks must not both
+// copy.
+var migrateMu sync.Mutex
+
 // migrate copies src to dst once, when dst holds nothing yet. It reports
 // what it did, "" when there was nothing to do.
 func migrate(src, dst string) string {
 	if src == "" || dst == "" || filepath.Clean(src) == filepath.Clean(dst) {
+		return ""
+	}
+	migrateMu.Lock()
+	defer migrateMu.Unlock()
+	// dst is owl's own folder. A link there means owl's files live on
+	// another disk (owl data move), and the target may be unmounted: it is
+	// never removed or written over from an older build's folder (#H47).
+	// linkOf looks at it itself (Lstat), so a broken link is still the
+	// user's own.
+	if _, linked := linkOf(dst); linked {
 		return ""
 	}
 	if _, err := os.Stat(src); err != nil {

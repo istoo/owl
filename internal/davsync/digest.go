@@ -22,9 +22,12 @@ import (
 type digestTransport struct {
 	next http.RoundTripper
 
-	mu   sync.Mutex
-	last *digestChallenge // the challenge in force, nil until a server sends one
-	nc   uint32
+	mu sync.Mutex
+	// last and nc are kept by host: one transport serves the address and,
+	// after a redirect, another, and a challenge from one is not the
+	// other's (#M41).
+	last map[string]*digestChallenge
+	nc   map[string]uint32
 }
 
 type digestChallenge struct {
@@ -39,12 +42,13 @@ func (t *digestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !ok {
 		return t.next.RoundTrip(req)
 	}
+	host := req.URL.Host
 	t.mu.Lock()
-	ch := t.last
+	ch := t.last[host]
 	t.mu.Unlock()
 	first := req
 	if ch != nil {
-		first = signedDigest(t, req, ch, user, pass)
+		first = signedDigest(t, req, ch, user, pass, host)
 	}
 	res, err := t.next.RoundTrip(first)
 	if err != nil || res.StatusCode != http.StatusUnauthorized {
@@ -60,16 +64,22 @@ func (t *digestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	res.Body.Close()
 	t.mu.Lock()
-	t.last, t.nc = fresh, 0
+	if t.last == nil {
+		t.last, t.nc = map[string]*digestChallenge{}, map[string]uint32{}
+	}
+	t.last[host], t.nc[host] = fresh, 0
 	t.mu.Unlock()
-	return t.next.RoundTrip(signedDigest(t, req, fresh, user, pass))
+	return t.next.RoundTrip(signedDigest(t, req, fresh, user, pass, host))
 }
 
 // signedDigest is a copy of req with its Authorization made for ch.
-func signedDigest(t *digestTransport, req *http.Request, ch *digestChallenge, user, pass string) *http.Request {
+func signedDigest(t *digestTransport, req *http.Request, ch *digestChallenge, user, pass, host string) *http.Request {
 	t.mu.Lock()
-	t.nc++
-	nc := t.nc
+	if t.nc == nil {
+		t.nc = map[string]uint32{}
+	}
+	t.nc[host]++
+	nc := t.nc[host]
 	t.mu.Unlock()
 	out := req.Clone(req.Context())
 	if req.GetBody != nil {

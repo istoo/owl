@@ -164,7 +164,32 @@ func newDAV(c Config) (*dav, error) {
 	// a server that asks for Digest instead of Basic is answered (digest.go)
 	client := *syncClient
 	client.Transport = &digestTransport{next: syncClient.Transport}
+	// a redirect may not take the login to another host or down from
+	// HTTPS to HTTP (#M41)
+	client.CheckRedirect = checkDAVRedirect
 	return &dav{base: u, user: c.User, pass: c.Password, client: &client}, nil
+}
+
+// checkDAVRedirect refuses a redirect from HTTPS to HTTP, which would send
+// the WebDAV login in clear, and drops the credentials from one to another
+// host: a server that redirects to storage elsewhere gets the request
+// without them.
+func checkDAVRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("too many redirects")
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	last := via[len(via)-1]
+	if strings.EqualFold(last.URL.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return errors.New("the WebDAV server redirected from HTTPS to HTTP; not sending the login over an unencrypted connection")
+	}
+	if !strings.EqualFold(last.URL.Host, req.URL.Host) {
+		req.Header.Del("Authorization")
+		req.Header.Del("Cookie")
+	}
+	return nil
 }
 
 func (d *dav) url(parts ...string) string {

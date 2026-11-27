@@ -72,8 +72,28 @@ func Open(dir, exe string) (*Offer, error) {
 	}
 	o := &Offer{dir: tmp, pointer: filepath.Join(dir, pointerName), ln: ln}
 	b, _ := json.Marshal(pointer{PID: os.Getpid(), Sock: sock, Exe: exe, At: time.Now()})
-	part := o.pointer + ".tmp"
-	if err := os.WriteFile(part, b, 0o600); err != nil {
+	// a name of its own: two Opens at once (a restart racing another) must
+	// not write each other's pointer through one fixed .tmp (#M41)
+	f, err := os.CreateTemp(filepath.Dir(o.pointer), filepath.Base(o.pointer)+".tmp-*")
+	if err != nil {
+		o.Close()
+		return nil, err
+	}
+	part := f.Name()
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(part)
+		o.Close()
+		return nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		os.Remove(part)
+		o.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(part)
 		o.Close()
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // launchd runs the service as a launch agent of the user's: started at
@@ -105,11 +106,32 @@ func (launchd) loaded() bool {
 	return err == nil
 }
 
-// unload takes the agent out of launchd, stopping it; one not loaded is
-// no failure.
+// unloadWait and unloadPoll are how long, and how often, unload waits for
+// launchd to let the agent go after bootout before going on. A bootstrap
+// immediately after a bootout can find the old job still there and fail
+// with "already loaded"; the old process also needs its moment to exit
+// (#L14). Vars for tests.
+var (
+	unloadWait = 2 * time.Second
+	unloadPoll = 50 * time.Millisecond
+)
+
+// waitUnloaded polls loaded until it says the agent is gone, at most
+// unloadWait.
+func waitUnloaded(loaded func() bool) {
+	for end := time.Now().Add(unloadWait); time.Now().Before(end); time.Sleep(unloadPoll) {
+		if !loaded() {
+			return
+		}
+	}
+}
+
+// unload takes the agent out of launchd, stopping it, and waits for it to
+// be gone; one not loaded is no failure.
 func (l launchd) unload() {
 	if l.loaded() {
 		launchctl("bootout", service())
+		waitUnloaded(l.loaded)
 	}
 }
 

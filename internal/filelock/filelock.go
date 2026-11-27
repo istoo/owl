@@ -5,6 +5,7 @@ package filelock
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -74,19 +75,58 @@ type Mutex struct {
 	// another owl wrote it.
 	Locked func()
 	unlock func()
+	held   bool
 }
 
-func (m *Mutex) Lock() {
+// ErrNotHeld is a strict take that couldn't hold the file's lock: the
+// folder can't be locked, or another owl held it for the whole wait.
+var ErrNotHeld = errors.New("the file's lock was not taken")
+
+// Lock takes both locks, waiting up to Wait for another owl to let the
+// file's go. It keeps sync.Locker's shape: the change goes on without the
+// file's lock when none can be had or Wait passes, and Held says which.
+// A change that must be exclusive across owls uses LockStrict.
+func (m *Mutex) Lock() { m.LockTimeout(Wait) }
+
+// LockTimeout is Lock, waiting up to wait for another owl's lock. It is
+// the same contract as Lock: a wait that passes lets the change go on
+// without the lock rather than hang, and held says so.
+func (m *Mutex) LockTimeout(wait time.Duration) (held bool) {
 	m.mu.Lock()
-	m.unlock, _ = Lock(m.Path(), Wait)
+	m.unlock, held = Lock(m.Path(), wait)
+	m.held = held
 	if m.Locked != nil {
 		m.Locked()
 	}
+	return held
 }
+
+// LockStrict takes both locks and fails (ErrNotHeld) when the file's
+// can't be had: for a write that must not run beside another owl's.
+func (m *Mutex) LockStrict() error { return m.LockStrictTimeout(Wait) }
+
+// LockStrictTimeout is LockStrict with its own wait.
+func (m *Mutex) LockStrictTimeout(wait time.Duration) error {
+	m.mu.Lock()
+	unlock, held := Lock(m.Path(), wait)
+	if !held {
+		m.mu.Unlock()
+		return fmt.Errorf("%s: %w", m.Path(), ErrNotHeld)
+	}
+	m.unlock, m.held = unlock, true
+	if m.Locked != nil {
+		m.Locked()
+	}
+	return nil
+}
+
+// Held says whether the last Lock took the file's lock (false when it went
+// on without it).
+func (m *Mutex) Held() bool { return m.held }
 
 func (m *Mutex) Unlock() {
 	unlock := m.unlock
-	m.unlock = nil
+	m.unlock, m.held = nil, false
 	if unlock != nil {
 		unlock()
 	}

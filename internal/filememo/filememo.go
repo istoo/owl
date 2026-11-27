@@ -296,12 +296,20 @@ func read[T any](kind, path string, parse func([]byte) (T, error), held bool) (T
 // settle drops e's bytes once its file's time is old enough to tell a
 // later write by: from then on its time and size are looked at alone.
 func settle(key memoKey, e entry) {
-	if time.Since(e.mod) > settled {
-		mu.Lock()
-		e.raw, e.again = nil, nil
-		seen[key] = e
-		mu.Unlock()
+	if time.Since(e.mod) <= settled {
+		return
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	// Another read may have parsed a newer version into seen[key] while
+	// this one was comparing bytes. Its entry is the current one; putting
+	// e back would roll the cache to the older value (#M41).
+	cur, ok := seen[key]
+	if !ok || !cur.mod.Equal(e.mod) || cur.size != e.size {
+		return
+	}
+	cur.raw, cur.again = nil, nil
+	seen[key] = cur
 }
 
 // parsed is parse of b, the file at key's bytes as fi found it, kept for
