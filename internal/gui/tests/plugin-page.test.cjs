@@ -136,6 +136,21 @@ async function frameReady(page, tok) {
   return frameOf(page, tok);
 }
 
+// A click goes into the page, not the window. Before a cross-origin frame's
+// hit-test has reached the window, the browser hands its first pointer input
+// to the window's <iframe> itself: Chromium, at a click on the page's button,
+// reported the target as the frame element, so the page never saw it. Move
+// the pointer until the page sees it over the button, then click; the move is
+// the readiness, not a wait for a while.
+async function clickInFrame(frame, selector) {
+  const at = frame.locator(selector);
+  for (let i = 0; i < 50; i++) {
+    await at.hover();
+    if (await frame.evaluate((s) => document.querySelector(s)?.matches(":hover"), selector)) return at.click();
+  }
+  throw new Error(`${selector}: the window did not send pointer input into the frame`);
+}
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   test(`${engine}: a plugin's page draws in its frame, shut in`, async (t) => {
     const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
@@ -185,7 +200,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
         await glance.waitForFunction(() => document.documentElement.dataset.theme === "dark");
         assert.ok((await glance.evaluate(() => document.documentElement.style.getPropertyValue("--owl-bg"))).length > 0, `${where}: the tokens`);
-        await glance.locator("#hide").click();
+        await clickInFrame(glance, "#hide");
         await glance.waitForFunction(() => document.getElementById("cost")?.textContent === "");
         assert.deepEqual(seen.options.map((o) => [o.spec, o.options.hideCost]), [["/x/glance", true]], `${where}: its own options`);
         // the frame fits the window
