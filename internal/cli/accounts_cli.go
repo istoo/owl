@@ -92,6 +92,9 @@ func accountsCmd(args []string) error {
 		name := strings.Join(args[4:], " ")
 		if name == "--clear" {
 			name = ""
+		} else if len(args) > 4 && flagValue(args[4]) {
+			// an unknown --flag is not a name to save (M41)
+			return fmt.Errorf("%s", usage)
 		}
 		if len(args) == 4 {
 			// no name: say what it is

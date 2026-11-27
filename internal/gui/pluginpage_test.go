@@ -398,6 +398,8 @@ func TestPluginPagePolicyBehindProxyHost(t *testing.T) {
 	csp := func(origin string) string {
 		r := httptest.NewRequest("GET", pages[0].URL+"?"+pageOriginParam+"="+url.QueryEscape(origin), nil)
 		r.Host = "127.0.0.1:3437"
+		// the window's frame is same-origin: only then is _o trusted (H52)
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
 		return do(h, r).Header().Get("Content-Security-Policy")
 	}
 	named := "https://proxy.example.com/_owl/plugin/" + tok + "/"
@@ -415,6 +417,15 @@ func TestPluginPagePolicyBehindProxyHost(t *testing.T) {
 	// the Host's own address is named once
 	if p := csp("http://127.0.0.1:3437"); strings.Count(p, "127.0.0.1:3437/_owl/plugin/"+tok+"/") != 10 {
 		t.Fatalf("the Host's address twice: %s", p)
+	}
+	// a page another site sends, or a link opened from one, names no
+	// origin of its own: _o=https://evil.example is not carried into the
+	// policy (H52)
+	r := httptest.NewRequest("GET", pages[0].URL+"?"+pageOriginParam+"="+url.QueryEscape("https://evil.example"), nil)
+	r.Host = "127.0.0.1:3437"
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	if p := do(h, r).Header().Get("Content-Security-Policy"); strings.Contains(p, "evil.example") {
+		t.Fatalf("a cross-site _o reached the policy: %s", p)
 	}
 }
 

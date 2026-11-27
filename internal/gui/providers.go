@@ -2129,10 +2129,20 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// that leaves it out keeps it
 			ListOff *bool `json:"listOff"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
 			fail(rw, err)
 			return
 		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			fail(rw, err)
+			return
+		}
+		// what the body says, by key: a save that sends false or 0 says so,
+		// and only one that leaves the key out keeps the old value (H51)
+		var raw map[string]json.RawMessage
+		_ = json.Unmarshal(body, &raw)
+		sent := func(k string) bool { _, ok := raw[k]; return ok }
 		in := req.Provider
 		if req.Billing != nil {
 			in.Billing = *req.Billing
@@ -2264,6 +2274,63 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				pr.PassHeaders = in.PassHeaders
 				pr.SecretAccessKey = in.SecretAccessKey
 				pr.Vertex = in.Vertex
+				if sent("keyPriceRates") {
+					pr.KeyPriceRates = in.KeyPriceRates
+				}
+				if req.AccessKeyID != nil {
+					pr.AccessKeyID = strings.TrimSpace(*req.AccessKeyID)
+				}
+				// the body's numbers are raw values at this point (they
+				// are read and checked further down): apply the ones it
+				// sends, and leave the preset's when it leaves them out
+				if v, keep, err := rateWindowsOf(req.RateWindows); err == nil && !keep {
+					pr.RateWindows = v
+				}
+				if v, keep, err := priceRateOf(req.PriceRate); err == nil && !keep {
+					pr.PriceRate = v
+				}
+				if v, keep, err := queueOf(req.MaxRPM, "requests a minute"); err == nil && !keep {
+					pr.MaxRPM = v
+				}
+				if v, keep, err := limitOf(req.MaxConcurrency, "max concurrent requests"); err == nil && !keep {
+					pr.MaxConcurrency = v
+				}
+				if v, keep, err := limitOf(req.MaxAccounts, "accounts at once"); err == nil && !keep {
+					pr.MaxAccounts = v
+				}
+				if v, keep, err := queueOf(req.QueueLimit, "queue length"); err == nil && !keep {
+					pr.QueueLimit = v
+				}
+				if v, keep, err := queueOf(req.QueueWait, "queue wait"); err == nil && !keep {
+					pr.QueueWait = v
+				}
+				if sent("patience") {
+					pr.Patience = in.Patience
+				}
+				if sent("quotaRest") {
+					pr.QuotaRest = in.QuotaRest
+				}
+				if sent("quotaResetAt") {
+					pr.QuotaResetAt = in.QuotaResetAt
+				}
+				if sent("restCap") {
+					pr.RestCap = in.RestCap
+				}
+				if sent("codexAsSent") {
+					pr.CodexAsSent = in.CodexAsSent
+				}
+				if sent("promptAsWritten") {
+					pr.PromptAsWritten = in.PromptAsWritten
+				}
+				if sent("geminiFilled") {
+					pr.GeminiFilled = in.GeminiFilled
+				}
+				if sent("additionalTools") {
+					pr.AdditionalTools = in.AdditionalTools
+				}
+				if sent("additionalToolsOff") {
+					pr.AdditionalToolsOff = in.AdditionalToolsOff
+				}
 				pr.Searches = in.Searches
 				pr.PinUpstream = in.PinUpstream
 				pr.Unredacted = in.Unredacted
@@ -2522,45 +2589,45 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				// how long its keys rest out of quota is set in
 				// providers.json or with `owl provider quota-rest`,
 				// which the form doesn't show: kept as it was (#1772)
-				if in.QuotaRest == 0 && old != nil {
+				if !sent("quotaRest") && old != nil {
 					in.QuotaRest = old.QuotaRest
 				}
 				// and the time of day they are back, set with `owl
 				// provider quota-rest <id> until 08:00` (#2008)
-				if in.QuotaResetAt == "" && old != nil {
+				if !sent("quotaResetAt") && old != nil {
 					in.QuotaResetAt = old.QuotaResetAt
 				}
 				// and the most they sit out while they keep failing, set
 				// with `owl provider rest-cap` (#2008)
-				if in.RestCap == 0 && old != nil {
+				if !sent("restCap") && old != nil {
 					in.RestCap = old.RestCap
 				}
 				// and Codex's requests as sent, set with `owl provider
 				// set <id> codex=as-sent` (#1758)
-				if !in.CodexAsSent && old != nil {
+				if !sent("codexAsSent") && old != nil {
 					in.CodexAsSent = old.CodexAsSent
 				}
 				// and Antigravity's prompt as written, set with `owl
 				// provider set antigravity prompt=as-written`
-				if !in.PromptAsWritten && old != nil {
+				if !sent("promptAsWritten") && old != nil {
 					in.PromptAsWritten = old.PromptAsWritten
 				}
 				// and that owl filled the Gemini URL in once, which the
 				// form doesn't send: a URL cleared in it stays cleared
-				if !in.GeminiFilled && old != nil {
+				if !sent("geminiFilled") && old != nil {
 					in.GeminiFilled = old.GeminiFilled
 				}
 				// and additional_tools taken, set with `owl provider
 				// set <id> additional-tools=on` (#2660)
-				if !in.AdditionalTools && old != nil {
+				if !sent("additionalTools") && old != nil {
 					in.AdditionalTools = old.AdditionalTools
 				}
-				if !in.AdditionalToolsOff && old != nil {
+				if !sent("additionalToolsOff") && old != nil {
 					in.AdditionalToolsOff = old.AdditionalToolsOff
 				}
 				// and how long a request to it alone is kept while it is
 				// busy, set with `owl provider set <id> patience=`
-				if in.Patience == 0 && old != nil {
+				if !sent("patience") && old != nil {
 					in.Patience = old.Patience
 				}
 				// each account's own proxy likewise: {} clears them
@@ -3660,11 +3727,18 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			fail(rw, err)
 			return
 		}
+		if len(res.Files) == 0 {
+			fail(rw, errors.New("there are no sign-ins of that kind to export"))
+			return
+		}
+		// the agent names a folder and a file in Downloads: no separator
+		// or ".." of a request may steer them (M41)
+		agentName := pageImageName(in.Agent)
 		dir := downloads()
 		stamp := time.Now().Format("2006-01-02")
 		if in.Format == provider.ExportCLIProxy {
 			// one file an account, in a folder of their own
-			base := filepath.Join(dir, "owl-cliproxyapi-"+in.Agent+"-"+stamp)
+			base := filepath.Join(dir, "owl-cliproxyapi-"+agentName+"-"+stamp)
 			dir = base
 			for i := 2; ; i++ {
 				if _, err := os.Stat(dir); err != nil {
@@ -3673,7 +3747,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				dir = fmt.Sprintf("%s-%d", base, i)
 			}
 		} else {
-			res.Files[0].Name = "owl-sub2api-" + in.Agent + "-" + stamp + ".json"
+			res.Files[0].Name = "owl-sub2api-" + agentName + "-" + stamp + ".json"
 		}
 		paths, err := provider.WriteExport(res, dir)
 		if err != nil {

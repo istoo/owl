@@ -205,6 +205,18 @@ func pluginPages() []pluginPage {
 	return pages
 }
 
+// pageServiceOption is the plugin option a page's service port is moved
+// by (plugin.ServiceSpec.Option), "" when none is.
+func pageServiceOption(spec string) string {
+	pages, _ := windowParts()
+	for _, p := range pages {
+		if p.Spec == spec && p.service != nil {
+			return p.service.Option
+		}
+	}
+	return ""
+}
+
 // windowOf is a plugin that is on and adds a page or a panel to the
 // window: its package's name and the reads it declared.
 func windowOf(spec string) (name string, reads []string, ok bool) {
@@ -300,7 +312,46 @@ func browserOrigin(r *http.Request) string {
 			return ""
 		}
 	}
-	return u.Scheme + "://" + u.Host
+	o := u.Scheme + "://" + u.Host
+	// `_o` is carried into the page's policy only when the request itself
+	// says the browser is on that origin: a page of another site could
+	// otherwise name any host in the policy (H52). A frame's navigation
+	// from the window is same-origin (Sec-Fetch-Site); a reverse proxy may
+	// forward the host it served; the request's own Referer or Origin
+	// agrees too.
+	if !originAgrees(r, o) {
+		return ""
+	}
+	return o
+}
+
+// originAgrees is whether r says the browser is on origin o: the window's
+// own frame is same-origin, a reverse proxy names the host it served, and
+// a request's Referer or Origin is that origin.
+func originAgrees(r *http.Request, o string) bool {
+	if r.Header.Get("Sec-Fetch-Site") == "same-origin" {
+		return true
+	}
+	for _, h := range []string{"Referer", "Origin"} {
+		v := r.Header.Get(h)
+		if v == "" || v == "null" {
+			continue
+		}
+		if u, err := url.Parse(v); err == nil && u.Host != "" && u.Scheme+"://"+u.Host == o {
+			return true
+		}
+	}
+	if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
+		host := strings.TrimSpace(strings.Split(fh, ",")[0])
+		scheme := r.Header.Get("X-Forwarded-Proto")
+		if scheme == "" {
+			scheme = "https"
+		}
+		if scheme+"://"+host == o {
+			return true
+		}
+	}
+	return false
 }
 
 // pageHostWait is how long a page's HTML waits for its plugin's host,
@@ -363,7 +414,7 @@ func servePluginPage(rw http.ResponseWriter, r *http.Request, web bool) {
 	}
 	// the service's paths are never a file of the page's
 	if strings.HasPrefix(rel, pageServicePath) {
-		if !web || page == nil || page.servicePort() == 0 {
+		if !web || page == nil || page.servicePortOn(r) == 0 {
 			http.NotFound(rw, r)
 			return
 		}
@@ -491,7 +542,7 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			return ra - rb
 		})
 		for i := range out {
-			if web && out[i].servicePort() > 0 {
+			if web && out[i].servicePortOn(r) > 0 {
 				out[i].Service = strings.Repeat("../", strings.Count(out[i].file, "/")) + pageServicePath
 			}
 		}
@@ -569,6 +620,23 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			if err := json.Unmarshal(in.Options, &opts); err != nil {
 				fail(rw, errors.New("a page's options are an object"))
 				return
+			}
+			// the port its service is reached on is the user's to set, not
+			// the page's: left to it, a page moves the proxy to any port it
+			// likes (C6)
+			if o := pageServiceOption(in.Spec); o != "" {
+				if _, set := opts[o]; set {
+					http.Error(rw, "a page's service port is set in owl's settings, not by the page", http.StatusForbidden)
+					return
+				}
+				// the set replaces every option: the user's own port stays
+				for _, e := range plugin.Load().Plugins {
+					if e.Spec == in.Spec && e.Options != nil {
+						if v, ok := e.Options[o]; ok {
+							opts[o] = v
+						}
+					}
+				}
 			}
 			// a page that sets them over and over would start the
 			// host, every plugin's, again each time

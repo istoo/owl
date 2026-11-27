@@ -4,6 +4,9 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
+    "That file isn't the page's": "该文件不属于这个页面",
+    "{name} didn't answer": "{name} 没有响应",
+    "A picture is a PNG of 16 MB at most": "图片须为不超过 16 MB 的 PNG",
     "Check all": "检查全部",
     "Stop checking": "停止检查",
     "Click to stop the checks under way": "点击停止进行中的检查",
@@ -4670,6 +4673,9 @@ const I18N = {
     "{agent} in WSL {distro}: owl tells its running daemon; if it still answers with the old model, restart miniQ there.": "WSL {distro} 中的 {agent}：owl 会通知它正在运行的后台；若仍用旧模型回复，请在那里重启 miniQ。",
   },
   "zh-TW": {
+    "That file isn't the page's": "該檔案不屬於這個頁面",
+    "{name} didn't answer": "{name} 沒有回應",
+    "A picture is a PNG of 16 MB at most": "圖片須為不超過 16 MB 的 PNG",
     "Check all": "檢查全部",
     "Stop checking": "停止檢查",
     "Click to stop the checks under way": "點擊停止進行中的檢查",
@@ -9320,6 +9326,9 @@ const I18N = {
     "{agent} in WSL {distro}: owl tells its running daemon; if it still answers with the old model, restart miniQ there.": "WSL {distro} 中的 {agent}：owl 會通知它正在執行的背景服務；若仍用舊模型回覆，請在那裡重新啟動 miniQ。",
   },
   ja: {
+    "That file isn't the page's": "そのファイルはこのページのものではありません",
+    "{name} didn't answer": "{name} が応答しませんでした",
+    "A picture is a PNG of 16 MB at most": "画像は 16 MB 以下の PNG です",
     "Check all": "すべて確認",
     "Stop checking": "確認を停止",
     "Click to stop the checks under way": "クリックで進行中の確認を停止",
@@ -13972,6 +13981,9 @@ const I18N = {
     "{agent} in WSL {distro}: owl tells its running daemon; if it still answers with the old model, restart miniQ there.": "WSL {distro} の {agent}：owl は実行中のデーモンに伝えます。古いモデルで返答が続く場合は、そこで miniQ を再起動してください。",
   },
   de: {
+    "That file isn't the page's": "Diese Datei gehört nicht zu dieser Seite",
+    "{name} didn't answer": "{name} hat nicht geantwortet",
+    "A picture is a PNG of 16 MB at most": "Ein Bild ist ein PNG von höchstens 16 MB",
     "Check all": "Alle prüfen",
     "Stop checking": "Prüfung stoppen",
     "Click to stop the checks under way": "Klicken, um die laufenden Prüfungen zu stoppen",

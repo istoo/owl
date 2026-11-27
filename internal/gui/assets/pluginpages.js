@@ -44,6 +44,21 @@
 
   function post(win, msg) { win?.postMessage({ owl: 1, ...msg }, "*"); }
 
+  // frameURL is a page's address with the window's own origin: behind a
+  // reverse proxy the frame sends no Referer, and the server names the
+  // browser's address by _o (pluginpage.go's browserOrigin).
+  function frameURL(url) {
+    if (!/^https?:$/.test(location.protocol)) return url;
+    try { const u = new URL(url, location.href); u.searchParams.set("_o", location.origin); return u.href; } catch { return url; }
+  }
+
+  // b64 is bytes as the base64 a JSON body carries, a block at a time.
+  function b64(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    return btoa(s);
+  }
+
   // the theme or the language changed: every page open is told
   function pushTheme() {
     const data = theme();
@@ -87,7 +102,7 @@
     f.setAttribute("referrerpolicy", "no-referrer");
     f.setAttribute("allow", "");
     f.title = titled(p.entry);
-    f.src = p.entry.url;
+    f.src = frameURL(p.entry.url);
     p.frame = f;
     p.hello = false;
     p.shown = true;
@@ -144,6 +159,40 @@
         // the server
         if (!e.reads.includes(name)) throw new Error(t("{name} doesn't ask to read {what}", { name: titled(e), what: name }));
         return api("plugin-pages/read", { spec: e.spec, read: name, params: m.params?.params || {} });
+      }
+      case "asset": {
+        // a script the page adds after it came as one document is fetched
+        // here, with the window's cookie, and handed back as bytes: only a
+        // file of the page's own folder, never /api (pagebridge.js)
+        const u = new URL(String(m.params?.url || ""), location.href);
+        const base = new URL(e.url, location.href);
+        const dir = base.href.slice(0, base.href.lastIndexOf("/") + 1);
+        if (u.origin !== base.origin || !u.href.startsWith(dir)) throw new Error(t("That file isn't the page's"));
+        const r = await fetch(u.href, { credentials: "same-origin" });
+        if (!r.ok) throw new Error(t("{name} didn't answer", { name: u.pathname }));
+        return { type: r.headers.get("content-type") || "", data: Array.from(new Uint8Array(await r.arrayBuffer())) };
+      }
+      case "image.copy":
+      case "image.save": {
+        // owl.image.copy/save (pagebridge.js): in a browser this window does
+        // both; in the desktop app the picture goes to the server, whose
+        // clipboard and Downloads it is (pageimage.go)
+        const raw = m.params?.png;
+        const bytes = raw instanceof Blob ? new Uint8Array(await raw.arrayBuffer()) : new Uint8Array(raw || []);
+        if (!bytes.length || bytes.length > 16 << 20) throw new Error(t("A picture is a PNG of 16 MB at most"));
+        const action = m.method.slice(6);
+        if (!web) return api("plugin-pages/image", { spec: e.spec, action, name: String(m.params?.name || ""), png: b64(bytes) });
+        const blob = new Blob([bytes], { type: "image/png" });
+        if (action === "copy") {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        } else {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = (String(m.params?.name || "owl").replace(/[<>:"/\\|?*\x00-\x1f]/g, "-").trim() || "owl").replace(/\.png$/i, "") + ".png";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        }
+        return true;
       }
     }
     throw new Error(t("No such call: {what}", { what: String(m.method) }));
@@ -335,7 +384,7 @@
     f.setAttribute("referrerpolicy", "no-referrer");
     f.setAttribute("allow", "");
     f.title = titled(e);
-    f.src = e.url;
+    f.src = frameURL(e.url);
     const p = { entry: e, frame: f, context, body, hello: false, broken: false };
     p.timer = setTimeout(() => { if (!p.hello) panelBroke(p, t("{name}'s page didn't answer", { name: titled(e) })); }, HELLO_MS);
     panels.set(f, p);

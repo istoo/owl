@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -335,6 +336,17 @@ func servesPages(args []string) bool {
 		return true
 	}
 	return false
+}
+
+// flagValue is v when a command that writes a value would otherwise take
+// a flag for one: an unknown --flag must not become a saved name, key or
+// model (M41). A lone "-" and a negative number are values.
+func flagValue(v string) bool {
+	if !strings.HasPrefix(v, "-") || v == "-" {
+		return false
+	}
+	_, err := strconv.ParseFloat(v, 64)
+	return err != nil
 }
 
 func run(args []string) error {
@@ -1025,7 +1037,7 @@ func profiles(args []string) error {
 		}
 		return nil
 	case "save":
-		if len(args) < 2 {
+		if len(args) < 2 || flagValue(args[1]) {
 			return fmt.Errorf("usage: owl save <name>")
 		}
 		p, err := profile.Snapshot()

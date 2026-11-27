@@ -3698,8 +3698,11 @@ owl.plugin("library", (ctx) => {
     who.append(sub);
     const src = el("div", "lib-src");
     const a = el("a", "lib-srclink", n.repo + "/" + n.path);
-    a.href = n.id;
-    a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); browse(n.id); };
+    // a source is opened only as an http(s) address (C5)
+    if (/^https?:\/\//i.test(n.id)) {
+      a.href = n.id;
+      a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); browse(n.id); };
+    }
     src.append(a);
     who.append(src);
     // one find without its list of agents doesn't take the page down (#1217)
@@ -6437,6 +6440,8 @@ owl.plugin("library", (ctx) => {
     const poll = async () => {
       if (!box.isConnected) return;
       try { draw(await api("library/browser")); } catch {}
+      // the read can take a while, and the sheet can close in it
+      if (!box.isConnected) return;
       setTimeout(poll, 3000);
     };
     requestAnimationFrame(poll);
@@ -6444,6 +6449,9 @@ owl.plugin("library", (ctx) => {
   }
 
   function extLink(href, text) {
+    // only an http(s) address is a link: a market's homepage or a
+    // skill's source must not carry javascript: into this window (C5)
+    if (!/^https?:\/\//i.test(href || "")) return el("span", "mk-ext", text);
     const a = el("a", "mk-ext");
     a.href = href;
     a.append(el("span", "", text), svg(GLYPH.out, 11, 1.5));

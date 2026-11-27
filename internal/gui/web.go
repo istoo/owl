@@ -243,6 +243,12 @@ func webGuard(cookie, key string, keep time.Duration, box boxSignIn, next http.H
 		// cookie, and its token, which only a signed-in /api hands out,
 		// is the key (servePluginPage serves nothing without a good one)
 		if strings.HasPrefix(r.URL.Path, pluginPagePrefix) {
+			// a page's file is served by its token alone; a traversal out
+			// of it is no file at all, not a route past this guard (H52)
+			if strings.Contains(r.URL.Path, "..") {
+				http.NotFound(rw, r)
+				return
+			}
 			next.ServeHTTP(rw, r)
 			return
 		}

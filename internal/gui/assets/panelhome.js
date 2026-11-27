@@ -6,7 +6,7 @@
 // panel (panelhome.js), so the window's core carries none of it.
 const TITLES = { usage: "Allowances", stats: "Usage", routing: "Routing", agents: "Agents" };
 let home = null, status = null, statusDot = null, statusText = null, back = null, title = null;
-let today = null, todayDay = "";
+let today = null, todayDay = "", todaySeq = 0;
 // a day as this page and the requests page name it, in the zone it read in
 const dayKey = () => {
   const d = new Date();
@@ -86,8 +86,9 @@ function readToday(force) {
   const p = window.panelTodayPage?.(force);
   if (!p) return;
   const sentDay = dayKey(); // the request's day, not the answer's
+  const seq = ++todaySeq; // a later read's answer wins; an older one is let go
   p.then((u) => {
-    if (!u) return;
+    if (!u || seq !== todaySeq) return;
     today = u;
     todayDay = dataDay(u) || sentDay;
     draw();

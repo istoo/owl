@@ -3049,9 +3049,24 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		var in struct {
 			Actions map[string]string `json:"actions"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(rw, r.Body, 64<<10)).Decode(&in); err != nil {
 			fail(rw, err)
 			return
+		}
+		// a map of every kind found, and each action one owl knows: a
+		// body can't grow the settings file or name an action it doesn't
+		// have (L15)
+		if len(in.Actions) > 128 {
+			fail(rw, errors.New("at most 128 kinds of value can have an action"))
+			return
+		}
+		for k, a := range in.Actions {
+			switch a {
+			case "", "mask", "warn", "block":
+			default:
+				fail(rw, fmt.Errorf("%q's action is mask, warn or block, not %q", k, a))
+				return
+			}
 		}
 		if _, err := settings.Update(func(s *settings.Settings) error {
 			s.RedactActions = in.Actions
@@ -3448,9 +3463,11 @@ func held(h http.Handler) http.Handler {
 			// 5x the CPU.
 			defer tightenGC()()
 		}
-		if !(api && r.Method == http.MethodGet) && r.URL.Path != "/api/update/using" && r.URL.Path != "/api/page-away" {
+		if !(api && r.Method == http.MethodGet) && r.URL.Path != "/api/update/using" && r.URL.Path != "/api/page-away" && !strings.HasPrefix(r.URL.Path, pluginPagePrefix) {
 			// anything that may have written drops what was held, once it
-			// has answered with it (a page's word of input writes nothing)
+			// has answered with it (a page's word of input writes nothing).
+			// A plugin's page files and service take no key, so they never
+			// drop it here (H52).
 			defer provider.Changed()
 		}
 		h.ServeHTTP(rw, r)

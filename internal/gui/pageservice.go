@@ -98,15 +98,61 @@ var pageServiceTransport = &http.Transport{
 // servicePort is the port p's service is on, or 0 when it has none that
 // can be served: the gateway's own port never is, since a request from
 // this server comes from loopback, which the gateway takes without a key.
-func (p *pluginPage) servicePort() int {
+func (p *pluginPage) servicePort() int { return p.servicePortOn(nil) }
+
+// servicePortOn is servicePort, also refusing the port the request
+// reached this server on, and the one it listens on: a service there
+// would proxy back to owl's own /api without a key. Privileged ports are
+// none of a plugin's either.
+func (p *pluginPage) servicePortOn(r *http.Request) int {
 	if p == nil || p.service == nil {
 		return 0
 	}
 	port := p.service.ServicePort(p.options)
-	if strconv.Itoa(port) == gateway.Port() {
+	if port < 1024 { // privileged
+		return 0
+	}
+	if strconv.Itoa(port) == gateway.Port() || port == requestPort(r) || port == listenPort(r) {
 		return 0
 	}
 	return port
+}
+
+// requestPort is the port in r.Host, 0 when it names none.
+func requestPort(r *http.Request) int {
+	if r == nil {
+		return 0
+	}
+	_, p, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// listenPort is the port this server listens on, whatever Host a reverse
+// proxy passed on (http.LocalAddrContextKey), 0 when r names none.
+func listenPort(r *http.Request) int {
+	if r == nil {
+		return 0
+	}
+	a, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok || a == nil {
+		return 0
+	}
+	_, p, err := net.SplitHostPort(a.String())
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // servePageService passes r, a request under p's pageServicePath, to p's
@@ -132,7 +178,7 @@ func servePageService(rw http.ResponseWriter, r *http.Request, p *pluginPage, to
 	if err := http.NewResponseController(rw).EnableFullDuplex(); err != nil {
 		log.Printf("plugin page: %s's service: the request's body can't stream beside the reply: %v", p.Name, err)
 	}
-	port := p.servicePort()
+	port := p.servicePortOn(r)
 	target := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 	root := pluginPagePrefix + tok + "/" + pageServicePath
 	raw := strings.TrimPrefix(r.URL.EscapedPath(), root)

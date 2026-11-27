@@ -258,6 +258,8 @@ func daemonInstall(w daemonWeb) error {
 // its links there and what that lets anyone with one do.
 func printDaemonWeb(addr, key string) {
 	fmt.Println(muted.Render("  page   "), webLink(addr, key))
+	// the link holds the key: whoever reads it opens this ow's page
+	fmt.Println(muted.Render("         the link carries the key, so anyone who reads it can open this page"))
 	host, port, _ := net.SplitHostPort(addr)
 	q := "/?k=" + key
 	if ip := net.ParseIP(host); host == "" || ip != nil && !ip.IsLoopback() {
