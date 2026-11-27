@@ -2129,8 +2129,15 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// that leaves it out keeps it
 			ListOff *bool `json:"listOff"`
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		body, err := io.ReadAll(http.MaxBytesReader(rw, r.Body, 8<<20))
 		if err != nil {
+			// over the bound is refused outright: a cut-off body must never
+			// be saved as a form (M41)
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				http.Error(rw, "a provider's save is 8 MB at most", http.StatusRequestEntityTooLarge)
+				return
+			}
 			fail(rw, err)
 			return
 		}

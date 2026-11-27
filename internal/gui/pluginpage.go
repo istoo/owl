@@ -288,22 +288,30 @@ func ownSources(r *http.Request, path string) []string {
 	// The window that framed the page is on the address the browser used,
 	// and says so in the frame's address (pageOriginParam): the frame
 	// sends no Referer.
-	if o := browserOrigin(r); o != "" && o != "https://"+r.Host && o != "http://"+r.Host {
+	if o := browserOrigin(r, path); o != "" && o != "https://"+r.Host && o != "http://"+r.Host {
 		own = append(own, o+path)
 	}
 	return own
 }
 
-// pageOriginParam is the query a window adds to its frame's address: the
-// origin the window itself is on (pluginpages.js).
-const pageOriginParam = "_o"
+// pageOriginParam and pageOriginSigParam are what a page's or a panel's
+// address carries for a browser behind a reverse proxy: the window's own
+// origin, and its signature under this page's token. The window says its
+// origin on the authenticated /api/plugin-pages call (pageOriginQuery),
+// and the server signs it: a bare `_o` in an address is no origin at all
+// (H52).
+const (
+	pageOriginParam    = "_o"
+	pageOriginSigParam = "_s"
+	// pageOriginQuery is the window's origin on /api/plugin-pages and
+	// /api/plugin-panels, which only a signed-in /api serves.
+	pageOriginQuery = "o"
+)
 
-// browserOrigin is the scheme and host the browser reached this server
-// at, from the frame's address, or "" when it names none
-// (or anything but a plain http(s) host and port, which a policy can't be
-// trusted to carry).
-func browserOrigin(r *http.Request) string {
-	u, err := url.Parse(r.URL.Query().Get(pageOriginParam))
+// cleanBrowserOrigin is raw as an http(s) origin, or "" when it names none
+// (or anything but a plain host and port, which a policy can't carry).
+func cleanBrowserOrigin(raw string) string {
+	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.Scheme != "http" && u.Scheme != "https" {
 		return ""
 	}
@@ -312,46 +320,68 @@ func browserOrigin(r *http.Request) string {
 			return ""
 		}
 	}
-	o := u.Scheme + "://" + u.Host
-	// `_o` is carried into the page's policy only when the request itself
-	// says the browser is on that origin: a page of another site could
-	// otherwise name any host in the policy (H52). A frame's navigation
-	// from the window is same-origin (Sec-Fetch-Site); a reverse proxy may
-	// forward the host it served; the request's own Referer or Origin
-	// agrees too.
-	if !originAgrees(r, o) {
+	return u.Scheme + "://" + u.Host
+}
+
+// windowOrigin is the origin the window said on its authenticated /api
+// call, "" when it said none.
+func windowOrigin(r *http.Request) string {
+	return cleanBrowserOrigin(r.URL.Query().Get(pageOriginQuery))
+}
+
+// pageOriginSig signs origin for a page's token, so only an address the
+// server handed out names it.
+func pageOriginSig(tok, origin string) string {
+	m := hmac.New(sha256.New, pageSecret)
+	m.Write([]byte(tok))
+	m.Write([]byte{0})
+	m.Write([]byte(origin))
+	return hex.EncodeToString(m.Sum(nil)[:16])
+}
+
+// signedPageURL is a page's address with the window's origin and its
+// signature, which its own frame then carries (pageOriginParam).
+func signedPageURL(addr, tok, origin string) string {
+	if origin == "" {
+		return addr
+	}
+	v := url.Values{}
+	v.Set(pageOriginParam, origin)
+	v.Set(pageOriginSigParam, pageOriginSig(tok, origin))
+	sep := "?"
+	if strings.Contains(addr, "?") {
+		sep = "&"
+	}
+	return addr + sep + v.Encode()
+}
+
+// pageTokenOfPath is the token of a path under pluginPagePrefix, "" when
+// it names none.
+func pageTokenOfPath(path string) string {
+	rest, ok := strings.CutPrefix(path, pluginPagePrefix)
+	if !ok {
+		return ""
+	}
+	tok, _, ok := strings.Cut(rest, "/")
+	if !ok || len(tok) != 32 {
+		return ""
+	}
+	return tok
+}
+
+// browserOrigin is the origin a page's address carries, when its
+// signature under that page's token checks out: "" otherwise, so a bare
+// `_o` never reaches a policy.
+func browserOrigin(r *http.Request, path string) string {
+	o := cleanBrowserOrigin(r.URL.Query().Get(pageOriginParam))
+	if o == "" {
+		return ""
+	}
+	tok := pageTokenOfPath(path)
+	if tok == "" || !hmac.Equal([]byte(r.URL.Query().Get(pageOriginSigParam)), []byte(pageOriginSig(tok, o))) {
 		return ""
 	}
 	return o
-}
-
-// originAgrees is whether r says the browser is on origin o: the window's
-// own frame is same-origin, a reverse proxy names the host it served, and
-// a request's Referer or Origin is that origin.
-func originAgrees(r *http.Request, o string) bool {
-	if r.Header.Get("Sec-Fetch-Site") == "same-origin" {
-		return true
-	}
-	for _, h := range []string{"Referer", "Origin"} {
-		v := r.Header.Get(h)
-		if v == "" || v == "null" {
-			continue
-		}
-		if u, err := url.Parse(v); err == nil && u.Host != "" && u.Scheme+"://"+u.Host == o {
-			return true
-		}
-	}
-	if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
-		host := strings.TrimSpace(strings.Split(fh, ",")[0])
-		scheme := r.Header.Get("X-Forwarded-Proto")
-		if scheme == "" {
-			scheme = "https"
-		}
-		if scheme+"://"+host == o {
-			return true
-		}
-	}
-	return false
 }
 
 // pageHostWait is how long a page's HTML waits for its plugin's host,
@@ -541,10 +571,14 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 			}
 			return ra - rb
 		})
+		o := windowOrigin(r)
 		for i := range out {
 			if web && out[i].servicePortOn(r) > 0 {
 				out[i].Service = strings.Repeat("../", strings.Count(out[i].file, "/")) + pageServicePath
 			}
+			// a browser behind a proxy names the address it used, signed, so
+			// the page's own frame can name it too (browserOrigin)
+			out[i].URL = signedPageURL(out[i].URL, out[i].token, o)
 		}
 		writeJSON(rw, out)
 	})
@@ -567,6 +601,10 @@ func pluginPageRoutes(mux *http.ServeMux, web bool) {
 		_, out := windowParts()
 		if out == nil {
 			out = []pluginPanel{}
+		}
+		o := windowOrigin(r)
+		for i := range out {
+			out[i].URL = signedPageURL(out[i].URL, out[i].token, o)
 		}
 		writeJSON(rw, out)
 	})

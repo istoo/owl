@@ -389,43 +389,48 @@ func TestPluginPageActions(t *testing.T) {
 func TestPluginPagePolicyBehindProxyHost(t *testing.T) {
 	pagePlugins(t)
 	h := pageMux()
-	var pages []pluginPage
-	w := do(h, httptest.NewRequest("GET", "/api/plugin-pages", nil))
-	if err := json.Unmarshal(w.Body.Bytes(), &pages); err != nil || len(pages) != 1 {
-		t.Fatalf("pages: %s %v", w.Body, err)
+	listed := func(query string) pluginPage {
+		t.Helper()
+		w := do(h, httptest.NewRequest("GET", "/api/plugin-pages"+query, nil))
+		var ps []pluginPage
+		if err := json.Unmarshal(w.Body.Bytes(), &ps); err != nil || len(ps) != 1 {
+			t.Fatalf("pages: %s %v", w.Body, err)
+		}
+		return ps[0]
 	}
-	tok := strings.Split(strings.TrimPrefix(pages[0].URL, pluginPagePrefix), "/")[0]
-	csp := func(origin string) string {
-		r := httptest.NewRequest("GET", pages[0].URL+"?"+pageOriginParam+"="+url.QueryEscape(origin), nil)
+	pages := listed("")
+	tok := strings.Split(strings.TrimPrefix(pages.URL, pluginPagePrefix), "/")[0]
+	csp := func(addr string) string {
+		r := httptest.NewRequest("GET", addr, nil)
 		r.Host = "127.0.0.1:3437"
-		// the window's frame is same-origin: only then is _o trusted (H52)
-		r.Header.Set("Sec-Fetch-Site", "same-origin")
 		return do(h, r).Header().Get("Content-Security-Policy")
 	}
+	// the window's own origin, said on the authenticated /api call, is
+	// signed into the page's address (H52)
+	signed := listed("?" + pageOriginQuery + "=" + url.QueryEscape("https://proxy.example.com"))
+	if !strings.Contains(signed.URL, pageOriginParam+"=") || !strings.Contains(signed.URL, pageOriginSigParam+"=") {
+		t.Fatalf("the window's origin isn't signed into the page's address: %s", signed.URL)
+	}
 	named := "https://proxy.example.com/_owl/plugin/" + tok + "/"
-	if p := csp("https://proxy.example.com"); !strings.Contains(p, "script-src https://127.0.0.1:3437/_owl/plugin/"+tok+"/ http://127.0.0.1:3437/_owl/plugin/"+tok+"/ "+named+";") ||
+	if p := csp(signed.URL); !strings.Contains(p, "script-src https://127.0.0.1:3437/_owl/plugin/"+tok+"/ http://127.0.0.1:3437/_owl/plugin/"+tok+"/ "+named+";") ||
 		!strings.Contains(p, "style-src https://127.0.0.1:3437/_owl/plugin/"+tok+"/ http://127.0.0.1:3437/_owl/plugin/"+tok+"/ "+named+" 'unsafe-inline'") {
 		t.Fatalf("the proxy's address isn't named: %s", p)
 	}
-	// nothing but a plain http(s) host is carried into a policy
-	for _, bad := range []string{"", "https://x.example; script-src */", "https://u:p@x.example/", "ftp://x.example/", "https://x.example,y.example/", "javascript:alert(1)"} {
-		p := csp(bad)
-		if strings.Contains(p, "x.example") || strings.Contains(p, "*") || strings.Contains(p, "alert") {
-			t.Fatalf("origin %q reached the policy: %s", bad, p)
+	// a bare _o, with no signature the server handed out, names nothing
+	for _, bad := range []string{"https://evil.example", "https://x.example; script-src */", "https://u:p@x.example/", "ftp://x.example/", "https://x.example,y.example/", "javascript:alert(1)"} {
+		p := csp(pages.URL + "?" + pageOriginParam + "=" + url.QueryEscape(bad))
+		if strings.Contains(p, "evil.example") || strings.Contains(p, "x.example") || strings.Contains(p, "*") || strings.Contains(p, "alert") {
+			t.Fatalf("a bare origin %q reached the policy: %s", bad, p)
 		}
 	}
-	// the Host's own address is named once
-	if p := csp("http://127.0.0.1:3437"); strings.Count(p, "127.0.0.1:3437/_owl/plugin/"+tok+"/") != 10 {
-		t.Fatalf("the Host's address twice: %s", p)
+	// nor a signature made up for another origin
+	if p := csp(pages.URL + "?" + pageOriginParam + "=https://evil.example&" + pageOriginSigParam + "=0123456789abcdef0123456789abcdef"); strings.Contains(p, "evil.example") {
+		t.Fatalf("a forged signature reached the policy: %s", p)
 	}
-	// a page another site sends, or a link opened from one, names no
-	// origin of its own: _o=https://evil.example is not carried into the
-	// policy (H52)
-	r := httptest.NewRequest("GET", pages[0].URL+"?"+pageOriginParam+"="+url.QueryEscape("https://evil.example"), nil)
-	r.Host = "127.0.0.1:3437"
-	r.Header.Set("Sec-Fetch-Site", "cross-site")
-	if p := do(h, r).Header().Get("Content-Security-Policy"); strings.Contains(p, "evil.example") {
-		t.Fatalf("a cross-site _o reached the policy: %s", p)
+	// the Host's own address is named once
+	own := listed("?" + pageOriginQuery + "=" + url.QueryEscape("http://127.0.0.1:3437"))
+	if p := csp(own.URL); strings.Count(p, "127.0.0.1:3437/_owl/plugin/"+tok+"/") != 10 {
+		t.Fatalf("the Host's address twice: %s", p)
 	}
 }
 

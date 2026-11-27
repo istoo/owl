@@ -123,6 +123,24 @@ func TestProviderSaveExplicitZeroAndFalse(t *testing.T) {
 	}
 }
 
+// M41: a save over 8 MB is refused with 413 and writes nothing, rather
+// than being cut off and stored as a form.
+func TestProviderSaveTooLargeRefused(t *testing.T) {
+	sandboxHome(t)
+	mux := http.NewServeMux()
+	providerRoutes(mux, nil)
+	body := `{"id":"relay","name":"Relay","chat":"http://127.0.0.1:1/v1","key":"k","new":true,"junk":"` +
+		strings.Repeat("a", 8<<20+16) + `"}`
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/provider/save", strings.NewReader(body)))
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("a save over the bound: %d %s", w.Code, w.Body)
+	}
+	if p, err := provider.Find("relay"); err == nil {
+		t.Fatalf("a cut-off save was written: %+v", p)
+	}
+}
+
 // H51: a preset save carries what its editor sends, rather than falling
 // back to the preset's own values.
 func TestProviderSavePresetCarriesRequestBody(t *testing.T) {

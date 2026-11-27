@@ -75,9 +75,17 @@
       try { abs = new URL(ref, location.href).href; } catch { return false; }
       call("asset", { url: abs }).then(({ type, data }) => {
         // a data: address, not a blob's: WebKit finds no blob made in a
-        // sandboxed frame
+        // sandboxed frame. The bytes come as base64, so a large script
+        // isn't a giant array in the message.
+        let bytes;
+        if (typeof data === "string") {
+          const s = atob(data);
+          bytes = new Uint8Array(s.length);
+          for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+        } else {
+          bytes = new Uint8Array(data);
+        }
         let bin = "";
-        const bytes = new Uint8Array(data);
         for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
         node.setAttribute("src", "data:text/javascript;base64," + btoa(bin));
         node.__owlPut(node);
@@ -201,7 +209,15 @@
     if (visible === false) api.visible = false;
     api.context = context || {};
     api.service = "";
-    try { if (service) api.service = new URL(service, location.href).href; } catch { /* none */ }
+    try {
+      if (service) {
+        // the page's address carries the window's origin, signed: the
+        // service's own address keeps it, so its policy names it too
+        const u = new URL(service, location.href), cur = new URL(location.href);
+        for (const k of ["_o", "_s"]) { const v = cur.searchParams.get(k); if (v) u.searchParams.set(k, v); }
+        api.service = u.href;
+      }
+    } catch { /* none */ }
     paint(theme);
     return theme;
   });
