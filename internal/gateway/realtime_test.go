@@ -367,9 +367,9 @@ func TestRealtimeHeldToKeyLimit(t *testing.T) {
 	t.Setenv("OWL_PUBLIC_URL", "")
 	budget.Forget()
 	pinLimitClock(t)
-	was := realtimeKeyCheck
-	realtimeKeyCheck = 20 * time.Millisecond
-	t.Cleanup(func() { realtimeKeyCheck = was })
+	was := realtimeKeyCheck.Load()
+	realtimeKeyCheck.Store(int64(20 * time.Millisecond))
+	t.Cleanup(func() { realtimeKeyCheck.Store(was) })
 	keys, secrets := newCaller(t, "Capped")
 	setLimit(t, keys[0].ID, &access.Limit{Period: "day", Tokens: 50}) // one response.done is 60 in and 20 out
 	const plan = "/v1/realtime?model=plan/qwen-audio-3.0-realtime-plus"

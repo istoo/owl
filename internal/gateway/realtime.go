@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -49,9 +50,13 @@ var (
 	// realtimeDial bounds the upstream handshake
 	realtimeDial = 30 * time.Second
 	// realtimeKeyCheck is how often a session opened with a gateway key
-	// looks whether the key is still on
-	realtimeKeyCheck = 5 * time.Second
+	// looks whether the key is still on. Read by each session's own
+	// goroutine, which a test's setting of it can meet as it starts: an
+	// int64 of nanoseconds read and written atomically
+	realtimeKeyCheck atomic.Int64
 )
+
+func init() { realtimeKeyCheck.Store(int64(5 * time.Second)) }
 
 // realtimeReadLimit is the largest frame read either way: a few seconds
 // of base64 audio is well under it.
@@ -290,7 +295,7 @@ func (s *Server) realtime(w http.ResponseWriter, r *http.Request) {
 	// its limit is spent (keyLimited let it in while it had some left)
 	if keyWho := access.Caller(r.Context()); keyWho.KeyID != "" {
 		go func() {
-			t := time.NewTicker(realtimeKeyCheck)
+			t := time.NewTicker(time.Duration(realtimeKeyCheck.Load()))
 			defer t.Stop()
 			for {
 				select {
