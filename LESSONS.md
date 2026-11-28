@@ -1868,3 +1868,35 @@ each one.
   - #1454 stayed open until the reporter confirmed.
   - #1213 and #1282 merged at the reviewed head with the record seconds
     before.
+
+## 2026-11-28
+
+**A reader added to shared state takes the lock its writers hold, and the
+whole package is run under -race before the tag.**
+
+975cbd2ab (the Copilot key-pool fix) read the conversation's stick in
+serve() to find who answered it last, and called stickOf without
+`sticks` held. stickOf touches sticks.m, sticks.from and sticks.mod, which
+affine's writers change under that lock: a data race, and a concurrent map
+read and write the runtime can panic on. Local runs were green because
+they were run without -race; ubuntu and macOS CI's Race job failed five
+gateway tests at v0.2.41 (v0.2.42 fixed it, ok in 1655.984s under -race).
+- A new call into a package-level store is checked against every writer's
+  lock before it is written; the reader does what the doc comment of the
+  function says it requires ("Called with sticks held").
+- A gateway change ends with `go test -race ./internal/gateway` whole, not
+  its own new tests under -race.
+- A test that sets a package-level knob a goroutine reads later makes it
+  atomic (realtimeKeyCheck was the same class, surfaced by the same run).
+
+**An allocation bound under -race is measured, not guessed, after the code
+it guards changed.**
+
+TestMaskJSONAllocates (internal/redact) bounds a 1 MB request at 80x its
+bytes under -race. The audit's shape rules read more text, and the
+backtracking regexp's bit state is what the extra is: 62.9 MB (60x) on
+e29029645, 84.6 MB (80.6x) locally, 85.6 MB (81.56x) on ubuntu CI, red at
+v0.2.43's predecessor. The non-race bound (3x) still holds at 2.29x, and
+that is what guards the cost; the -race number is pool drops and regex
+backtracking. Raising it to 100x is recorded with all three measurements,
+and adding a 30 MB allocation to MaskJSON still fails the test (111.21x).

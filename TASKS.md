@@ -746,3 +746,7 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
 - GUI 批 449–768：有红项的 7 个文件（menu-scroll、nav-timeout、phone-connect-menu、plugin-signed-out-account、removed-hide、restart-app、revoked-signin-account）与基线对照，基线红 33、联验树红 32，逐文件基本一致，均为主干原有。续跑 769 起（`btby9zv4i`）。
 - GUI 全量 1218 个文件已跑完（日志 `.claude/worktrees/.audit-gui-rest-UiEb8e/gui-*.log`）。第 769–1218 段有红项的 25 个文件与基线同清单对照：基线 679 项红 97、联验树红 88，逐文件一致；仅联验树出现的两项 `usage-ledger-open-settled`（基线 2 次红 1）、`view-middle-autoscroll`（各 4 次，基线红 8、联验树红 5）均为主线原有不稳。结论：未发现审计修复或 Copilot 修复引入的新红。
 - [ ] 最终整仓 Go + 三平台 vet/build 在 `975cbd2ab` 上跑（`audit-final-975cbd2`）。
+- v0.2.41 已合入 main（`89401c754`）、打 tag 并发布（11 个资产，GitHub Latest 正确）。Test 工作流在 -race 下红 5 个 gateway 测试：根因是 `975cbd2ab` 在 serve 里无锁调用 `stickOf`（读/写 `sticks.m/from/mod`），既是数据竞争也可能并发读写 map 崩溃；另有一条既有竞争 `realtimeKeyCheck`（测试写、会话 goroutine 读）。修复：serve 中加锁调用；`realtimeKeyCheck` 改 atomic.Int64。修复后 5 个用例与 realtime 组通过，整包 gateway -race 复核中。
+- GUI 工作流红在 `click-scroll.test.cjs:287/352`（webkit），与 11-27 04:30 那次失败的同一行，主干既有 CI 抖动。
+- v0.2.42（竞争修复 + realtime 原子化）、v0.2.43（redact -race 上限按实测调整，非 -race 上限不变）、v0.2.44（新 socket 队列测试的假上游在临时目录移除前释放）均已合入 main、打 tag、发布（各 11 个资产，Latest 正确）。v0.2.44 的 Test 与 Release 均为 success。CI 既有抖动 `TestBodyStalledByFlowControlIsGivenUp` 已建 issue #52（代码未变，本地 -race 100 次未复现）。
+- GUI CI 的 `click-scroll.test.cjs:287/352` 与 11-27 04:30 那次失败同一行，主干既有抖动。
