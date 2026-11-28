@@ -3504,7 +3504,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// its rest key, which a provider with one key spells otherwise): a
 	// Copilot-hosted key that isn't it can read none of what it sealed
 	stWho := ""
-	if st, ok := stickOf(stuck); ok && time.Since(st.at) <= stickKeep {
+	sticks.Lock()
+	st, ok := stickOf(stuck)
+	sticks.Unlock()
+	if ok && time.Since(st.at) <= stickKeep {
 		stWho = st.who
 	}
 	// a strict conversation left with its own account of several: its
