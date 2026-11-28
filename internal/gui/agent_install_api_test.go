@@ -53,6 +53,10 @@ func TestAgentInstallAPI(t *testing.T) {
 		return rec
 	}
 	ran := func() bool { _, err := os.Stat(filepath.Join(dir, "ran")); return err == nil }
+	// the shell makes the file when it redirects the command's output,
+	// before echo has written into it: a busy machine showed it empty. What
+	// is waited for is the line itself, not the file
+	ranWith := func() string { b, _ := os.ReadFile(filepath.Join(dir, "ran")); return strings.TrimSpace(string(b)) }
 	for _, body := range []string{`{"id":"nosuch","index":0}`, `{"id":"fakeagent","index":1}`, `{"id":"fakeagent","index":-1}`, `{`, ``, `{"id":"fakeagent;touch x","index":0}`} {
 		if rec := call("POST", "/api/agents/install", body); rec.Code != 400 {
 			t.Errorf("%q: %d %s", body, rec.Code, rec.Body)
@@ -71,10 +75,10 @@ func TestAgentInstallAPI(t *testing.T) {
 	if run.State != "running" || run.Command != "brew install fakeagent" {
 		t.Errorf("%+v", run)
 	}
-	for end := time.Now().Add(20 * time.Second); !ran() && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+	for end := time.Now().Add(20 * time.Second); ranWith() != "install fakeagent" && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "ran")); strings.TrimSpace(string(b)) != "install fakeagent" {
-		t.Errorf("brew ran with %q", b)
+	if got := ranWith(); got != "install fakeagent" {
+		t.Errorf("brew ran with %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "evil")); err == nil {
 		t.Error("the request's own command ran")
