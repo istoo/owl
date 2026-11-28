@@ -47,13 +47,22 @@ func TestResponsesSocketQueueIsBounded(t *testing.T) {
 	socketQueueFrames = 1
 	t.Cleanup(func() { socketQueueFrames = was })
 	u := &respUp{}
+	// the reply holds the stream open until the test lets it go: closing
+	// this before the server's own cleanup, so the gateway's handler ends
+	// while the test's folders are still there (a socket handler that
+	// outlived its folders was CI's "directory not empty" at RemoveAll)
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
 	u.reply = func(w http.ResponseWriter, r *http.Request, n int) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		io.WriteString(w, sse(`data: {"type":"response.created","response":{"id":"resp_slow","object":"response","status":"in_progress","output":[]}}`,
 			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_slow","role":"assistant","status":"in_progress","content":[]}}`,
 			`data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"item_id":"msg_slow","delta":"wor"}`))
 		w.(http.Flusher).Flush()
-		<-r.Context().Done()
+		select {
+		case <-done:
+		case <-r.Context().Done():
+		}
 	}
 	sockUp(t, u)
 	_, ts := sockServer(t)
