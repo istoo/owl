@@ -84,7 +84,11 @@ func TestMaskJSONAllocates(t *testing.T) {
 	if raceOn {
 		// -race lets go of a pool's buffers at each GC, so a value that
 		// would reuse one allocates it again: 54 MB and 21,000 here
-		bytesBound, mallocBound = uint64(80*len(body)), 40_000
+		// 62.9 MB (60x) on e29029645 and 84.6 MB (80.6x) here, 85.6 MB
+		// (81.56x) on ubuntu CI: the shape rules added since read more
+		// text, and -race drops the pools these numbers are made of. The
+		// non-race bound above is what guards the cost
+		bytesBound, mallocBound = uint64(100*len(body)), 40_000
 	}
 	if per > bytesBound {
 		t.Errorf("a %d-byte masked request allocated %d bytes, want at most %d (%.2fx)", len(body), per, bytesBound, float64(per)/float64(len(body)))
