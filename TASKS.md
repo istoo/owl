@@ -682,3 +682,67 @@ form-align、group-note、group-member-line、warm-at-times/now、nav-pages-orde
   Test：run 44304271586 的 gateway job 红在 TestClaudeBridgeSafeguardContextUpdates（10s 内 Claude Code 未答 initialize），
   与本次改动无关，已开 issue #33（附输出），rerun --failed 后 success；其余 9 个 job 全绿。
   both 版 full run 在本分支红数下会再撞 200 分钟上限，故用 chromium 版做完整清单；webkit-only 的①尚未完整核对（上一份 both 半程日志里 217 个 webkit 红名不在 U'）。
+
+# Owl 全功能 Bug 修复任务清单（2026-11-27，基于 `AUDIT_BUGS_V2.md` / `e29029645`）
+
+目标：修复 `AUDIT_BUGS_V2.md` 中核实的全部缺陷，每项配套单元测试（验证改前红、改后绿），严格遵守 `LESSONS.md` 与 `docs/code-standards.md`，合入主干通过全量 Go 测试、守卫测试与 GUI 套件后自动推送并发布 `v0.2.41`。
+
+## 修复批次（8 个文件集合严格互斥的 worktree 并行实现）
+
+- [ ] **Batch 1（网关安全、协议与桥接）**：`internal/gateway`, `internal/claudetui`, `internal/middleware`, `internal/codexcat`（C1, H1–H7, M1–M11, L1–L4）
+- [ ] **Batch 2（供应商、账户、OAuth、分组与目录）**：`internal/provider`, `internal/catalog`, `internal/source`, `internal/ghtoken`, `internal/fx`, `internal/probelog`（C7, H8–H19, M12–M25, L5–L9）
+- [ ] **Batch 3（Agent 接线、配置编辑、WSL 与 Profile）**：`internal/agent`, `internal/edit`, `internal/profile`, `internal/agentenv`, `internal/agentplug`, `internal/wslrun`, `internal/desktopiso`（C8–C10, H20–H22, M26–M34, L10）
+- [ ] **Batch 4（资源库、MCP Auth、Browser/Image MCP & h264）**：`internal/library`, `internal/mcpauth`, `internal/browsermcp`, `internal/browserext`, `internal/imagemcp`, `internal/h264`（H23–H30, M35–M37, L11）
+- [ ] **Batch 5（会话、记忆、蒸馏/嵌入、用量/预算/OTLP）**：`internal/sessions`, `internal/memory`, `internal/memdistill`, `internal/memembed`, `internal/usage`, `internal/usageapi`, `internal/budget`, `internal/gwbudget`, `internal/otlp`, `internal/dayzone`（H31–H35, M38–M39, L12）
+- [ ] **Batch 6（隐私脱敏与插件运行时）**：`internal/redact`, `internal/pii`, `internal/masking`, `internal/maskrec`, `internal/plugin`, `internal/pluginrt`（H36–H42, M40, L13）
+- [ ] **Batch 7（同步、备份、更新、设置、守护进程与 OS 集成）**：`internal/update`, `internal/settings`, `internal/settingsapi`, `internal/backup`, `internal/davsync`, `internal/appdir`, `internal/uninstall`, `internal/filelock`, `internal/proc`, `internal/filememo`, `internal/handoff`, `internal/daemon`（C2–C4, H43–H49, M41-U8, L14）
+- [ ] **Batch 8（GUI 后端、前端 JS、CLI 与 TUI）**：`internal/gui`, `internal/cli`, `internal/tui`（C5–C6, H50–H53, M41-U9, L15）
+
+## 合并、验收与发布
+
+- [ ] 逐批审查 diff、合入 main 并解决任何跨包联动问题
+- [ ] 串行运行全量 Go 测试（`scripts/heavy.sh`）、守卫测试（`TestCoreScriptBudget`, `TestNoEagerPackageRegexps`, `TestEveryRouteIsNamedForTheCLI`, `TestSettingsSaveKeepsWhatItDoesNotSend`）、跨平台 `go vet` 及 GUI 测试
+- [ ] 推送 `origin main`，等 CI（Test + GUI）全绿（attempt 1）
+- [ ] 打 tag `v0.2.41` 并推送，确认 Release 11 个资产齐全且为 Latest
+
+验收记录：
+- 第 4 批 `3a4af4eb1`：已退回。升级插件提前清理旧版、跨机同步来源不能充当本机授权、名称耗尽未报错、调试器忙时超时未释放、代理连接目标仍需约束。
+- 第 5 批 `7398d62f3` 和第 6 批 `6c431ad85`：已退回。会话回滚、账本一致性、插件索引信任和脱敏覆盖仍有缺口。
+- 第 6 批二稿 `13dcceee7`：已核实索引摘要只取官方来源；非所属插件的钩子仍能收到包含私有选项与请求头的模型元数据副本，退回修正。
+- 第 8 批首稿 `16a2b6981`：插件页面来源绑定、带凭据的资产读取及图片桥接输入边界退回修正。已在独立检出的该提交运行 `plugin-page.test.cjs`：Chromium 3/3、WebKit 3/3，未跳过。仅覆盖页面绘制、页签与权限说明，不是新桥接测试。
+- 第 1、2、7 批候选 `7a1d38f3b`、`302fd0e93`、`4679b45c8` 已退回修订；分别待验实际连接与正文预算、一次性登录与不可重放正文、官方更新来源与文件归属。
+- 已核对第 3 批 `aae1032d5`、第 4 批 `3a4af4eb1` → `2df69b627`、第 5 批 `c3b913052` 的提交与父提交；各批测试不等于集成验收。
+- 本地验收分支已到第 6 批 `b27b9a057`。H42 按既有设计：强制脱敏仅在用户没有启用任何脱敏时补默认规则，不覆盖已选类别。H40 正补跨插件公开字段限制。
+- 验收树已应用第 3、8 批候选用于联验。H40 对加载器扩展字段的新增断言在修改前失败（收到 `{n:1}` 而非空缺）；收紧为嵌套公开字段白名单后 `go test -tags nogui ./internal/plugin -run '^TestHostJSCancellation$' -count=1` 通过。H42 语义未改。
+- 第 8 批修订 `06b22a7f2`：`internal/gui` 的脚本预算、路由、设置保存、表单超限四项守卫实跑均通过。`scripts/gui-suite.sh plugin-page-bridge.test.cjs plugin-page.test.cjs i18n-keys.test.cjs` 共 12 项，11 过、1 失败、0 跳过（`owl-gui-suite-20261127-174950-3576.log`）：新增桥接 Chromium/WebKit 2/2、i18n 4/4；原页面 Chromium 在 `plugin-page.test.cjs:189` 点击隐藏费用后超时，已交回定位。第 3 批仍待修隔离应用的备份归属与回退，第 4 批待修代理连接，第 5 批待复核跨目录会话的正常恢复。
+- 第 3 批修订 `984fc00fb` 已取代 `aae1032d5`。独立运行 `TestAddPutsTheOldAppBackWhenTheRenameFails`、`TestAddKeepsTheOldAppWhenTheRollbackFails`、`TestWriteAtomicModeNeverWidens`、`TestSaveRefusesWithoutTheCrossProcessLock`：4/4 通过。待在最终树用第 7 批的严格锁替代本批的等价实现并回归。
+- 第 7 批 `c421a32b2` 已核对更新元数据使用官方通道，并提供兼容 `sync.Locker` 的 `LockStrict`；旧迁移目录的资源库保留行为尚待补验。上述补丁均未合入 main；未发布。
+- 共用联验树 `.claude/worktrees/integ-audit-v2-0241`（`integration/audit-v2-0241`），与正在跑整包的验收快照分开。首轮组合：1 `b12532d77`、2 `6cc18ef0e`（父 `c421a32b2`）、3 `984fc00fb`、4 `46bc385a8`、5 `b2973591e`、6 `70875eb84` + H40 字段补丁、7 `c421a32b2`、8 `06b22a7f2` + 桥接测试等待修订。Profile 已改用共享 `LockStrictTimeout`，保留 `ErrNotHeld` 类型。该组合的 14 个定向用例覆盖 10 包，Go 输出 10 个 `ok`、退出 0，不是整包通过。
+- 第 7 批再修订 `12e12394e` 已以增量并入共用联验树；在候选提交上独立复验迁移标志不覆盖、使用中的库链接保留及框架路径解析，3 包通过。
+- 此前第 6 批完整 6 包实跑：5 包通过，`internal/plugin` 有两项失败（`b4f4jul2k.output`）。联验树补齐 VM 夹具的 `randomUUID`，修复空小写代理别名覆盖大写值；原失败及关联子进程测试共 5/5 通过。该修订仍要在最终整包中验证。
+- 第 1 批已发现未知长度正文增长尚未真正受总预算约束；第 2 批回调取消与可重放正文的关闭语义仍需收尾；第 4 批 HTTPS 代理契约、第 8 批隐藏费用红测仍待验。
+- 第 1 批 `14be81f49`、第 2 批 `e1d3597df` 已进入联验树。联验 `edit`、`agent`、`profile`、`provider`、`source`、`gateway` 六包所选正常行为全部通过，包括同一请求额度增长、粘贴码回调取消与原正文/副本各关闭一次。
+- 第 4 批 `9192f45a3` 已并入联验树。HTTPS 经受支持的本地 HTTP 代理时，CONNECT 使用固定目标地址、TLS 按原主机名校验；联验树运行完整 `go test -tags nogui -count=1 ./internal/mcpauth` 通过。不能固定实际目的地时不会降级成明文登录。
+- 联验树再修会话恢复：正常缺失的文件可恢复，已断开的项目目录链接不能当作正常缺失；新断言先红（`restorable = true, want false`），修复后断链、跨目录副本、子会话与失败回滚四项均过。Windows 七个相关包 `go vet` 退出 0；只是交叉编译检查，不是 Windows 实机验证。
+- 共用联验树的 `-race` 定向检查（profile、source、provider、usage、gateway）5 包均过；相对基线的 296 个 Go 文件 `gofmt -l` 无输出。本树 `go test -tags nogui -count=1 -timeout 45m -p 1 ./internal/plugin` 整包通过（`ok github.com/istoo/owl/internal/plugin 170.766s`，退出 0，日志 `brgl22d8d.output`）；当时第 8 批回归是 11/12，不能按通过计。
+- 第 8 批终稿 `aed5a13c4`、`bcdb79b07` 已纳入联验树，保留本地用例的 30 秒状态等待。原 Chromium 用例改为确认指针进入 frame 后仍执行真实点击并检查费用和写入；不改用户界面的点击逻辑。终稿 GUI 的 4 项 Go 守卫通过，`gofmt -l` 检查基线以来 296 个 Go 文件无输出。
+- 本次最终联验：相对 `e29029645` 的 316 个文件，内容指纹 `5ffde274925eb004ed40488f25752122581fd452f8ff5c3b8a35eafc195acec8`。修订后原三文件回归 `brqwhkeao` 已实跑 12/12，0 失败、0 取消、0 跳过（日志 `owl-gui-suite-20261127-191709-90485.log`，74.019 秒）：插件页面 Chromium 3/3、WebKit 3/3，新桥接各 1/1，翻译守卫 4/4；`b518k4lju` 全部阶段已结束：macOS/Linux/Windows 的 vet 和 build 六项退出 0；`go test -tags nogui -timeout 45m -count=1 ./...` 退出 1，104 个包通过，`internal/gateway` 和 `internal/update` 失败。前者是 `TestRemoteCodexResetThroughTheGateway`、`TestMaskedTranslatedBodyIsStable`、`TestOTelClaudeMainAndChildDedupRetainsHelper/claude-desktop`，后者是 `TestRelaunchOpen`。完整日志在 `.claude/worktrees/.audit-0241-verify-jmS0Zs/`。未发布。
+- 两项整仓红已查明并修正断言，未放宽产品边界：`TestRelaunchOpen` 仍验证窗口、后台、托盘的所有参数，并以带空格安装目录检查安全引号，`go test -tags nogui -count=1 ./internal/update` 整包通过（23.987s）。对 `TestMaskedTranslatedBodyIsStable`，同一 fixture 的基线与候选均通过本地 overlay 记录，四个工具参数 `api_key` 从 `SECRET` 改为 `API_KEY` 后与候选逐字节相同，无其他差异；由基线推导新 golden 后，稳定性、脱敏分配用例均通过；`-race` 下的字节稳定性及三个直接策略断言亦通过。本次完整 GUI 清单为 1218 个文件（`gui-order.txt`）。
+- 远程配额：已合入修订 `b6cc1bc9d`（本地联验树）；保留请求的开始顺序、拒绝结果和 generation。四个门控次序测试及原失败的 `TestRemoteCodexResetThroughTheGateway` 在联验树 `-race` 下全过；没有采用“完成者优先”的旧稿。
+- OTLP：未采用 `633c1195b` 的额外待发队列。临时 overlay 在父会话完成与 assistant 最后一个事件之间固定 watcher 启动时钟，原用例稳定落在 `final child generation did not settle: generations=0`，同时 `dropped=0`；相同顺序只改为同步采集启用时刻就通过（`clock-middle-{old,synchronous}.log`）。真实代码改在启动 watcher 前采集时刻，未加等待或缓冲；完整 `internal/otlp` 通过，原网关测试的两个子用例均通过 `-race`。这验证了可导致该症状的时序，不是对上一回失败的逐帧记录。
+- 修订后快照（相对 `e29029645` 的 319 个文件，指纹 `2474a2b2a7480af96bce7f94ed52e0f5052fd29b4edfcfccbd62e603649dbc37`）已完成复验（`bi6c2ihrp`）：`go test -tags nogui -timeout 45m -count=1 ./...` 退出 0，106 个包通过、21 个包没有测试文件；此前失败的 `internal/gateway` 和 `internal/update` 分别为 `ok 912.230s`、`ok 30.777s`。macOS/Linux/Windows 的 vet、build 六个阶段也均退出 0；这不代替 Linux/Windows 实机运行。日志 `.claude/worktrees/.audit-0241-recheck-FCFPrZ/steps.log` 和 `go-full.log`。299 个 Go 文件格式无差异。
+- 完整 GUI 首批 32 个文件，455 项，450 过、5 红、0 跳过（`gui-001.log`）：`account-alias.test.cjs:118` 三项、`account-rest.test.cjs:94` 一项、`account-weight.test.cjs:100` 一项。已定位到额度响应后的第二次绘制：`app.js:12884` 的 `loginUsageOf` 在请求结束后触发 `renderProviders(true)`，会替换首次绘制的账户行。三个测试的候选改动等待新行出现后再交互，不修改产品逻辑，不去掉写入次数和布局断言。双引擎整文件验证仍在等重型运行锁，修订尚未纳入联验树；余下 1186 个文件尚未验收。
+- `f54c0e82e`（账户行等额度重绘后再交互，仅改 3 个测试文件）已逐字节应用到联验树；`account-alias/rest/weight` 双引擎整文件 32/32 通过（`owl-gui-suite-20261127-210624-14148.log`），首批 5 红关闭。完整 GUI 批 2（文件 33–64）450/450；批 3（65–96）588 项 1 红：`api-key-theme.test.cjs:88` chromium system，确认框主按钮在切回浅色后仍为深色强调色；联验树单独 3 次 1 过 2 红，基线 `e29029645` 对照进行中。
+- 联验树全部改动已做成本地提交 `9278b30c6`（分支 `integration/audit-v2-0241`，未推送）。
+- [ ] 新任务（用户 11-27 报告，Copilot 多 key 池）：子任务在 `.claude/worktrees/copilot-key-pool`（分支 `fix/copilot-key-pool`，基于 `9278b30c6`）修三项。根因证据（本机路由日志 + 会话记录）：① 401 `input item ID does not belong to this connection`：Copilot 的加密 reasoning 经 `__rk16__` 挂在 call id 上回放，换 key 后被拒；`foreignReasoning` 不认这句，owl 把它当 key 失效逐个冷却换 key（单请求 40/133/87 次）。② 400 `invalid request body`：首次出现紧跟 Claude Code `ToolSearch` 的 `tool_reference` 结果，Chat 构建出空 tool content；同 key 25 秒前刚答过更大的 369k token 请求，非体积问题。③ 408 `Timed out reading request body … smaller request size` 未被识别为体积拒绝。
+- `api-key-theme` 红已修（`7621782c8`，仅测试）：探针证实切换配色后 200ms 内无帧，所有 CSS 过渡停在 currentTime 0；基线同样 1/3 红。改为按 rAF 等过渡结束；chromium system 5/5、整文件双引擎 6/6，人为写死主按钮色可变红。GUI 批 97–128：610/610。
+- Copilot 修复 `3bea69dc4` 已挑入联验分支（`975cbd2ab`）。子任务整包 gateway `ok 871.925s`、provider `ok 153.090s`，`.`/cli/gui 守卫、gofmt、linux/windows vet 通过；我自行复跑 22 个新测试全过，去掉两处措辞识别后 6 个测试变红、已还原。问题②根因仍未确认：本树 `tool_reference` 本就转成文字，Chat 每次发全部工具，故 15:48→15:49 的变化不来自工具整形；缺请求正文，无法定位。
+- 已知主干红（未处理，待用户定）：`node --test site/*.test.mjs` 在 `e29029645` 上至少 12 项红，站点测试仍按上游 usemagpie.ai，发行版已改品牌。
+- [ ] GUI 从文件 129 续跑（`bujwj5qqy`，日志 `.claude/worktrees/.audit-gui-rest-UiEb8e/`）；全部通过后在 `975cbd2ab` 上再做一次整仓 Go + 三平台 vet/build。
+- GUI 批 129–160：590 项 13 红，全为主干原有：`claude-switch-only:85` ×6（元素已脱离 DOM，重绘类）、`cli-update:182` ×2（480px 截断顺序）在基线 `e29029645` 同样红；`codex-credits-first:102`（点击后上移 2px）基线 15 项红 2、联验树红 5，属原有不稳定。改为续跑收集全部红项（`bowl6geh7`，从文件 161 起），之后统一修。
+- [ ] 主干原有 GUI 红待修：claude-switch-only、cli-update、codex-credits-first（及续跑新发现的）。
+- GUI 批 161–448 续跑（`bowl6geh7` 到 2 小时上限被停）：有红项的 12 个文件与基线逐测试对照，基线 264 项红 76、联验树红 77，红的是同一批测试，只是挑中的语言/宽度组合不同。两个数量有差的文件复测：`codex-predictions` 基线 3/2/2、联验树 2/0/2；`inner-scroll-contain` 交替 4 次，基线红 7、联验树红 5（负载 1.6–7.3 下均会红）。结论：都是主干原有的不稳定或损坏，暂未发现本次引入的回归。主干 GUI 原有红项清单：claude-switch-only、cli-update、codex-credits-first、codex-predictions、context-map-live、dialog-backdrop-drag、icon-url、inner-scroll-contain、json-tree、ledger-swipe、library-browser-ask、library-chip-fan、library-mcp-tool-switch、library-mcp-tools、mcp-signin-health。
+- [ ] GUI 从文件 449 续跑（`bgqucenxs`）。
+- GUI 批 449–768：有红项的 7 个文件（menu-scroll、nav-timeout、phone-connect-menu、plugin-signed-out-account、removed-hide、restart-app、revoked-signin-account）与基线对照，基线红 33、联验树红 32，逐文件基本一致，均为主干原有。续跑 769 起（`btby9zv4i`）。
+- GUI 全量 1218 个文件已跑完（日志 `.claude/worktrees/.audit-gui-rest-UiEb8e/gui-*.log`）。第 769–1218 段有红项的 25 个文件与基线同清单对照：基线 679 项红 97、联验树红 88，逐文件一致；仅联验树出现的两项 `usage-ledger-open-settled`（基线 2 次红 1）、`view-middle-autoscroll`（各 4 次，基线红 8、联验树红 5）均为主线原有不稳。结论：未发现审计修复或 Copilot 修复引入的新红。
+- [ ] 最终整仓 Go + 三平台 vet/build 在 `975cbd2ab` 上跑（`audit-final-975cbd2`）。
